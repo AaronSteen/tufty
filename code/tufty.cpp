@@ -86,7 +86,7 @@ GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, in
     }
 }
 
-GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
+extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 #if 0    
     for(int ControllerIdx = 0;
@@ -131,4 +131,10 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     f32 ScreenMaxX = (f32)Buffer->Width;
     f32 ScreenMaxY = (f32)Buffer->Height;
     DrawRectangle(Buffer, ScreenMinX, ScreenMinY, ScreenMaxX, ScreenMaxY, 0.75f, 0.25f, 0.5f);
+}
+
+extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
+{
+    game_state *GameState = (game_state *)Memory->PermanentStorage;
+    GameOutputSound(GameState, SoundBuffer, 400);
 }
