@@ -39,8 +39,8 @@ DrawRect(game_offscreen_buffer *Buf, f32 RealMinX, f32 RealMinY, f32 RealMaxX, f
         MaxY = Buf->Height-1;
     }
 
-    u32 Color = (((RoundF32ToU32(R * 255.0f)) << 16) ||
-                 ((RoundF32ToU32(G * 255.0f)) <<  8) ||
+    u32 Color = (((RoundF32ToU32(R * 255.0f)) << 16) |
+                 ((RoundF32ToU32(G * 255.0f)) <<  8) |
                  ((RoundF32ToU32(B * 255.0f)) <<  0));
 
     u8 *Row = (u8 *)Buf->Memory + MinY * Buf->Pitch + MinX * Buf->BytesPerPixel;
@@ -57,7 +57,7 @@ DrawRect(game_offscreen_buffer *Buf, f32 RealMinX, f32 RealMinY, f32 RealMaxX, f
 }
 
 static void
-GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, int ToneHz)
+GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 {
     s16 ToneVolume = 3000;
     int WavePeriod = SoundBuffer->SamplesPerSecond/ToneHz;
@@ -68,7 +68,7 @@ GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, in
         ++SampleIdx)
     {
 #if 0
-        real32 SineValue = sinf(GameState->tSine);
+        f32 SineValue = sinf(GameState->tSine);
         s16 SampleValue = (s16)SineVavlue * ToneVolume;
 #else
         s16 SampleValue = 0;
@@ -76,7 +76,7 @@ GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer, in
         *SampleOut++ = SampleValue;
         *SampleOut++ = SampleValue;
 #if 0
-        GameState->tSine += 2.0f*Pi32*1.0f/(real32)WavePeriod;
+        GameState->tSine += 2.0f*Pi32*1.0f/(f32)WavePeriod;
 
         if(GameState->tSine > 2.0f*Pi32)
         {
@@ -130,11 +130,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     f32 ScreenMinX = 0;
     f32 ScreenMaxX = (f32)Buffer->Width;
     f32 ScreenMaxY = (f32)Buffer->Height;
-    DrawRectangle(Buffer, ScreenMinX, ScreenMinY, ScreenMaxX, ScreenMaxY, 0.75f, 0.25f, 0.5f);
+    DrawRect(Buffer, ScreenMinX, ScreenMinY, ScreenMaxX, ScreenMaxY, 0.75f, 0.25f, 0.5f);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
-    game_state *GameState = (game_state *)Memory->PermanentStorage;
-    GameOutputSound(GameState, SoundBuffer, 400);
+    GameOutputSound(SoundBuffer, 400);
 }

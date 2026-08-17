@@ -36,6 +36,8 @@
 //
 //  And also we have some typedefs that both game and platform use.
 
+
+// *** TYPES AND MACROS HERE SO BOTH GAME AND PLATFORM CAN USE ***
 extern "C" {
 
 #include <stdint.h>
@@ -52,6 +54,24 @@ typedef s32 b32;
 typedef float f32;
 typedef double f64;
 typedef size_t memory_index;
+
+#define Assert(Expression) if(!(Expression)) {*(volatile int *)0 = 1;}
+
+#define ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
+
+#define Kilobytes(N) ((N) * 1024)
+#define Megabytes(N) (Kilobytes(N) * 1024)
+#define Gigabytes(N) (Megabytes(N) * 1024)
+#define Terabytes(N) (Gigabytes(N) * 1024)
+
+u32
+SafeTruncateU64ToU32(u64 SixtyFour)
+{
+    Assert(SixtyFour <= 0xFFFFFFFF);
+    u32 Result = (u32)SixtyFour;
+
+    return(Result);
+}
 
 // *** SERVICES THE PLATFORM PROVIDES TO THE GAME ***
 
@@ -77,13 +97,14 @@ typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 #endif
 
 // *** SERVICES THE GAME PROVIDES TO THE PLATFORM ***
+
 typedef struct game_offscreen_buffer
 {
     void *Memory;
     int Width;
     int Height;
     int Pitch;
-    int BitesPerPixel;
+    int BytesPerPixel;
 } game_offscreen_buffer;
 
 typedef struct game_sound_output_buffer
@@ -144,6 +165,16 @@ typedef struct game_input
     game_controller_input Controllers[5];
 } game_input;
 
+game_controller_input *
+GetController(game_input *Input, int ControllerIdx)
+{
+    Assert(ControllerIdx < ArrayCount(Input->Controllers));
+
+    game_controller_input *Result = &Input->Controllers[ControllerIdx];
+
+    return(Result);
+}
+
 typedef struct game_memory
 {
     b32 IsInitialized;
@@ -151,7 +182,7 @@ typedef struct game_memory
     memory_index PermanentStorageSize;
     void *PermanentStorage; // platform must clear to zero at startup
 
-    memory_ndex TransientStorageSize;
+    memory_index TransientStorageSize;
     void *TransientStorage; // platform must clear to zero at startup
 
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;

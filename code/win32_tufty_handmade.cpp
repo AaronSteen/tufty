@@ -51,14 +51,14 @@ DEFINE_GUID(IID_IAudioRenderClient,   0xf294acfc, 0x3146, 0x4483, 0xa7, 0xbf, 0x
 
 #pragma comment(lib, "ole32")
 
-#include "win32_handmade.h"
+#include "win32_tufty_handmade.h"
 
 // TODO(casey): This is a global for now.
-global_variable bool32 GlobalRunning;
-global_variable bool32 GlobalPause;
-global_variable win32_offscreen_buffer GlobalBackbuffer;
-global_variable win32_wasapi_audio WasapiAudio;
-global_variable s64 GlobalPerfCountFrequency;
+static b32 GlobalRunning;
+static b32 GlobalPause;
+static win32_offscreen_buffer GlobalBackbuffer;
+static win32_wasapi_audio WasapiAudio;
+static s64 GlobalPerfCountFrequency;
 
 
 // NOTE(casey): XInputGetState
@@ -68,7 +68,7 @@ X_INPUT_GET_STATE(XInputGetStateStub)
 {
     return(ERROR_DEVICE_NOT_CONNECTED);
 }
-global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
+static x_input_get_state *XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
 
 // NOTE(casey): XInputSetState
@@ -78,7 +78,7 @@ X_INPUT_SET_STATE(XInputSetStateStub)
 {
     return(ERROR_DEVICE_NOT_CONNECTED);
 }
-global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
+static x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
 static void
@@ -161,7 +161,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
         LARGE_INTEGER FileSize;
         if(GetFileSizeEx(FileHandle, &FileSize))
         {
-            u32 FileSize32 = SafeTruncateUInt64(FileSize.QuadPart);
+            u32 FileSize32 = SafeTruncateU64ToU32(FileSize.QuadPart);
             Result.Contents = VirtualAlloc(0, FileSize32, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             if(Result.Contents)
             {
@@ -175,7 +175,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
                 else
                 {                    
                     // TODO(casey): Logging
-                    DEBUGPlatformFreeFileMemory(Thread, Result.Contents);
+                    DEBUGPlatformFreeFileMemory(Result.Contents);
                     Result.Contents = 0;
                 }
             }
@@ -201,7 +201,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
 
 DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 {
-    bool32 Result = false;
+    b32 Result = false;
     
     HANDLE FileHandle = CreateFileA(Filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
     if(FileHandle != INVALID_HANDLE_VALUE)
@@ -517,7 +517,7 @@ Win32MainWindowCallback(HWND Window,
 }
 
 static void
-Win32ProcessKeyboardMessage(game_button_state *NewState, bool32 IsDown)
+Win32ProcessKeyboardMessage(game_button_state *NewState, b32 IsDown)
 {
     if(NewState->EndedDown != IsDown)
     {
@@ -553,7 +553,7 @@ Win32ProcessXInputStickValue(SHORT Value, SHORT DeadZoneThreshold)
 }
 
 static void
-Win32GetInputFileLocation(win32_state *State, bool32 InputStream,
+Win32GetInputFileLocation(win32_state *State, b32 InputStream,
                           int SlotIndex, int DestCount, char *Dest)
 {
     char Temp[64];
@@ -674,8 +674,8 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 // NOTE(casey): Since we are comparing WasDown to IsDown,
                 // we MUST use == and != to convert these bit tests to actual
                 // 0 or 1 values.
-                bool32 WasDown = ((Message.lParam & (1 << 30)) != 0);
-                bool32 IsDown = ((Message.lParam & (1 << 31)) == 0);
+                b32 WasDown = ((Message.lParam & (1 << 30)) != 0);
+                b32 IsDown = ((Message.lParam & (1 << 31)) == 0);
                 if(WasDown != IsDown)
                 {
                     if(VKCode == 'W')
@@ -759,7 +759,7 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
 #endif
                 }
 
-                bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
+                b32 AltKeyWasDown = (Message.lParam & (1 << 29));
                 if((VKCode == VK_F4) && AltKeyWasDown)
                 {
                     GlobalRunning = false;
@@ -902,6 +902,9 @@ WinMain(HINSTANCE Instance,
 {
     win32_state Win32State = {};
 
+    // TODO: We don't care about QueryPerformanceCounter; replace this with implementation which
+    //      only queries it to determine the Hz of __rdtsc, and does all timing using
+    //      __rdtsc exclusively
     LARGE_INTEGER PerfCountFrequencyResult;
     QueryPerformanceFrequency(&PerfCountFrequencyResult);
     GlobalPerfCountFrequency = PerfCountFrequencyResult.QuadPart;
@@ -919,7 +922,7 @@ WinMain(HINSTANCE Instance,
     // NOTE(casey): Set the Windows scheduler granularity to 1ms
     // so that our Sleep() can be more granular.
     UINT DesiredSchedulerMS = 1;
-    bool32 SleepIsGranular = (timeBeginPeriod(DesiredSchedulerMS) == TIMERR_NOERROR);
+    b32 SleepIsGranular = (timeBeginPeriod(DesiredSchedulerMS) == TIMERR_NOERROR);
     
     Win32LoadXInput();
     
@@ -988,7 +991,6 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
             GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
             GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
-            GameMemory.RandomSeed = Win32GetWallClock().LowPart;
 
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
@@ -1044,7 +1046,7 @@ WinMain(HINSTANCE Instance,
     
                 LARGE_INTEGER LastCounter = Win32GetWallClock();
                 LARGE_INTEGER FlipWallClock = Win32GetWallClock();
-                real64 MSPerFrame = 0;
+                f64 MSPerFrame = 0;
 
                 win32_game_code Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
                                                          TempGameCodeDLLFullPath);
@@ -1216,8 +1218,6 @@ WinMain(HINSTANCE Instance,
                             }
                         }
 
-                        thread_context Thread = {};
-                        
                         game_offscreen_buffer Buffer = {};
                         Buffer.Memory = GlobalBackbuffer.Memory;
                         Buffer.Width = GlobalBackbuffer.Width; 
@@ -1236,7 +1236,7 @@ WinMain(HINSTANCE Instance,
                         }
                         if(Game.UpdateAndRender)
                         {
-                            Game.UpdateAndRender(&Thread, &GameMemory, NewInput, &Buffer);
+                            Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
                         }
 
                         u32 Padding;
@@ -1249,7 +1249,7 @@ WinMain(HINSTANCE Instance,
                         SoundBuffer.Samples = Samples;
                         if(Game.GetSoundSamples)
                         {
-                            Game.GetSoundSamples(&Thread, &GameMemory, &SoundBuffer);
+                            Game.GetSoundSamples(&GameMemory, &SoundBuffer);
                         }
 
                         BYTE *Output;

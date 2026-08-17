@@ -31,7 +31,7 @@ struct win32_sound_output
     int BytesPerSample;
     DWORD SecondaryBufferSize;
     DWORD SafetyBytes;
-    real32 tSine;
+    f32 tSine;
     // TODO(casey): Should running sample index be in bytes as well
     // TODO(casey): Math gets simpler if we add a "bytes per second" field?
 };
@@ -58,7 +58,7 @@ struct win32_game_code
     game_update_and_render *UpdateAndRender;
     game_get_sound_samples *GetSoundSamples;
 
-    bool32 IsValid;
+    b32 IsValid;
 };
 
 struct win32_wasapi_audio
