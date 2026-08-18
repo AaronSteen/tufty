@@ -53,7 +53,7 @@ typedef int64_t s64;
 typedef s32 b32;
 typedef float f32;
 typedef double f64;
-typedef size_t memory_index;
+typedef size_t memory_idx;
 
 #define Assert(Expression) if(!(Expression)) {*(volatile int *)0 = 1;}
 
@@ -179,10 +179,10 @@ typedef struct game_memory
 {
     b32 IsInitialized;
 
-    memory_index PermanentStorageSize;
+    memory_idx PermanentStorageSize;
     void *PermanentStorage; // platform must clear to zero at startup
 
-    memory_index TransientStorageSize;
+    memory_idx TransientStorageSize;
     void *TransientStorage; // platform must clear to zero at startup
 
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
