@@ -147,19 +147,34 @@ typedef struct game_controller_input
 
             game_button_state Back;
             game_button_state Start;
-
-            game_button_state Terminator;
         };
     };
 } game_controller_input;
 
+typedef struct game_mouse_input
+{
+    s32 X, Y;
+
+    // Unused for now
+    s32 WheelDelta;
+
+    union
+    {
+        game_button_state Buttons[3];
+        struct
+        {
+            game_button_state Primary;
+            game_button_state WheelClick;
+            game_button_state Secondary;
+        };
+    };
+} game_mouse_input;
+
 typedef struct game_input
 {
-    game_button_state MouseButtons[5];
-    s32 MouseX, MouseY, MouseZ;
+    game_mouse_input Mouse;
 
     f32 dtForFrame;
-
     f32 MSForLastFrame;
 
     game_controller_input Controllers[5];

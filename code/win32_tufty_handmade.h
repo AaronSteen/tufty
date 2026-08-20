@@ -7,6 +7,9 @@
    $Notice: (C) Copyright 2014 by Molly Rocket, Inc. All Rights Reserved. $
    ======================================================================== */
 
+#define WIN32_BACKBUFFER_OFFSET_X 10
+#define WIN32_BACKBUFFER_OFFSET_Y 10
+
 struct win32_offscreen_buffer
 {
     // NOTE(casey): Pixels are alwasy 32-bits wide, Memory Order BB GG RR XX

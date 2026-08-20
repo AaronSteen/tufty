@@ -433,19 +433,16 @@ static void
 Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer,
                            HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
-    int OffsetX = 10;
-    int OffsetY = 10;
-
-    PatBlt(DeviceContext, 0, 0, WindowWidth, OffsetY, BLACKNESS);
-    PatBlt(DeviceContext, 0, OffsetY + Buffer->Height, WindowWidth, WindowHeight, BLACKNESS);
-    PatBlt(DeviceContext, 0, 0, OffsetX, WindowHeight, BLACKNESS);
-    PatBlt(DeviceContext, OffsetX + Buffer->Width, 0, WindowWidth, WindowHeight, BLACKNESS);
+    PatBlt(DeviceContext, 0, 0, WindowWidth, WIN32_BACKBUFFER_OFFSET_Y, BLACKNESS);
+    PatBlt(DeviceContext, 0, WIN32_BACKBUFFER_OFFSET_Y + Buffer->Height, WindowWidth, WindowHeight, BLACKNESS);
+    PatBlt(DeviceContext, 0, 0, WIN32_BACKBUFFER_OFFSET_X, WindowHeight, BLACKNESS);
+    PatBlt(DeviceContext, WIN32_BACKBUFFER_OFFSET_X + Buffer->Width, 0, WindowWidth, WindowHeight, BLACKNESS);
     
     // NOTE(casey): For prototyping purposes, we're going to always blit
     // 1-to-1 pixels to make sure we don't introduce artifacts with
     // stretching while we are learning to code the renderer!
     StretchDIBits(DeviceContext,
-                  OffsetX, OffsetY, Buffer->Width, Buffer->Height,
+                  WIN32_BACKBUFFER_OFFSET_X, WIN32_BACKBUFFER_OFFSET_Y, Buffer->Width, Buffer->Height,
                   0, 0, Buffer->Width, Buffer->Height,
                   Buffer->Memory,
                   &Buffer->Info,
@@ -517,7 +514,7 @@ Win32MainWindowCallback(HWND Window,
 }
 
 static void
-Win32ProcessKeyboardMessage(game_button_state *NewState, b32 IsDown)
+Win32ProcessKeyboardAndMouseMessage(game_button_state *NewState, b32 IsDown)
 {
     if(NewState->EndedDown != IsDown)
     {
@@ -652,7 +649,7 @@ Win32PlayBackInput(win32_state *State, game_input *NewInput)
 }
 
 static void
-Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController)
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, game_mouse_input *Mouse)
 {
     MSG Message;
     while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -680,53 +677,53 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 {
                     if(VKCode == 'W')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->MoveUp, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveUp, IsDown);
                     }
                     else if(VKCode == 'A')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->MoveLeft, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveLeft, IsDown);
                     }
                     else if(VKCode == 'S')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->MoveDown, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveDown, IsDown);
                     }
                     else if(VKCode == 'D')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->MoveRight, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveRight, IsDown);
                     }
                     else if(VKCode == 'Q')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->LeftShoulder, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->LeftShoulder, IsDown);
                     }
                     else if(VKCode == 'E')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->RightShoulder, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->RightShoulder, IsDown);
                     }
                     else if(VKCode == 'I')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->ActionUp, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionUp, IsDown);
                     }
                     else if(VKCode == 'J')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->ActionLeft, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionLeft, IsDown);
                     }
                     else if(VKCode == 'K')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->ActionDown, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionDown, IsDown);
                     }
                     else if(VKCode == 'L')
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->ActionRight, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionRight, IsDown);
                     }
                     else if(VKCode == VK_ESCAPE)
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->Start, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->Start, IsDown);
                     }
                     else if(VKCode == VK_SPACE)
                     {
-                        Win32ProcessKeyboardMessage(&KeyboardController->Back, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->Back, IsDown);
                     }
-#if HANDMADE_static
+#if TUFTY_INTERNAL
                     else if(VKCode == 'P')
                     {
                         if(IsDown)
@@ -764,6 +761,35 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 {
                     GlobalRunning = false;
                 }
+            } break;
+
+            // TODO(Aaron): This is rudimentary; for example, we do not handle clicking and dragging, double clicks,
+            //      the button sticking if we click down inside our window but release outside it.
+            //      Claude says check SetCapture/ReleaseCapture will handle this.
+            //      Also we do not handle anything from the mousewheel other than it being clicked.
+            //
+
+            case WM_LBUTTONDOWN: case WM_LBUTTONUP:
+            case WM_MBUTTONDOWN: case WM_MBUTTONUP:
+            case WM_RBUTTONDOWN: case WM_RBUTTONUP:
+            {
+                b32 IsDown = ((Message.message == WM_LBUTTONDOWN) ||
+                              (Message.message == WM_MBUTTONDOWN) ||
+                              (Message.message == WM_RBUTTONDOWN));
+
+                // Primary is left button for right-handed mouse, right button for a mouse the user
+                //      has set up to be left-handed with Windows; vice-versa for Secondary
+                game_button_state *Button = &Mouse->Primary;
+                if((Message.message == WM_MBUTTONDOWN) || (Message.message == WM_MBUTTONUP))
+                {
+                    Button = &Mouse->WheelClick;
+                }
+                else if((Message.message == WM_RBUTTONDOWN) || (Message.message == WM_RBUTTONUP))
+                {
+                    Button = &Mouse->Secondary;
+                }
+
+                Win32ProcessKeyboardAndMouseMessage(Button, IsDown);
             } break;
 
             default:
@@ -1082,27 +1108,26 @@ WinMain(HINSTANCE Instance,
                             OldKeyboardController->Buttons[ButtonIndex].EndedDown;
                     }
 
-                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController);
+                    game_mouse_input *OldMouse = &OldInput->Mouse;
+                    game_mouse_input *NewMouse = &NewInput->Mouse;
+                    *NewMouse = {};
+                    for(int ButtonIdx = 0;
+                        ButtonIdx < ArrayCount(NewMouse->Buttons);
+                        ++ButtonIdx)
+                    {
+                        NewMouse->Buttons[ButtonIdx].EndedDown = OldMouse->Buttons[ButtonIdx].EndedDown;
+                    }
+
+                    POINT MouseP;
+                    GetCursorPos(&MouseP);
+                    ScreenToClient(Window, &MouseP);
+                    NewMouse->X = MouseP.x - WIN32_BACKBUFFER_OFFSET_X;
+                    NewMouse->Y = MouseP.y - WIN32_BACKBUFFER_OFFSET_Y;
+
+                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewMouse);
 
                     if(!GlobalPause)
                     {
-                        POINT MouseP;
-                        GetCursorPos(&MouseP);
-                        ScreenToClient(Window, &MouseP);
-                        NewInput->MouseX = MouseP.x;
-                        NewInput->MouseY = MouseP.y;
-                        NewInput->MouseZ = 0; // TODO(casey): Support mousewheel?
-                        Win32ProcessKeyboardMessage(&NewInput->MouseButtons[0],
-                                                    GetKeyState(VK_LBUTTON) & (1 << 15));
-                        Win32ProcessKeyboardMessage(&NewInput->MouseButtons[1],
-                                                    GetKeyState(VK_MBUTTON) & (1 << 15));
-                        Win32ProcessKeyboardMessage(&NewInput->MouseButtons[2],
-                                                    GetKeyState(VK_RBUTTON) & (1 << 15));
-                        Win32ProcessKeyboardMessage(&NewInput->MouseButtons[3],
-                                                    GetKeyState(VK_XBUTTON1) & (1 << 15));
-                        Win32ProcessKeyboardMessage(&NewInput->MouseButtons[4],
-                                                    GetKeyState(VK_XBUTTON2) & (1 << 15));
-                        
                         // TODO(casey): Need to not poll disconnected controllers to avoid
                         // xinput frame rate hit on older libraries...
                         // TODO(casey): Should we poll this more frequently
