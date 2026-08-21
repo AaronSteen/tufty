@@ -30,6 +30,7 @@
 #include "tufty_platform.h"
 
 #include <windows.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <malloc.h>
 #include <xinput.h>
@@ -143,6 +144,19 @@ Win32BuildEXEPathFileName(win32_state *State, char *FileName,
                DestCount, Dest);
 }
 
+DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
+{
+    u64 Result = 0;
+    struct __stat64 Stat;
+    if(_stat64(Filename, &Stat) == -1)
+    {
+        return(Result);
+    }
+    
+    Result = Stat.st_size;
+    return(Result);
+}
+
 DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
 {
     if(Memory)
@@ -224,6 +238,54 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
         // TODO(casey): Logging
     }
 
+    return(Result);
+}
+
+// #define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
+DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
+{
+    u64 Result = 0;
+    WIN32_FILE_ATTRIBUTE_DATA Data;
+    if(GetFileAttributesEx(Filename, GetFileExInfoStandard, &Data))
+    {
+        ULARGE_INTEGER Time;
+        Time.LowPart  = Data.ftLastWriteTime.dwLowDateTime;
+        Time.HighPart = Data.ftLastWriteTime.dwHighDateTime;
+        Result = Time.QuadPart;
+    }
+    return(Result);
+}
+
+// #define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
+DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
+{
+    u32 Result = 0;
+    HANDLE FileHandle = CreateFileA(Filename, // lpFileName
+                                    GENERIC_READ, // dwDesiredAccess
+                                    FILE_SHARE_READ, // dwShareMode
+                                    0, // lpSecurityAttributes, optional
+                                    OPEN_EXISTING, // dwCreationDisposition
+                                    0, // dwFlagsAndAttributes, MSDN says this is not optional, but StackOverflow says pass 0 if you don't care.
+                                    0);  // hTemplateFile, optional
+
+    if(FileHandle != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER FileSize;
+        if(GetFileSizeEx(FileHandle, &FileSize))
+        {
+            u32 FileSize32 = SafeTruncateU64ToU32(FileSize.QuadPart);
+            if(FileSize32 <= DestSize)
+            {
+                DWORD BytesRead;
+                if(ReadFile(FileHandle, Dest, FileSize32, &BytesRead, 0) &&
+                   (FileSize32 == BytesRead))
+                {
+                    Result = FileSize32;
+                }
+            }
+        }
+        CloseHandle(FileHandle);
+    }
     return(Result);
 }
 
@@ -1017,7 +1079,9 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
             GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
             GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
-
+            GameMemory.DEBUGPlatformGetFileSize = DEBUGPlatformGetFileSize;
+            GameMemory.DEBUGPlatformReadFileInto = DEBUGPlatformReadFileInto;
+            GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token

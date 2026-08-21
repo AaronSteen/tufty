@@ -85,6 +85,9 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
+#define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
+typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
+
 #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
 typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
@@ -93,6 +96,13 @@ typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
 
 #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, u32 MemorySize, void *Memory)
 typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
+
+#define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
+typedef DEBUG_PLATFORM_GET_FILE_WRITE_TIME(debug_platform_get_file_write_time);
+
+// this returns either the number of bytes read, or 0 if the file was missing, too big, or locked
+#define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
+typedef DEBUG_PLATFORM_READ_FILE_INTO(debug_platform_read_file_into);
 
 #endif
 
@@ -203,6 +213,9 @@ typedef struct game_memory
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
     debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
     debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
+    debug_platform_get_file_size *DEBUGPlatformGetFileSize;
+    debug_platform_read_file_into *DEBUGPlatformReadFileInto;
+    debug_platform_get_file_write_time *DEBUGPlatformGetFileWriteTime;
 } game_memory;
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)

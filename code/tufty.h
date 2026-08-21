@@ -37,12 +37,15 @@ struct v2
 
 struct bitmap
 {
-    u8 *Pixels;
+    // This is the entire bitmap file, including the header
+    u8 *Memory;
     memory_idx Size;
-    int Height;
-    int Width;
-    int BytesPerPixel;
-    int Pitch;
+    char *Filename;
+    u64 LastWriteTime;
+
+    // Where the pixels actually live
+    u8 *Pixels;
+    int Height, Width, BytesPerPixel, Pitch;
 };
 
 enum facing
@@ -68,7 +71,7 @@ struct bitmap_header
     u32 FileSize;
     u8 Reserved[4];
     u32 DataOffset;
-    u32 Size;
+    u32 HeaderSize;
     u32 Width;
     s32 Height;
     u16 Planes;
@@ -79,8 +82,7 @@ struct bitmap_header
     u32 YPixelsPerMeter;
     u32 ColorsUsed;
     u32 ImportantColors;
-    u32 RedMask;
-    u32 GreenMask;
-    u32 BlueMask;
+    // NOTE(Aaron): May need to adopt alpha and RGB masks fields from Beaver at some point, but
+    //      for now we don't use.
 };
 #pragma pack(pop)

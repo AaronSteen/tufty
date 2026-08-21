@@ -103,7 +103,7 @@ DEBUGLoadBitmap(char *Filename, debug_platform_read_entire_file *ReadEntireFile)
     bitmap Result;
     debug_read_file_result ReadResult = ReadEntireFile(Filename);
     bitmap_header *Header = (bitmap_header *)ReadResult.Contents;
-    Result.Size = (size_t)Header->Size;
+    Result.Size = (size_t)Header->FileSize;
     Result.Pixels = (u8 *)ReadResult.Contents + Header->DataOffset;
     Result.Height = Header->Height;
     Result.Width = Header->Width;
@@ -142,6 +142,33 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     }
 }
 
+static void
+ParseBitmapHeader(bitmap *Bitmap)
+{
+    bitmap_header *Header = (bitmap_header *)Bitmap->Memory;
+    Bitmap->Pixels = (u8 *)Bitmap->Memory + Header->DataOffset;
+    Bitmap->Height = Header->Height;
+    Bitmap->Width = Header->Width;
+    Assert(Header->BitsPerPixel == 32);
+    Bitmap->BytesPerPixel = Header->BitsPerPixel / 8;
+    Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
+}
+
+static void
+DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
+{
+    // NOTE(Aaron): as of now, reloaded bitmap is REQUIRED to have the same dimensions as the old one
+    u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filename);
+    if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
+    {
+        if(Memory->DEBUGPlatformReadFileInto(Bitmap->Filename,
+                                             (u32)Bitmap->Size, Bitmap->Memory))
+        {
+            ParseBitmapHeader(Bitmap);
+            Bitmap->LastWriteTime = WriteTime;
+        }
+    }
+}
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -150,13 +177,57 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(!(Memory->IsInitialized))
     {
         InitializeArena(&GameState->WorldArena, (u8 *)Memory->PermanentStorage + sizeof(game_state), 
-                        Memory->PermanentStorageSize-sizeof(game_state));
+                        Memory->PermanentStorageSize - sizeof(game_state));
 
         GameState->PlayerP.X = Buffer->Width / 2;
         GameState->PlayerP.Y = Buffer->Height / 2;
-        GameState->PlayerFacing = SOUTH;
+        GameState->PlayerFacing = EAST;
+
+        // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
+        bitmap *East = &GameState->PlayerBitmaps[EAST];
+        East->Filename = "16x16faceright.bmp";
+        East->Size = Memory->DEBUGPlatformGetFileSize(East->Filename);
+        East->Memory = PushArray(&GameState->WorldArena, u8, East->Size);
+        DEBUGReloadBitmapIfChanged(East, Memory);
+
+        bitmap *North = &GameState->PlayerBitmaps[NORTH];
+        North->Filename = "16x16behindview.bmp";
+        North->Size = Memory->DEBUGPlatformGetFileSize(North->Filename);
+        North->Memory = PushArray(&GameState->WorldArena, u8, North->Size);
+        DEBUGReloadBitmapIfChanged(North, Memory);
+
+        bitmap *West = &GameState->PlayerBitmaps[WEST];
+        West->Filename = "16x16faceleft.bmp";
+        West->Size = Memory->DEBUGPlatformGetFileSize(West->Filename);
+        West->Memory = PushArray(&GameState->WorldArena, u8, West->Size);
+        DEBUGReloadBitmapIfChanged(West, Memory);
+
+        bitmap *South = &GameState->PlayerBitmaps[SOUTH];
+        South->Filename = "16x16frontview.bmp";
+        South->Size = Memory->DEBUGPlatformGetFileSize(South->Filename);
+        South->Memory = PushArray(&GameState->WorldArena, u8, South->Size);
+        DEBUGReloadBitmapIfChanged(South, Memory);
+
+        // STOP. 
+        GameState->PlayerBitmaps[NORTH].Filename = "16x16behindview.bmp";
+        GameState->PlayerBitmaps[WEST].Filename = "16x16faceleft.bmp";
+        GameState->PlayerBitmaps[SOUTH].Filename = "16x16frontview.bmp";
+
+
+
+
+        
+
 
         Memory->IsInitialized = true;
+    }
+
+    // hot reload bitmaps
+    for(int PlayerBitmapIdx = 0;
+        PlayerBitmapIdx < 4;
+        ++PlayerBitmapIdx)
+    {
+        DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
     }
 
     for(int ControllerIdx = 0;
@@ -222,10 +293,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    GameState->PlayerBitmaps[EAST] = DEBUGLoadBitmap("16x16faceright.bmp", Memory->DEBUGPlatformReadEntireFile);
-    GameState->PlayerBitmaps[NORTH] = DEBUGLoadBitmap("16x16behindview.bmp", Memory->DEBUGPlatformReadEntireFile);
-    GameState->PlayerBitmaps[WEST] = DEBUGLoadBitmap("16x16faceleft.bmp", Memory->DEBUGPlatformReadEntireFile);
-    GameState->PlayerBitmaps[SOUTH] = DEBUGLoadBitmap("16x16frontview.bmp", Memory->DEBUGPlatformReadEntireFile);
 
     // Underlayer
     f32 ScreenMinY = 0;
@@ -239,6 +306,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y};
 
+    // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+    //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
 
