@@ -1,4 +1,8 @@
 #pragma once
+
+#if TUFTY_INTERNAL
+#include <stdio.h>
+#endif
 #include "tufty_platform.h"
 
 struct arena
@@ -27,7 +31,7 @@ ArenaPush_(arena *Arena, memory_idx NumBytes)
     return(Result);
 }
 
-#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count))
+#define PushArray(Arena, Type, Count) (buffer){((Type *)ArenaPush_((Arena), sizeof(Type) * (Count))), Count}
 #define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type))
 
 struct v2
@@ -35,11 +39,16 @@ struct v2
     f32 X, Y;
 };
 
+struct buffer
+{
+    u8 *Start;
+    memory_idx Size;
+};
+
 struct bitmap
 {
     // This is the entire bitmap file, including the header
-    u8 *Memory;
-    memory_idx Size;
+    buffer Buffer;
     char *Filename;
     u64 LastWriteTime;
 
@@ -54,6 +63,13 @@ enum facing
     NORTH,
     WEST,
     SOUTH
+};
+
+
+struct debug_state
+{
+    arena DebugArena;
+    buffer DebugText;
 };
 
 struct game_state

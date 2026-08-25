@@ -1,7 +1,19 @@
 #include "tufty.h"
+#include "stb_easy_font.h"
 
 #define PLAYER_HEIGHT 256.0f
-#define PLAYER_WIDTH (256.0f)
+#define PLAYER_WIDTH  256.0f
+
+struct vertex
+{
+    f32 X, Y, Z;
+    u32 Color;
+};
+
+struct quad
+{
+    vertex TopLeft, TopRight, BottomRight, BottomLeft;
+};
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -24,13 +36,14 @@ TruncateF32ToU32(f32 Real)
     return(Result);
 }
 
+
 static void
-DrawRect(game_offscreen_buffer *Buf, f32 RealMinX, f32 RealMinY, f32 RealMaxX, f32 RealMaxY, f32 R, f32 G, f32 B)
+DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
 {
-    s32 MinX = RoundF32ToS32(RealMinX);
-    s32 MinY = RoundF32ToS32(RealMinY);
-    s32 MaxX = RoundF32ToS32(RealMaxX);
-    s32 MaxY = RoundF32ToS32(RealMaxY);
+    s32 MinX = RoundF32ToS32(Min.X);
+    s32 MinY = RoundF32ToS32(Min.Y);
+    s32 MaxX = RoundF32ToS32(Max.X);
+    s32 MaxY = RoundF32ToS32(Max.Y);
 
     if(MinX < 0)
     {
@@ -66,6 +79,25 @@ DrawRect(game_offscreen_buffer *Buf, f32 RealMinX, f32 RealMinY, f32 RealMaxX, f
     }
 }
 
+void
+DEBUGDrawText(game_offscreen_buffer *Buf,
+              f32 X, f32 Y,
+              char *StringText, buffer RasterizedTextBuf,
+              f32 R, f32 G, f32 B)
+{
+    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuf.Start, RasterizedTextBuf.Size);
+    for(int QuadIdx = 0;
+        QuadIdx < NumQuads;
+        ++QuadIdx)
+    {
+        quad *ThisQuad = (quad *)(RasterizedTextBuf.Start + QuadIdx * sizeof(quad));
+        v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
+        v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
+        DrawRect(Buf, Min, Max, R, G, B);
+    }
+}
+
+
 static void
 GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 {
@@ -96,35 +128,34 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
-static bitmap
-DEBUGLoadBitmap(char *Filename, debug_platform_read_entire_file *ReadEntireFile)
-{
-    // not checking a lot of stuff here. doing casts of uints to s-ints, etc. Hence DEBUG
-    bitmap Result;
-    debug_read_file_result ReadResult = ReadEntireFile(Filename);
-    bitmap_header *Header = (bitmap_header *)ReadResult.Contents;
-    Result.Size = (size_t)Header->FileSize;
-    Result.Pixels = (u8 *)ReadResult.Contents + Header->DataOffset;
-    Result.Height = Header->Height;
-    Result.Width = Header->Width;
-    Assert(Header->BitsPerPixel == 32);
-    Result.BytesPerPixel = Header->BitsPerPixel / 8;
-    Result.Pitch = Result.Width * Result.BytesPerPixel;
-
-    return(Result);
-}
-
 static void
 ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
-    // Note: this will probably write out of bounds as soon as we try to render
-    //      the player walking off the side of the screen.
+    //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
+
     u32 MinY = RoundF32ToU32(Min.Y);
     u32 MaxY = RoundF32ToU32(Max.Y);
     u32 MinX = RoundF32ToU32(Min.X);
     u32 MaxX = RoundF32ToU32(Max.X);
+
+    if(MinY < 0)
+    {
+        MinY = 0;
+    }
+    if(MaxY > Buf->Height)
+    {
+        MaxY = Buf->Height;
+    }
+    if(MinX < 0)
+    {
+        MinX = 0;
+    }
+    if(MaxX > Buf->Width)
+    {
+        MaxX = Buf->Width;
+    }
 
     u8 *DestRow = (u8 *)Buf->Memory + MinY * Buf->Pitch + MinX * Buf->BytesPerPixel;
     for(int Y = MinY; Y < MaxY; ++Y)
@@ -145,8 +176,8 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 static void
 ParseBitmapHeader(bitmap *Bitmap)
 {
-    bitmap_header *Header = (bitmap_header *)Bitmap->Memory;
-    Bitmap->Pixels = (u8 *)Bitmap->Memory + Header->DataOffset;
+    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Start;
+    Bitmap->Pixels = Bitmap->Buffer.Start + Header->DataOffset;
     Bitmap->Height = Header->Height;
     Bitmap->Width = Header->Width;
     Assert(Header->BitsPerPixel == 32);
@@ -157,12 +188,13 @@ ParseBitmapHeader(bitmap *Bitmap)
 static void
 DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 {
-    // NOTE(Aaron): as of now, reloaded bitmap is REQUIRED to have the same dimensions as the old one
+    // NOTE(Aaron): as of now, reloaded bitmap is REQUIRED to have the same dimensions as the old one,
     u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filename);
     if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
     {
-        if(Memory->DEBUGPlatformReadFileInto(Bitmap->Filename,
-                                             (u32)Bitmap->Size, Bitmap->Memory))
+        Bitmap->Buffer.Size = Memory->DEBUGPlatformReadFileInto(Bitmap->Filename,
+                                             (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Start);
+        if(Bitmap->Buffer.Size)
         {
             ParseBitmapHeader(Bitmap);
             Bitmap->LastWriteTime = WriteTime;
@@ -173,11 +205,27 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-    game_state *GameState = (game_state *)Memory->PermanentStorage;
+    u32 DebugStateNumBytes = Megabytes(16);
+    u32 GameStateNumBytes = Memory->PermanentStorageSize - DebugStateNumBytes;
+
+    debug_state *DebugState = (debug_state *)Memory->PermanentStorage;
+    game_state *GameState = (game_state *)((u8 *)Memory->PermanentStorage + DebugStateNumBytes);
+
     if(!(Memory->IsInitialized))
     {
-        InitializeArena(&GameState->WorldArena, (u8 *)Memory->PermanentStorage + sizeof(game_state), 
-                        Memory->PermanentStorageSize - sizeof(game_state));
+
+        InitializeArena(&DebugState->DebugArena,
+                        ((u8 *)Memory->PermanentStorage + sizeof(debug_state)),
+                        (DebugStateNumBytes - sizeof(debug_state)));
+        DebugState->DebugText = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
+        // DebugState->DebugText.Size = Megabytes(2);
+        // DebugState->DebugText.Start = PushArray(&DebugState->DebugArena, u8, DebugText.Size);
+
+        InitializeArena(&GameState->WorldArena, 
+                        ((u8 *)Memory->PermanentStorage + DebugStateNumBytes + sizeof(game_state)),
+                        (GameStateNumBytes - sizeof(game_state)));
+
+        Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + GameState->WorldArena.Size) == Memory->PermanentStorageSize);
 
         GameState->PlayerP.X = Buffer->Width / 2;
         GameState->PlayerP.Y = Buffer->Height / 2;
@@ -186,38 +234,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
         bitmap *East = &GameState->PlayerBitmaps[EAST];
         East->Filename = "16x16faceright.bmp";
-        East->Size = Memory->DEBUGPlatformGetFileSize(East->Filename);
-        East->Memory = PushArray(&GameState->WorldArena, u8, East->Size);
+        East->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(East->Filename));
         DEBUGReloadBitmapIfChanged(East, Memory);
 
         bitmap *North = &GameState->PlayerBitmaps[NORTH];
         North->Filename = "16x16behindview.bmp";
-        North->Size = Memory->DEBUGPlatformGetFileSize(North->Filename);
-        North->Memory = PushArray(&GameState->WorldArena, u8, North->Size);
+        North->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(North->Filename));
         DEBUGReloadBitmapIfChanged(North, Memory);
 
         bitmap *West = &GameState->PlayerBitmaps[WEST];
         West->Filename = "16x16faceleft.bmp";
-        West->Size = Memory->DEBUGPlatformGetFileSize(West->Filename);
-        West->Memory = PushArray(&GameState->WorldArena, u8, West->Size);
+        West->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(West->Filename));
         DEBUGReloadBitmapIfChanged(West, Memory);
 
         bitmap *South = &GameState->PlayerBitmaps[SOUTH];
         South->Filename = "16x16frontview.bmp";
-        South->Size = Memory->DEBUGPlatformGetFileSize(South->Filename);
-        South->Memory = PushArray(&GameState->WorldArena, u8, South->Size);
+        South->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(South->Filename));
         DEBUGReloadBitmapIfChanged(South, Memory);
-
-        // STOP. 
-        GameState->PlayerBitmaps[NORTH].Filename = "16x16behindview.bmp";
-        GameState->PlayerBitmaps[WEST].Filename = "16x16faceleft.bmp";
-        GameState->PlayerBitmaps[SOUTH].Filename = "16x16frontview.bmp";
-
-
-
-
-        
-
 
         Memory->IsInitialized = true;
     }
@@ -293,13 +326,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-
     // Underlayer
-    f32 ScreenMinY = 0;
-    f32 ScreenMinX = 0;
-    f32 ScreenMaxX = (f32)Buffer->Width;
-    f32 ScreenMaxY = (f32)Buffer->Height;
-    DrawRect(Buffer, ScreenMinX, ScreenMinY, ScreenMaxX, ScreenMaxY, 0.75f, 0.25f, 0.5f);
+    v2 ScreenMin = {0, 0};
+    v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
+        
+    DrawRect(Buffer, ScreenMin, ScreenMax, 0.75f, 0.25f, 0.5f);
 
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};
@@ -310,12 +341,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
-
-    // DrawRect(Buffer, 
-    //          GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), GameState->PlayerP.Y - PLAYER_HEIGHT,
-    //          GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), GameState->PlayerP.Y,
-    //          0, 0, 0);
-
+    char Temp[256];
+    snprintf(Temp, sizeof(Temp), "X: %d, Y: %d", Input->Mouse.X, Input->Mouse.Y);
+    DEBUGDrawText(Buffer, Input->Mouse.X, Input->Mouse.Y, Temp, DebugState->DebugText, 0.2f, 0.9f, 0.2f);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
