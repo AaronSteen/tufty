@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <xinput.h>
+#include <intrin.h>
 
 // WASAPI
 #include <initguid.h>
@@ -59,7 +60,7 @@ static b32 GlobalRunning;
 static b32 GlobalPause;
 static win32_offscreen_buffer GlobalBackbuffer;
 static win32_wasapi_audio WasapiAudio;
-static s64 GlobalPerfCountFrequency;
+static u64 GlobalCpuFreq;
 
 
 // NOTE(casey): XInputGetState
@@ -142,6 +143,27 @@ Win32BuildEXEPathFileName(win32_state *State, char *FileName,
     CatStrings(State->OnePastLastEXEFileNameSlash - State->EXEFileName, State->EXEFileName,
                StringLength(FileName), FileName,
                DestCount, Dest);
+}
+
+static void
+DebugOutput(const char *Format, ...)
+{
+    char PrintBuffer[512];
+    int PrintBufferSize = sizeof(PrintBuffer);
+
+    va_list Args;
+    va_start(Args, Format);
+    int BytesWritten = vsnprintf(PrintBuffer, PrintBufferSize, Format, Args);
+    va_end(Args);
+
+    if(BytesWritten > PrintBufferSize)
+    {
+        OutputDebugStringA("\n\nERROR: DebugOutput function format string did not fit in print buffer\n\n");
+    }
+    OutputDebugStringA(PrintBuffer);
+    OutputDebugStringA("\n");
+
+    return;
 }
 
 DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
@@ -286,6 +308,58 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
         }
         CloseHandle(FileHandle);
     }
+    return(Result);
+}
+
+static u64
+GetOsTimerFreq(void)
+{
+    LARGE_INTEGER Freq;
+    QueryPerformanceFrequency(&Freq);
+    return(Freq.QuadPart);
+}
+
+static u64
+ReadOsTimer(void)
+{
+    LARGE_INTEGER Counter;
+    QueryPerformanceCounter(&Counter);
+    return(Counter.QuadPart);
+}
+
+static u64
+ReadCpuTimer(void)
+{
+    u64 Result = __rdtsc();
+    return(Result);
+}
+
+
+static u64
+GuessCpuTimerFreq(void)
+{
+    u64 Result = 0;
+    u64 OsTimerFreq = GetOsTimerFreq();
+    u64 OsWaitTime = 0.1f * OsTimerFreq;
+
+    u64 CpuStart = ReadCpuTimer();
+    u64 OsStart = ReadOsTimer();
+    u64 OsEnd = 0;
+    u64 OsElapsed = 0;
+
+    while(OsElapsed < OsWaitTime)
+    {
+        OsEnd = ReadOsTimer();
+        OsElapsed = OsEnd - OsStart;
+    }
+    u64 CpuEnd = ReadCpuTimer();
+    u64 CpuElapsed = CpuEnd - CpuStart;
+
+    if(OsElapsed)
+    {
+        Result = CpuElapsed * OsTimerFreq / OsElapsed;
+    }
+
     return(Result);
 }
 
@@ -863,19 +937,10 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
     }
 }
 
-inline LARGE_INTEGER
-Win32GetWallClock(void)
-{    
-    LARGE_INTEGER Result;
-    QueryPerformanceCounter(&Result);
-    return(Result);
-}
-
 inline f32
-Win32GetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
+GetSecondsElapsed(u64 Start, u64 End)
 {
-    f32 Result = ((f32)(End.QuadPart - Start.QuadPart) /
-                     (f32)GlobalPerfCountFrequency);
+    f32 Result = ((f32)(End - Start) / (f32)GlobalCpuFreq);
     return(Result);
 }
 
@@ -990,12 +1055,7 @@ WinMain(HINSTANCE Instance,
 {
     win32_state Win32State = {};
 
-    // TODO: We don't care about QueryPerformanceCounter; replace this with implementation which
-    //      only queries it to determine the Hz of __rdtsc, and does all timing using
-    //      __rdtsc exclusively
-    LARGE_INTEGER PerfCountFrequencyResult;
-    QueryPerformanceFrequency(&PerfCountFrequencyResult);
-    GlobalPerfCountFrequency = PerfCountFrequencyResult.QuadPart;
+    GlobalCpuFreq = GuessCpuTimerFreq();
 
     Win32GetEXEFileName(&Win32State);
 
@@ -1016,32 +1076,57 @@ WinMain(HINSTANCE Instance,
     
     WNDCLASSA WindowClass = {};
 
-    Win32ResizeDIBSection(&GlobalBackbuffer, 1024, 768);
+    Win32ResizeDIBSection(&GlobalBackbuffer, 1920, 1080);
     
     WindowClass.style = CS_HREDRAW|CS_VREDRAW;
     WindowClass.lpfnWndProc = Win32MainWindowCallback;
     WindowClass.hInstance = Instance;
 //    WindowClass.hIcon;
-    WindowClass.lpszClassName = "HandmadeHeroWindowClass";
+    WindowClass.lpszClassName = "TuftyWindowClass";
 
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if(RegisterClassA(&WindowClass))
     {
+        RECT WindowRect = {};
+        WindowRect.left = 0;
+        WindowRect.top = 0;
+        WindowRect.right = GlobalBackbuffer.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
+        WindowRect.bottom = GlobalBackbuffer.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
+        
+        DWORD WindowStyle = WS_OVERLAPPEDWINDOW|WS_VISIBLE;
+        AdjustWindowRect(&WindowRect, WindowStyle, FALSE); 
+
+        int WindowWidth = WindowRect.right - WindowRect.left;
+        int WindowHeight = WindowRect.bottom - WindowRect.top;
+
         HWND Window =
             CreateWindowExA(
                 0, // WS_EX_TOPMOST|WS_EX_LAYERED,
                 WindowClass.lpszClassName,
-                "Handmade Hero",
-                WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+                "Tufty",
+                WindowStyle,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
+                WindowWidth,
+                WindowHeight,
                 0,
                 0,
                 Instance,
                 0);
         if(Window)
         {
+            UINT DPI = GetDpiForWindow(Window);
+
+            RECT ClientRect = {};
+            ClientRect.right = GlobalBackbuffer.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
+            ClientRect.bottom = GlobalBackbuffer.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
+            AdjustWindowRectExForDpi(&ClientRect, WindowStyle, FALSE, 0, DPI);
+
+            SetWindowPos(Window, 0, 0, 0,
+                         ClientRect.right - ClientRect.left,
+                         ClientRect.bottom - ClientRect.top,
+                         SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+
             win32_sound_output SoundOutput = {};
             WA_Start(&WasapiAudio);
 
@@ -1067,7 +1152,7 @@ WinMain(HINSTANCE Instance,
                                                    MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
             
-#if HANDMADE_static
+#if TUFTY_INTERNAL
             LPVOID BaseAddress = (LPVOID)Terabytes(2);
 #else
             LPVOID BaseAddress = 0;
@@ -1134,19 +1219,15 @@ WinMain(HINSTANCE Instance,
                 game_input *NewInput = &Input[0];
                 game_input *OldInput = &Input[1];
     
-                LARGE_INTEGER LastCounter = Win32GetWallClock();
-                LARGE_INTEGER FlipWallClock = Win32GetWallClock();
-                f64 MSPerFrame = 0;
+                u64 LastCounter = ReadCpuTimer();
 
                 win32_game_code Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
                                                          TempGameCodeDLLFullPath);
                 u32 LoadCounter = 0;
 
-                u64 LastCycleCount = __rdtsc();
                 while(GlobalRunning)
                 {
                     NewInput->dtForFrame = TargetSecondsPerFrame;
-                    NewInput->MSForLastFrame = MSPerFrame;
                     
                     FILETIME NewDLLWriteTime = Win32GetLastWriteTime(SourceGameCodeDLLFullPath);
                     if(CompareFileTime(&NewDLLWriteTime, &Game.DLLLastWriteTime) != 0)
@@ -1353,8 +1434,8 @@ WinMain(HINSTANCE Instance,
                         }
                         HR(WasapiAudio.RenderClient->ReleaseBuffer(WriteCount, 0));
                     
-                        LARGE_INTEGER WorkCounter = Win32GetWallClock();
-                        f32 WorkSecondsElapsed = Win32GetSecondsElapsed(LastCounter, WorkCounter);
+                        u64 WorkCounter = ReadCpuTimer();
+                        f32 WorkSecondsElapsed = GetSecondsElapsed(LastCounter, WorkCounter);
 
                         // TODO(casey): NOT TESTED YET!  PROBABLY BUGGY!!!!!
                         f32 SecondsElapsedForFrame = WorkSecondsElapsed;
@@ -1369,9 +1450,8 @@ WinMain(HINSTANCE Instance,
                                     Sleep(SleepMS);
                                 }
                             }
-                        
-                            f32 TestSecondsElapsedForFrame = Win32GetSecondsElapsed(LastCounter,
-                                                                                       Win32GetWallClock());
+
+                            f32 TestSecondsElapsedForFrame = GetSecondsElapsed(LastCounter, ReadCpuTimer());
                             if(TestSecondsElapsedForFrame < TargetSecondsPerFrame)
                             {
                                 // TODO(casey): LOG MISSED SLEEP HERE
@@ -1379,8 +1459,7 @@ WinMain(HINSTANCE Instance,
                         
                             while(SecondsElapsedForFrame < TargetSecondsPerFrame)
                             {                            
-                                SecondsElapsedForFrame = Win32GetSecondsElapsed(LastCounter,
-                                                                                Win32GetWallClock());
+                                SecondsElapsedForFrame = GetSecondsElapsed(LastCounter, ReadCpuTimer());
                             }
                         }
                         else
@@ -1389,35 +1468,20 @@ WinMain(HINSTANCE Instance,
                             // TODO(casey): Logging
                         }
                 
-                        LARGE_INTEGER EndCounter = Win32GetWallClock();
-                        MSPerFrame = 1000.0f*Win32GetSecondsElapsed(LastCounter, EndCounter);                    
+                        u64 EndCounter = ReadCpuTimer();
+                        OldInput->Fps = (f32)GlobalCpuFreq / (EndCounter - LastCounter);
                         LastCounter = EndCounter;
-                
+
                         win32_window_dimension Dimension = Win32GetWindowDimension(Window);
                         HDC DeviceContext = GetDC(Window);
                         Win32DisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
                                                    Dimension.Width, Dimension.Height);
                         ReleaseDC(Window, DeviceContext);
 
-                        FlipWallClock = Win32GetWallClock();
 
                         game_input *Temp = NewInput;
                         NewInput = OldInput;
                         OldInput = Temp;
-                        // TODO(casey): Should I clear these here?
-#if 0
-                        u64 EndCycleCount = __rdtsc();
-                        u64 CyclesElapsed = EndCycleCount - LastCycleCount;
-                        LastCycleCount = EndCycleCount;
-
-                        real64 FPS = 0;
-                        real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
-
-                        char FPSBuffer[256];
-                        _snprintf_s(FPSBuffer, sizeof(FPSBuffer),
-                                    "%.02fms/f,  %.02ff/s,  %.02fmc/f\n", MSPerFrame, FPS, MCPF);
-                        OutputDebugStringA(FPSBuffer);
-#endif
                     }
                 }
             }

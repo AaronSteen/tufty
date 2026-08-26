@@ -341,9 +341,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
+#define FPS_SNAPS 30 
+    static f32 FpsSnaps[FPS_SNAPS] = {};
+    static int FpsPrintCounter = 0;
+    f32 FpsAvg = 0;
+    FpsSnaps[FpsPrintCounter] = Input->Fps;
+    ++FpsPrintCounter;
+    for(int SnapIdx = 0;
+        SnapIdx < FPS_SNAPS;
+        ++SnapIdx)
+    {
+        FpsAvg += FpsSnaps[SnapIdx];
+    }
+    FpsAvg /= FPS_SNAPS;
+
+    if(FpsPrintCounter == FPS_SNAPS)
+    {
+        FpsPrintCounter = 0;
+    }
     char Temp[256];
-    snprintf(Temp, sizeof(Temp), "X: %d, Y: %d", Input->Mouse.X, Input->Mouse.Y);
-    DEBUGDrawText(Buffer, Input->Mouse.X, Input->Mouse.Y, Temp, DebugState->DebugText, 0.2f, 0.9f, 0.2f);
+    snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
+    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugText, 0.2f, 0.9f, 0.2f);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

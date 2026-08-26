@@ -59,7 +59,7 @@ typedef size_t memory_idx;
 
 #define ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
 
-#define Kilobytes(N) ((N) * 1024)
+#define Kilobytes(N) (((memory_idx)N) * 1024)
 #define Megabytes(N) (Kilobytes(N) * 1024)
 #define Gigabytes(N) (Megabytes(N) * 1024)
 #define Terabytes(N) (Gigabytes(N) * 1024)
@@ -185,7 +185,7 @@ typedef struct game_input
     game_mouse_input Mouse;
 
     f32 dtForFrame;
-    f32 MSForLastFrame;
+    f32 Fps;
 
     game_controller_input Controllers[5];
 } game_input;
