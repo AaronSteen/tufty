@@ -330,7 +330,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
         
-    DrawRect(Buffer, ScreenMin, ScreenMax, 0.75f, 0.25f, 0.5f);
+    DrawRect(Buffer, ScreenMin, ScreenMax, 0.75f, 0.5f, 0);
 
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};

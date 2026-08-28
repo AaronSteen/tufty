@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+
 #include <sys/mman.h>
 #include <mach/mach_time.h>
 #include <unistd.h>
@@ -6,6 +7,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <mach-o/dyld.h>
+#include <dlfcn.h>
+#include <limits.h>
 
 #include "tufty_platform.h"
 
@@ -19,10 +23,24 @@ struct osx_offscreen_buffer
     int BytesPerPixel;
 };
 
+struct osx_game_code
+{
+    void *GameCodeDylib;
+    u64 DylibLastWriteTime;
+    char TempDylibName[PATH_MAX];
+
+    game_update_and_render *UpdateAndRender;
+    game_get_sound_samples *GetSoundSamples;
+
+    b32 IsValid;
+};
+
 static b32 GlobalRunning;
 static b32 GlobalPause;
 static f32 GlobalNanosPerTick;
 static osx_offscreen_buffer GlobalBackbuffer;
+static char GlobalEXEPath[PATH_MAX];
+static u32 GlobalTempDylibCounter;
 
 static void
 OSXResizeBackbuffer(osx_offscreen_buffer *Buffer, int Width, int Height)
@@ -97,6 +115,41 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
         if(fstat(FileHandle, &FileStat) == 0)
         {
             u32 FileSize32 = SafeTruncateU64ToU32(FileStat.st_size);
+            if(FileSize32 <= DestSize)
+            {
+                ssize_t BytesRead = read(FileHandle, Dest, FileSize32);
+                if(BytesRead == (ssize_t)FileSize32)
+                {
+                    Result = FileSize32;
+                }
+            }
+        }
+
+        close(FileHandle);
+    }
+
+    return(Result);
+}
+
+DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
+{
+    if(Memory)
+    {
+        free(Memory);
+    }
+}
+
+DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
+{
+    debug_read_file_result Result = {};
+
+    int FileHandle = open(Filename, O_RDONLY);
+    if(FileHandle != -1)
+    {
+        struct stat FileStat;
+        if(fstat(FileHandle, & FileStat) == 0)
+        {
+            u32 FileSize32 = SafeTruncateU64ToU32(FileStat.st_size);
             Result.Contents = malloc(FileSize32);
             if(Result.Contents)
             {
@@ -104,7 +157,7 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
                 if(BytesRead == (ssize_t)FileSize32)
                 {
                     Result.ContentsSize = FileSize32;
-                }
+                } 
                 else
                 {
                     DEBUGPlatformFreeFileMemory(Result.Contents);
@@ -133,6 +186,130 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 
     return(Result);
 }
+
+static void
+OSXBuildEXEPathFilename(char *Filename, int DestCount, char *Dest)
+{
+    snprintf(Dest, DestCount, "%s%s", GlobalEXEPath, Filename);
+}
+
+static void
+OSXGetEXEPath(void)
+{
+    char PathBuffer[PATH_MAX];
+    u32 BufferSize = sizeof(PathBuffer);
+    if(_NSGetExecutablePath(PathBuffer, &BufferSize) == 0)
+    {
+        char *OnePastLastSlash = PathBuffer;
+        for(char *Scan = PathBuffer;
+            *Scan;
+            ++Scan)
+        {
+            if(*Scan == '/')
+            {
+                OnePastLastSlash = Scan + 1;
+            }
+        }
+
+        memory_idx DirLength = OnePastLastSlash - PathBuffer;
+        for(memory_idx Index = 0;
+            Index < DirLength;
+            ++Index)
+        {
+            GlobalEXEPath[Index] = PathBuffer[Index];
+        }
+        GlobalEXEPath[DirLength] = 0;
+    }
+}
+
+
+static b32
+OSXCopyFile(char *SourceName, char *DestName)
+{
+    b32 Result = false;
+
+    int Source = open(SourceName, O_RDONLY);
+    if(Source != -1)
+    {
+        int Dest = open(DestName, O_WRONLY|O_CREAT|O_TRUNC, 0755);
+        if(Dest != -1)
+        {
+            char CopyBuffer[65536];
+            ssize_t BytesRead;
+            Result = true;
+            while((BytesRead = read(Source, CopyBuffer, sizeof(CopyBuffer))) > 0)
+            {
+                if(write(Dest, CopyBuffer, BytesRead) != BytesRead)
+                {
+                    Result = false;
+                    break;
+                }
+            }
+            close(Dest);
+        }
+        close(Source);
+    }
+
+    return(Result);
+}
+static osx_game_code
+OSXLoadGameCode(char *SourceDylibName)
+{
+    osx_game_code Result = {};
+
+    Result.DylibLastWriteTime = DEBUGPlatformGetFileWriteTime(SourceDylibName);
+
+    char TempFilename[64];
+    snprintf(TempFilename, sizeof(TempFilename), "tufty_temp_%u.dylib", GlobalTempDylibCounter);
+    OSXBuildEXEPathFilename(TempFilename, sizeof(Result.TempDylibName), Result.TempDylibName);
+
+    if(OSXCopyFile(SourceDylibName, Result.TempDylibName))
+    {
+        Result.GameCodeDylib = dlopen(Result.TempDylibName, RTLD_NOW|RTLD_LOCAL);
+        if(Result.GameCodeDylib)
+        {
+            Result.UpdateAndRender = (game_update_and_render *)
+                dlsym(Result.GameCodeDylib, "GameUpdateAndRender");
+
+            Result.GetSoundSamples = (game_get_sound_samples *)
+                dlsym(Result.GameCodeDylib, "GameGetSoundSamples");
+
+            Result.IsValid = (Result.UpdateAndRender && Result.GetSoundSamples);
+        }
+        else
+        {
+            printf("dlopen failed: %s\n", dlerror());
+        }
+    }
+
+    if(!Result.IsValid)
+    {
+        Result.UpdateAndRender = 0;
+        Result.GetSoundSamples = 0;
+    }
+
+    return(Result);
+}
+
+static void
+OSXUnloadGameCode(osx_game_code *GameCode)
+{
+    if(GameCode->GameCodeDylib)
+    {
+        dlclose(GameCode->GameCodeDylib);
+        GameCode->GameCodeDylib = 0;
+    }
+
+    if(GameCode->TempDylibName[0])
+    {
+        unlink(GameCode->TempDylibName);
+    }
+
+    GameCode->IsValid = false;
+    GameCode->UpdateAndRender = 0;
+    GameCode->GetSoundSamples = 0;
+}
+
 
 @interface OSXWindowDelegate : NSObject<NSWindowDelegate>
 @end
@@ -191,32 +368,12 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 }
 @end
     
-static void
-OSXDrawTestRectangle(osx_offscreen_buffer *Buffer,
-                     int MinX, int MinY, int MaxX, int MaxY,
-                     u32 Color)
-{
-    u8 *Row = (u8 *)Buffer->Memory + MinY*Buffer->Pitch + MinX*Buffer->BytesPerPixel;
-    for(int Y = MinY;
-        Y < MaxY;
-        ++Y)
-    {
-        u32 *Pixel = (u32 *)Row;
-        for(int X = MinX; 
-            X < MaxX;
-            ++X)
-        {
-            *Pixel++ = Color;
-        }
-        Row += Buffer->Pitch;
-    }
-}
-
 int
 main(int ArgC, char **ArgVector)
 {
     @autoreleasepool
     {
+        OSXGetEXEPath();
         mach_timebase_info_data_t TimebaseInfo;
         mach_timebase_info(&TimebaseInfo);
         GlobalNanosPerTick = (f32)TimebaseInfo.numer / (f32)TimebaseInfo.denom;
@@ -266,16 +423,46 @@ main(int ArgC, char **ArgVector)
 
         
         u64 LastCounter = ReadCpuTimer();
-        u32 FrameCount = 0;
 
-        {
-            char *TestFile = "16x16faceright.bmp";
-            u32 TestSize = DEBUGPlatformGetFileSize(TestFile);
-            u64 TestTime = DEBUGPlatformGetFileWriteTime(TestFile);
-            printf("%s: %u bytes, write time %llu\n", TestFile, TestSize, TestTime);
-        }
+        char SourceGameCodeDylibFullPath[PATH_MAX];
+        OSXBuildEXEPathFilename("tufty.dylib", sizeof(SourceGameCodeDylibFullPath), SourceGameCodeDylibFullPath);
+
+        game_memory GameMemory = {};
+        GameMemory.PermanentStorageSize = Megabytes(64);
+        GameMemory.TransientStorageSize = Gigabytes(1);
+        GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
+        GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
+        GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
+        GameMemory.DEBUGPlatformGetFileSize = DEBUGPlatformGetFileSize;
+        GameMemory.DEBUGPlatformReadFileInto = DEBUGPlatformReadFileInto;
+        GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
+
+        u64 TotalSize = GameMemory.PermanentStorageSize + GameMemory.TransientStorageSize;
+
+#if TUFTY_INTERNAL
+        void *BaseAddress = (void *)Terabytes(2);
+#else
+        void *BaseAddress = 0;
+#endif
+
+        void *GameMemoryBlock = mmap(BaseAddress, TotalSize, 
+                                        PROT_READ|PROT_WRITE, 
+                                        MAP_PRIVATE|MAP_ANONYMOUS, 
+                                        -1, 0);
+        Assert(GameMemoryBlock != MAP_FAILED);
+
+        GameMemory.PermanentStorage = GameMemoryBlock;
+        GameMemory.TransientStorage = ((u8 *)GameMemory.PermanentStorage + 
+                                        GameMemory.PermanentStorageSize);
+
+        game_input Input[2] = {};
+        game_input *NewInput = Input;
+        game_input *OldInput = Input + 1;
+
+        osx_game_code Game = OSXLoadGameCode(SourceGameCodeDylibFullPath);
 
         GlobalRunning = true;
+
         while(GlobalRunning)
         {
             @autoreleasepool
@@ -293,9 +480,31 @@ main(int ArgC, char **ArgVector)
 
                     [App sendEvent:Event];
                 }
-                OSXDrawTestRectangle(&GlobalBackbuffer, 0, 0, 960, 540, 0x00204060);
-                OSXDrawTestRectangle(&GlobalBackbuffer, 100, 50, 400, 200, 0x00FF8020);
 
+                NewInput->dtForFrame = TargetSecondsPerFrame;
+
+                u64 NewDylibWriteTime = DEBUGPlatformGetFileWriteTime(SourceGameCodeDylibFullPath);
+                if(NewDylibWriteTime != Game.DylibLastWriteTime)
+                {
+                    OSXUnloadGameCode(&Game);
+                    Game = OSXLoadGameCode(SourceGameCodeDylibFullPath);
+                }
+
+                if(!GlobalPause)
+                {
+                    game_offscreen_buffer Buffer = {};
+                    Buffer.Memory = GlobalBackbuffer.Memory;
+                    Buffer.Width = GlobalBackbuffer.Width;
+                    Buffer.Height = GlobalBackbuffer.Height;
+                    Buffer.Pitch = GlobalBackbuffer.Pitch;
+                    Buffer.BytesPerPixel = GlobalBackbuffer.BytesPerPixel;
+
+                    if(Game.UpdateAndRender)
+                    {
+                        Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
+                    }
+                }
+                
                 [View display];
 
                 u64 FrameDeadline = LastCounter + TargetTicksPerFrame;
@@ -319,10 +528,11 @@ main(int ArgC, char **ArgVector)
                 f32 SecondsPerFrame = OSXGetSecondsElapsed(LastCounter, EndCounter);
                 LastCounter = EndCounter;
 
-                if((++FrameCount % 30) == 0)
-                {
-                    printf("%.02fms/f, %.02f FPS\n", 1000.0f*SecondsPerFrame, 1.0f/SecondsPerFrame);
-                }
+                OldInput->Fps = 1.0 / SecondsPerFrame;
+
+                game_input *Temp = NewInput;
+                NewInput = OldInput;
+                OldInput = Temp;
             }
         }
     }
