@@ -114,6 +114,9 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
         s16 SampleValue = (s16)SineVavlue * ToneVolume;
 #else
         s16 SampleValue = 0;
+
+        // To test with square wave:
+        // s16 SampleValue = ((SampleIdx / (WavePeriod/2)) %2) ? ToneVolume : -ToneVolume;
 #endif
         *SampleOut++ = SampleValue;
         *SampleOut++ = SampleValue;
@@ -330,7 +333,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
         
-    DrawRect(Buffer, ScreenMin, ScreenMax, 0.75f, 0.5f, 0);
+    DrawRect(Buffer, ScreenMin, ScreenMax, 1.0f, 0.5f, 0);
 
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};

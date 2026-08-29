@@ -10,6 +10,7 @@
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
 #include <limits.h>
+#include <AudioToolbox/AudioToolbox.h>
 
 #include "tufty_platform.h"
 
@@ -35,12 +36,30 @@ struct osx_game_code
     b32 IsValid;
 };
 
+struct osx_audio
+{
+    AudioQueueRef Queue;
+    AudioQueueBufferRef Buffers[2];
+    AudioStreamBasicDescription Format;
+    u32 SamplesPerSecond;
+    u32 NumBufferSamples;
+    b32 IsPlaying;
+
+    s16 *SampleRing;
+    u32 RingCapacity;
+    volatile u32 RingWriteCursor;
+    volatile u32 RingReadCursor;
+};
+
 static b32 GlobalRunning;
 static b32 GlobalPause;
 static f32 GlobalNanosPerTick;
 static osx_offscreen_buffer GlobalBackbuffer;
 static char GlobalEXEPath[PATH_MAX];
 static u32 GlobalTempDylibCounter;
+static game_controller_input *GlobalKeyboardController;
+static game_mouse_input *GlobalMouse;
+static osx_audio GlobalAudio;
 
 static void
 OSXResizeBackbuffer(osx_offscreen_buffer *Buffer, int Width, int Height)
@@ -75,6 +94,16 @@ OSXGetSecondsElapsed(u64 Start, u64 End)
     f32 NanosecondsElapsed = GlobalNanosPerTick * (f32)(End-Start);
     f32 Result = NanosecondsElapsed / 1.0e9f;
     return(Result);
+}
+
+static void
+OSXProcessButtonMessage(game_button_state *NewState, b32 IsDown)
+{
+    if(NewState->EndedDown != IsDown)
+    {
+        NewState->EndedDown = IsDown;
+        ++NewState->HalfTransitionCount;
+    }
 }
 
 DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
@@ -252,6 +281,7 @@ OSXCopyFile(char *SourceName, char *DestName)
 
     return(Result);
 }
+
 static osx_game_code
 OSXLoadGameCode(char *SourceDylibName)
 {
@@ -295,7 +325,7 @@ static void
 OSXUnloadGameCode(osx_game_code *GameCode)
 {
     if(GameCode->GameCodeDylib)
-    {
+    { 
         dlclose(GameCode->GameCodeDylib);
         GameCode->GameCodeDylib = 0;
     }
@@ -310,6 +340,243 @@ OSXUnloadGameCode(osx_game_code *GameCode)
     GameCode->GetSoundSamples = 0;
 }
 
+#define OSX_VK_A       0x00
+#define OSX_VK_S       0x01
+#define OSX_VK_D       0x02
+#define OSX_VK_Q       0x0C
+#define OSX_VK_W       0x0D
+#define OSX_VK_E       0x0E
+#define OSX_VK_L       0x25
+#define OSX_VK_J       0x26
+#define OSX_VK_K       0x28
+#define OSX_VK_I       0x22
+#define OSX_VK_P       0x23
+#define OSX_VK_SPACE   0x31
+#define OSX_VK_ESCAPE  0x35
+
+static void
+OSXProcessPendingEvents(NSApplication *App)
+{
+    for(;;)
+    {
+        NSEvent *Event = [App nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:nil
+                                        inMode:NSDefaultRunLoopMode
+                                        dequeue:YES];
+        if(!Event) { break; }
+
+        NSEventType Type = [Event type];
+        switch(Type)
+        {
+            case NSEventTypeKeyDown:
+            case NSEventTypeKeyUp:
+            {
+                b32 IsDown = (Type == NSEventTypeKeyDown);
+                unsigned short KeyCode = [Event keyCode];
+                b32 CommandIsDown = (([Event modifierFlags] & NSEventModifierFlagCommand) != 0);
+
+                if([Event isARepeat]) { break; }
+
+                game_controller_input *Keyboard = GlobalKeyboardController;
+                if(Keyboard)
+                {
+                    switch(KeyCode)
+                    {
+                        case OSX_VK_W: OSXProcessButtonMessage(&Keyboard->MoveUp, IsDown); break;
+                        case OSX_VK_A: OSXProcessButtonMessage(&Keyboard->MoveLeft, IsDown); break;
+                        case OSX_VK_S: OSXProcessButtonMessage(&Keyboard->MoveDown, IsDown); break;
+                        case OSX_VK_D: OSXProcessButtonMessage(&Keyboard->MoveRight, IsDown); break;
+                        case OSX_VK_Q: OSXProcessButtonMessage(&Keyboard->LeftShoulder, IsDown); break;
+                        case OSX_VK_E: OSXProcessButtonMessage(&Keyboard->RightShoulder, IsDown); break;
+                        case OSX_VK_I: OSXProcessButtonMessage(&Keyboard->ActionUp, IsDown); break;
+                        case OSX_VK_J: OSXProcessButtonMessage(&Keyboard->ActionLeft, IsDown); break;
+                        case OSX_VK_K: OSXProcessButtonMessage(&Keyboard->ActionDown, IsDown); break;
+                        case OSX_VK_L: OSXProcessButtonMessage(&Keyboard->ActionRight, IsDown); break;
+                        case OSX_VK_ESCAPE: OSXProcessButtonMessage(&Keyboard->Start, IsDown); break;
+                        case OSX_VK_SPACE: OSXProcessButtonMessage(&Keyboard->Back, IsDown); break;
+
+#if TUFTY_INTERNAL
+                        case OSX_VK_P:
+                        {
+                            if(IsDown)
+                            {
+                                GlobalPause = !GlobalPause;
+                            }
+                        } break;
+#endif
+
+                        default: break;
+                    }
+                }
+
+                if(IsDown && CommandIsDown && (KeyCode == OSX_VK_Q))
+                {
+                    GlobalRunning = false;
+                } 
+            } break;
+
+            case NSEventTypeLeftMouseDown: case NSEventTypeLeftMouseUp:
+            case NSEventTypeOtherMouseDown: case NSEventTypeOtherMouseUp:
+            case NSEventTypeRightMouseDown: case NSEventTypeRightMouseUp:
+            {
+                b32 IsDown = ((Type == NSEventTypeLeftMouseDown) ||
+                                (Type == NSEventTypeOtherMouseDown) ||
+                                (Type == NSEventTypeRightMouseDown));
+                
+                if(GlobalMouse)
+                {
+                    game_button_state *Button = &GlobalMouse->Primary;
+                    if((Type == NSEventTypeOtherMouseDown) || (Type == NSEventTypeOtherMouseUp))
+                    {
+                        Button = &GlobalMouse->WheelClick;
+                    }
+                    else if((Type == NSEventTypeRightMouseDown) || (Type == NSEventTypeRightMouseUp))
+                    {
+                        Button = &GlobalMouse->Secondary;
+                    }
+
+                    OSXProcessButtonMessage(Button, IsDown);
+                }
+
+                [App sendEvent:Event];
+            } break;
+
+            default:
+            {
+                [App sendEvent:Event];
+            } break;
+        }
+    }
+}
+
+static void
+OSXAudioCallback(void *UserData, AudioQueueRef Queue, AudioQueueBufferRef Buffer)
+{
+    osx_audio *Audio = (osx_audio *)UserData;
+
+    u32 SamplesToWrite = Buffer->mAudioDataBytesCapacity / (sizeof(s16) * 2);
+    s16 *Dest = (s16 *)Buffer->mAudioData;
+
+    u32 ReadCursor = Audio->RingReadCursor;
+    u32 WriteCursor = Audio->RingWriteCursor;
+
+    for(u32 SampleIdx = 0;
+        SampleIdx < SamplesToWrite;
+        ++SampleIdx)
+    {
+        if(ReadCursor < WriteCursor)
+        {
+            u32 RingIdx = ReadCursor % Audio->RingCapacity;
+            *Dest++ = Audio->SampleRing[RingIdx*2 + 0];
+            *Dest++ = Audio->SampleRing[RingIdx*2 + 1];
+            ++ReadCursor;
+        }
+        else
+        {
+            *Dest++ = 0;
+            *Dest++ = 0;
+        }
+    }
+
+    Audio->RingReadCursor = ReadCursor;
+
+    Buffer->mAudioDataByteSize = SamplesToWrite * sizeof(s16) * 2;
+    AudioQueueEnqueueBuffer(Queue, Buffer, 0, 0);
+}
+
+static void
+OSXAudioStart(osx_audio *Audio, u32 SamplesPerSecond)
+{
+    Audio->SamplesPerSecond = SamplesPerSecond;
+
+    Audio->Format.mSampleRate = SamplesPerSecond;
+    Audio->Format.mFormatID = kAudioFormatLinearPCM;
+    Audio->Format.mFormatFlags = (kAudioFormatFlagIsSignedInteger |
+                                  kAudioFormatFlagIsPacked);
+    Audio->Format.mBitsPerChannel = 16;
+    Audio->Format.mChannelsPerFrame = 2;
+    Audio->Format.mBytesPerFrame = sizeof(s16) * 2;
+    Audio->Format.mFramesPerPacket = 1;
+    Audio->Format.mBytesPerPacket = Audio->Format.mBytesPerFrame;
+
+    // (CLAUDE): ~20ms per callback buffer
+    Audio->NumBufferSamples = SamplesPerSecond / 50;
+
+    // (CLAUDE): One second of ring
+    Audio->RingCapacity = SamplesPerSecond;
+    Audio->SampleRing = (s16 *)calloc(Audio->RingCapacity * 2, sizeof(s16));
+    Audio->RingWriteCursor = 0;
+    Audio->RingReadCursor = 0;
+
+    if(AudioQueueNewOutput(&Audio->Format, OSXAudioCallback, Audio,
+                           0, 0, 0, &Audio->Queue) != noErr)
+    {
+        printf("AudioQueueNewOutput failed\n");
+        return;
+    }
+
+    u32 BufferBytes = Audio->NumBufferSamples * sizeof(s16) * 2;
+    for(int BufferIdx = 0;
+        BufferIdx < ArrayCount(Audio->Buffers);
+        ++BufferIdx)
+    {
+        AudioQueueAllocateBuffer(Audio->Queue, BufferBytes, &Audio->Buffers[BufferIdx]);
+        Audio->Buffers[BufferIdx]->mAudioDataByteSize = BufferBytes;
+        memset(Audio->Buffers[BufferIdx]->mAudioData, 0, BufferBytes);
+        AudioQueueEnqueueBuffer(Audio->Queue, Audio->Buffers[BufferIdx], 0, 0);
+    }
+
+    AudioQueueStart(Audio->Queue, 0);
+    Audio->IsPlaying = true;
+}
+
+static void
+OSXAudioStop(osx_audio *Audio)
+{
+    if(Audio->IsPlaying)
+    {
+        AudioQueueStop(Audio->Queue, true);
+        AudioQueueDispose(Audio->Queue, true);
+        free(Audio->SampleRing);
+        Audio->SampleRing = 0;
+        Audio->IsPlaying = false;
+    }
+}
+
+static u32
+OSXGetNumSamplesToWrite(osx_audio *Audio)
+{
+    u32 Result = 0;
+
+    u32 Pending = Audio->RingWriteCursor - Audio->RingReadCursor;
+
+    u32 TargetPending = Audio->NumBufferSamples * 2;
+    if(Pending < TargetPending)
+    {
+        Result = TargetPending - Pending;
+    }
+
+    return(Result);
+}
+
+static void
+OSXPushSoundSamples(osx_audio *Audio, game_sound_output_buffer *SoundBuffer)
+{
+    s16 *Src = SoundBuffer->Samples;
+    u32 WriteCursor = Audio->RingWriteCursor;
+
+    for(int SampleIdx = 0;
+        SampleIdx < SoundBuffer->SampleCount;
+        ++SampleIdx)
+    {
+        u32 RingIdx = WriteCursor % Audio->RingCapacity;
+        Audio->SampleRing[RingIdx*2 + 0] = *Src++;
+        Audio->SampleRing[RingIdx*2 + 1] = *Src++;
+        ++WriteCursor;
+    }
+
+    Audio->RingWriteCursor = WriteCursor;
+}
 
 @interface OSXWindowDelegate : NSObject<NSWindowDelegate>
 @end
@@ -382,9 +649,32 @@ main(int ArgC, char **ArgVector)
         [App setActivationPolicy:NSApplicationActivationPolicyRegular];
         [App finishLaunching];
 
-        OSXResizeBackbuffer(&GlobalBackbuffer, 960, 540);
+        int BackbufferWidth = 1920;
+        int BackbufferHeight = 1080;
+        OSXResizeBackbuffer(&GlobalBackbuffer, BackbufferWidth, BackbufferHeight);
 
-        NSRect ContentRect = NSMakeRect(0, 0, GlobalBackbuffer.Width, GlobalBackbuffer.Height);
+        NSScreen *MainScreen = [NSScreen mainScreen];
+        f32 ScaleFactor = (f32)[MainScreen backingScaleFactor];
+
+        f32 WindowWidth = (f32)BackbufferWidth / ScaleFactor;
+        f32 WindowHeight = (f32)BackbufferHeight / ScaleFactor;
+
+        NSRect VisibleFrame = [MainScreen visibleFrame];
+        f32 MaxWidth = (f32)VisibleFrame.size.width;
+        f32 MaxHeight = (f32)VisibleFrame.size.height - 40.0f; // leave room for title bar
+        if((WindowWidth > MaxWidth) || (WindowHeight > MaxHeight))
+        {
+            f32 Shrink = MaxWidth / WindowWidth;
+            f32 ShrinkY = MaxHeight / WindowHeight;
+            if(ShrinkY < Shrink)
+            {
+                Shrink = ShrinkY;
+            }
+            WindowWidth *= Shrink;
+            WindowHeight *= Shrink;
+        }
+
+        NSRect ContentRect = NSMakeRect(0, 0, WindowWidth, WindowHeight);
         NSUInteger StyleMask = (NSWindowStyleMaskTitled |
                                 NSWindowStyleMaskClosable |
                                 NSWindowStyleMaskMiniaturizable);
@@ -461,25 +751,51 @@ main(int ArgC, char **ArgVector)
 
         osx_game_code Game = OSXLoadGameCode(SourceGameCodeDylibFullPath);
 
+        OSXAudioStart(&GlobalAudio, 48000);
+        s16 *AudioSamples = (s16 *)calloc(GlobalAudio.RingCapacity * 2, sizeof(s16));
+
         GlobalRunning = true;
 
         while(GlobalRunning)
         {
             @autoreleasepool
             {
-                for(;;)
+                game_controller_input *OldKeyboardController = GetController(OldInput, 0);
+                game_controller_input *NewKeyboardController = GetController(NewInput, 0);
+                *NewKeyboardController = {};
+                NewKeyboardController->IsConnected = true;
+                for(int ButtonIdx = 0;
+                    ButtonIdx < ArrayCount(NewKeyboardController->Buttons);
+                    ++ButtonIdx)
                 {
-                    NSEvent *Event = [App nextEventMatchingMask:NSEventMaskAny
-                                                        untilDate:nil
-                                                        inMode:NSDefaultRunLoopMode
-                                                        dequeue:YES];
-                    if(!Event)
-                    {
-                        break;
-                    }
-
-                    [App sendEvent:Event];
+                    NewKeyboardController->Buttons[ButtonIdx].EndedDown = 
+                        OldKeyboardController->Buttons[ButtonIdx].EndedDown;
                 }
+
+                game_mouse_input *OldMouse = &OldInput->Mouse;
+                game_mouse_input *NewMouse = &NewInput->Mouse;
+                *NewMouse = {};
+                for(int ButtonIdx = 0;
+                    ButtonIdx < ArrayCount(NewMouse->Buttons);
+                    ++ButtonIdx)
+                {
+                    NewMouse->Buttons[ButtonIdx].EndedDown = OldMouse->Buttons[ButtonIdx].EndedDown;
+                }
+
+                NSPoint MouseWindowP = [Window mouseLocationOutsideOfEventStream];
+                NSPoint MouseViewP = [View convertPoint:MouseWindowP fromView:nil];
+                NSRect ViewBounds = [View bounds];
+
+                f32 MouseXScale = (f32)GlobalBackbuffer.Width / (f32)ViewBounds.size.width;
+                f32 MouseYScale = (f32)GlobalBackbuffer.Height / (f32)ViewBounds.size.height;
+
+                NewMouse->X = (s32)(MouseViewP.x * MouseXScale);
+                NewMouse->Y = (s32)(((f32)ViewBounds.size.height - MouseViewP.y) * MouseYScale);
+
+                GlobalKeyboardController = NewKeyboardController;
+                GlobalMouse = NewMouse;
+
+                OSXProcessPendingEvents(App);
 
                 NewInput->dtForFrame = TargetSecondsPerFrame;
 
@@ -502,6 +818,22 @@ main(int ArgC, char **ArgVector)
                     if(Game.UpdateAndRender)
                     {
                         Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
+                    }
+
+                    u32 NumSamplesToWrite = OSXGetNumSamplesToWrite(&GlobalAudio);
+                    if(NumSamplesToWrite)
+                    {
+                        game_sound_output_buffer SoundBuffer = {};
+                        SoundBuffer.SamplesPerSecond = GlobalAudio.SamplesPerSecond;
+                        SoundBuffer.SampleCount = NumSamplesToWrite;
+                        SoundBuffer.Samples = AudioSamples;
+                    
+                        if(Game.GetSoundSamples)
+                        {
+                            Game.GetSoundSamples(&GameMemory, &SoundBuffer);
+                        }
+
+                        OSXPushSoundSamples(&GlobalAudio, &SoundBuffer);
                     }
                 }
                 
@@ -535,6 +867,8 @@ main(int ArgC, char **ArgVector)
                 OldInput = Temp;
             }
         }
+        OSXAudioStop(&GlobalAudio);
+        free(AudioSamples);
     }
 
     return(0);
