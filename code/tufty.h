@@ -78,6 +78,8 @@ struct game_state
     v2 PlayerP;
     facing PlayerFacing;
     bitmap PlayerBitmaps[4];
+    bitmap EnvironmentBitmaps[10];
+    int NumEnvironmentBitmaps;
 };
 
 #pragma pack(push, 1)

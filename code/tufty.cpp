@@ -276,6 +276,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         South->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(South->Filename));
         DEBUGReloadBitmapIfChanged(South, Memory);
 
+        bitmap *EnvBitmaps = (bitmap *)&GameState->EnvironmentBitmaps;
+        bitmap *Dandelion = EnvBitmaps;
+        Dandelion->Filename = "64x64dandelion.bmp";
+        Dandelion->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(Dandelion->Filename));
+        DEBUGReloadBitmapIfChanged(Dandelion, Memory);
+
         Memory->IsInitialized = true;
     }
 
@@ -354,8 +360,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
         
-    DrawRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.85f, 0.25f);
+    DrawRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
 
+    // Player
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};
     v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
@@ -364,6 +371,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
+
+    // Dandelion
+    bitmap *Dandelion = (bitmap *)GameState->EnvironmentBitmaps;
+#if 0
+    v2 DandelionMin = {0, (f32)(Buffer->Height * 0.25f) - 1};
+    v2 DandelionMax = {(f32)(Buffer->Height * 0.75f), (f32)(Buffer->Height - 1)};
+#else
+    v2 DandelionMin = {0, 0};
+    v2 DandelionMax = {(f32)(Buffer->Height), (f32)(Buffer->Height - 1)};
+#endif
+    ScaleAndBlitBitmap(Buffer, DandelionMin, DandelionMax, Dandelion);
 
 #define FPS_SNAPS 30 
     static f32 FpsSnaps[FPS_SNAPS] = {};
