@@ -131,6 +131,13 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
+static s32
+LerpS32(s32 A, s32 B, f32 T)
+{
+    s32 Result = A + T * (B - A);
+    return(Result);
+}
+
 static void
 ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
@@ -160,17 +167,31 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
         MaxX = Buf->Width;
     }
 
+    // Pixels are always 32 bits wide, memory order BB GG RR XX
     u8 *DestRow = (u8 *)Buf->Memory + MinY * Buf->Pitch + MinX * Buf->BytesPerPixel;
     for(int Y = MinY; Y < MaxY; ++Y)
     {
         u32 SrcRowIdx = TruncateF32ToU32(YCoef*((f32)(Y-MinY)+0.5f));
         u32 SrcRow = Bitmap->Height - 1 - SrcRowIdx;
-        u32 *DestPixel = (u32 *)DestRow;
+        u8 *DestPixel = DestRow;
         for(int X = MinX; X < MaxX; ++X)
         {
             u32 SrcCol = TruncateF32ToU32(XCoef*((f32)(X-MinX)+0.5f));
-            u32 SrcPixel = *(u32 *)(Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel);
-            *DestPixel++ = SrcPixel;
+            u8 *SrcPixel = Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel;
+
+            // Get the alpha value
+            f32 Alpha = ((f32)SrcPixel[3]) / 255.0f;
+            
+            //Blue
+            DestPixel[0] = LerpS32(DestPixel[0], SrcPixel[0], Alpha);
+
+            // Green
+            DestPixel[1] = LerpS32(DestPixel[1], SrcPixel[1], Alpha);
+
+            // Red
+            DestPixel[2] = LerpS32(DestPixel[2], SrcPixel[2], Alpha);
+
+            DestPixel += sizeof(u32);   
         }
         DestRow += Buf->Pitch;
     }
@@ -333,7 +354,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
         
-    DrawRect(Buffer, ScreenMin, ScreenMax, 1.0f, 0.5f, 0);
+    DrawRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.85f, 0.25f);
 
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};
