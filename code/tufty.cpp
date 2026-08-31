@@ -1,8 +1,8 @@
 #include "tufty.h"
 #include "stb_easy_font.h"
 
-#define PLAYER_HEIGHT 256.0f
-#define PLAYER_WIDTH  256.0f
+#define PLAYER_HEIGHT 16.0f
+#define PLAYER_WIDTH  16.0f
 
 struct vertex
 {
@@ -36,6 +36,13 @@ TruncateF32ToU32(f32 Real)
     return(Result);
 }
 
+
+static s32
+LerpS32(s32 A, s32 B, f32 T)
+{
+    s32 Result = A + T * (B - A);
+    return(Result);
+}
 
 static void
 DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
@@ -79,6 +86,75 @@ DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
     }
 }
 
+void
+DrawOpaqueRectWithOutline(game_offscreen_buffer *Buffer,
+                    v2 Min, v2 Max,
+                    f32 R, f32 G, f32 B)
+{
+    s32 MinX = RoundF32ToS32(Min.X);
+    s32 MinY = RoundF32ToS32(Min.Y);
+    s32 MaxX = RoundF32ToS32(Max.X);
+    s32 MaxY = RoundF32ToS32(Max.Y);
+
+    if(MinY < 0)
+    {
+        MinY = 0;
+    }
+    if(MaxY > Buffer->Height)
+    {
+        MaxY = Buffer->Height;
+    }
+    if(MinX < 0)
+    {
+        MinX = 0;
+    }
+    if(MaxX > Buffer->Width)
+    {
+        MaxX = Buffer->Width;
+    }
+
+    u32 Blue = RoundF32ToU32(B * 255.0f);
+    u32 Green = RoundF32ToU32(G * 255.0f);
+    u32 Red = RoundF32ToU32(R * 255.0f);
+    f32 Alpha = 0.5f;
+
+    u8 *Row = (u8 *)Buffer->Memory + (MinY * Buffer->Pitch) + (MinX * Buffer->BytesPerPixel);
+    for(int Y = MinY;
+        Y < MaxY;
+        ++Y)
+    {
+        u8 *Pixel = Row;
+        for(int X = MinX;
+            X < MaxX;
+            ++X)
+        {
+            if(Y == MinY)
+            {
+                *(u32 *)Pixel = 0;
+                Pixel += sizeof(u32);
+            }
+            else if(X == MinX)
+            {
+                *(u32 *)Pixel = 0;                
+                Pixel += sizeof(u32);
+            }
+            else
+            {
+                // Blue
+                Pixel[0] = LerpS32(Pixel[0], Blue, Alpha);
+
+                // Green
+                Pixel[1] = LerpS32(Pixel[1], Green, Alpha);
+                
+                // Red
+                Pixel[2] = LerpS32(Pixel[2], Red, Alpha);
+
+                Pixel += sizeof(u32);
+            }
+        }
+        Row += Buffer->Pitch;
+    }
+}
 void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
@@ -131,12 +207,6 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
-static s32
-LerpS32(s32 A, s32 B, f32 T)
-{
-    s32 Result = A + T * (B - A);
-    return(Result);
-}
 
 static void
 ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
@@ -144,6 +214,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
+    s32 SrcOffset = 0;
 
     u32 MinY = RoundF32ToU32(Min.Y);
     u32 MaxY = RoundF32ToU32(Max.Y);
@@ -152,6 +223,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 
     if(MinY < 0)
     {
+        SrcOffset = MinY;
         MinY = 0;
     }
     if(MaxY > Buf->Height)
@@ -238,8 +310,8 @@ PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-    memory_idx DebugStateNumBytes = Megabytes(16);
-    memory_idx GameStateNumBytes = Memory->PermanentStorageSize - DebugStateNumBytes;
+    mem_idx DebugStateNumBytes = Megabytes(16);
+    mem_idx GameStateNumBytes = Memory->PermanentStorageSize - DebugStateNumBytes;
 
     debug_state *DebugState = (debug_state *)Memory->PermanentStorage;
     game_state *GameState = (game_state *)((u8 *)Memory->PermanentStorage + DebugStateNumBytes);
@@ -254,23 +326,66 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DebugState->DebugTextBuf.Start = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
         DebugState->DebugTextBuf.Size = Megabytes(2);
         
-        // DebugState->DebugText.Start = PushArray(&DebugState->DebugArena, u8, DebugText.Size);
-
         InitializeArena(&GameState->WorldArena, 
                         ((u8 *)Memory->PermanentStorage + DebugStateNumBytes + sizeof(game_state)),
                         (GameStateNumBytes - sizeof(game_state)));
 
-        Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + GameState->WorldArena.Size) == Memory->PermanentStorageSize);
+        arena *WorldArena = &GameState->WorldArena;
+        Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + WorldArena->Size) == Memory->PermanentStorageSize);
 
         GameState->PlayerP.X = Buffer->Width / 2;
         GameState->PlayerP.Y = Buffer->Height / 2;
         GameState->PlayerFacing = EAST;
 
+
         // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
-        PushBitmapToArena(&GameState->WorldArena, "16x16faceright.bmp", &GameState->PlayerBitmaps[EAST], Memory);
-        PushBitmapToArena(&GameState->WorldArena, "16x16behindview.bmp", &GameState->PlayerBitmaps[NORTH], Memory);
-        PushBitmapToArena(&GameState->WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
-        PushBitmapToArena(&GameState->WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
+        PushBitmapToArena(WorldArena, "16x16faceright.bmp", &GameState->PlayerBitmaps[EAST], Memory);
+        PushBitmapToArena(WorldArena, "16x16behindview.bmp", &GameState->PlayerBitmaps[NORTH], Memory);
+        PushBitmapToArena(WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
+        PushBitmapToArena(WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
+
+        enum
+        {
+            DANDELION,
+            PUFF,
+            PATH,
+            LADYBUG,
+            APHID,
+        };
+
+        GameState->MaxThings = 10;
+        GameState->Things = PushArray(WorldArena, thing, GameState->MaxThings);
+        thing *Things = GameState->Things;
+
+        char *ThingFilenames[] = {"64x64dandelion.bmp", "64x64dandelionpuff.bmp", "64x64grasspath.bmp", "64x64ladybug.bmp", "64x64aphid.bmp"};
+
+        for(int ThingIdx = 0;
+            ThingIdx < ArrayCount(ThingFilenames);
+            ++ThingIdx)
+        {
+            thing *Thing = Things + ThingIdx;
+            Thing->Id = ThingIdx;
+            PushBitmapToArena(WorldArena, ThingFilenames[ThingIdx], &Thing->Bitmap, Memory);
+        }
+
+        // Dandelion
+        thing *Dandelion = Things + DANDELION;
+        Dandelion->Position = {0, (f32)(Buffer->Height - Dandelion->Bitmap.Height - 1)};
+
+        // Puff
+        thing *Puff = Things + PUFF;
+        Puff->Position = {(f32)Buffer->Width * 0.33f, (f32)Buffer->Height * 0.33f};
+
+        // Grass path
+        thing *Path = Things + PATH;
+        Path->Position = {(f32)(Buffer->Width * 0.5f) - 32.0f, -10.0f};
+
+        // Aphid
+        thing *Aphid = Things + APHID;
+        Aphid->Position = {Things[DANDELION].Position.X, Things[DANDELION].Position.Y - 10.0f};
+
+        thing *Ladybug = Things + LADYBUG;
+        Ladybug->Position = {(f32)Things[APHID].Position.X, Things[APHID].Position.Y - 30.0f};
 
         Memory->IsInitialized = true;
     }
@@ -349,9 +464,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Underlayer
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
-        
     DrawRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
 
+    // Tiles
+    for(int Row = 0; 
+        Row < RoundF32ToS32((f32)Buffer->Height / 64.0f); 
+        ++Row)
+    {
+        for(int Col = 0;
+            Col < RoundF32ToS32((f32)Buffer->Width / 64.0f); 
+            ++Col)
+        {
+            v2 TileMin = {Col * 64.0f, Row * 64.0f};
+            v2 TileMax = TileMin + (v2){64.0f, 64.0f};
+            DrawOpaqueRectWithOutline(Buffer, TileMin, TileMax, 0.75, 0.75, 0.75);
+        }
+    }
     // Player
     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
                     GameState->PlayerP.Y - PLAYER_HEIGHT};
@@ -362,16 +490,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
+    for(thing *Thing = GameState->Things;
+        Thing->Id < GameState->MaxThings;
+        ++Thing)
+    {
+        if(Thing->Position == (v2){0, 0})
+        {
+            continue;
+        }
+
+        v2 ThingMax = Thing->Position + (v2){(f32)Thing->Bitmap.Width, (f32)Thing->Bitmap.Height};
+        ScaleAndBlitBitmap(Buffer, Thing->Position, ThingMax, &Thing->Bitmap);
+    }
+        
+
     // Dandelion
-//     bitmap *Dandelion = (bitmap *)GameState->EnvironmentBitmaps;
-// #if 0
-//     v2 DandelionMin = {0, (f32)(Buffer->Height * 0.25f) - 1};
-//     v2 DandelionMax = {(f32)(Buffer->Height * 0.75f), (f32)(Buffer->Height - 1)};
-// #else
-//     v2 DandelionMin = {0, 0};
-//     v2 DandelionMax = {(f32)(Buffer->Height), (f32)(Buffer->Height - 1)};
-// #endif
-//     ScaleAndBlitBitmap(Buffer, DandelionMin, DandelionMax, Dandelion);
+    // thing *Dandelion = GameState->Things + 0;
+    // v2 DandelionMax = {Dandelion->Position.X + Dandelion->Bitmap.Width, Dandelion->Position.Y + Dandelion->Bitmap.Height};
+    // ScaleAndBlitBitmap(Buffer, Dandelion->Position, DandelionMax, &Dandelion->Bitmap);
 
 #define FPS_SNAPS 30 
     static f32 FpsSnaps[FPS_SNAPS] = {};
@@ -393,7 +529,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     char Temp[256];
     snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugTextBuf, 0.2f, 0.9f, 0.2f);
+    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugTextBuf, 0.9f, 0.2f, 0.5f);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

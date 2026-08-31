@@ -8,12 +8,12 @@
 struct arena
 {
     u8 *Start;
-    memory_idx Size;
-    memory_idx Cursor;
+    mem_idx Size;
+    mem_idx Cursor;
 };
 
 static void
-InitializeArena(arena *Arena, u8 *Start, memory_idx Size)
+InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 {
     Arena->Start = Start;
     Arena->Size = Size;
@@ -21,7 +21,7 @@ InitializeArena(arena *Arena, u8 *Start, memory_idx Size)
 }
 
 static void *
-ArenaPush_(arena *Arena, memory_idx NumBytes)
+ArenaPush_(arena *Arena, mem_idx NumBytes)
 {
     Assert(Arena->Cursor+NumBytes < Arena->Size);
 
@@ -39,10 +39,29 @@ struct v2
     f32 X, Y;
 };
 
+v2
+operator+(v2 A, v2 B)
+{
+    v2 Result;
+
+    Result.X = A.X + B.X;
+    Result.Y = A.Y + B.Y;
+
+    return(Result);
+}
+
+b32
+operator==(v2 A, v2 B)
+{
+    b32 Result = ((A.X == B.X) && (A.Y == B.Y));
+
+    return(Result);
+}
+
 struct buffer
 {
     u8 *Start;
-    memory_idx Size;
+    mem_idx Size;
 };
 
 struct bitmap
@@ -72,14 +91,22 @@ struct debug_state
     buffer DebugTextBuf;
 };
 
+struct thing
+{
+    int Id;
+    bitmap Bitmap;
+    buffer ScaledBitmap;
+    v2 Position;
+};
+
 struct game_state
 {
     arena WorldArena;
     v2 PlayerP;
     facing PlayerFacing;
     bitmap PlayerBitmaps[4];
-    bitmap EnvironmentBitmaps[10];
-    int NumEnvironmentBitmaps;
+    thing *Things;
+    int MaxThings;
 };
 
 #pragma pack(push, 1)
@@ -104,3 +131,4 @@ struct bitmap_header
     //      for now we don't use.
 };
 #pragma pack(pop)
+

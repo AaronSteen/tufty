@@ -53,13 +53,13 @@ typedef int64_t s64;
 typedef s32 b32;
 typedef float f32;
 typedef double f64;
-typedef size_t memory_idx;
+typedef size_t mem_idx;
 
 #define Assert(Expression) if(!(Expression)) {*(volatile int *)0 = 1;}
 
 #define ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
 
-#define Kilobytes(N) (((memory_idx)N) * 1024)
+#define Kilobytes(N) (((mem_idx)N) * 1024)
 #define Megabytes(N) (Kilobytes(N) * 1024)
 #define Gigabytes(N) (Megabytes(N) * 1024)
 #define Terabytes(N) (Gigabytes(N) * 1024)
@@ -204,10 +204,10 @@ typedef struct game_memory
 {
     b32 IsInitialized;
 
-    memory_idx PermanentStorageSize;
+    mem_idx PermanentStorageSize;
     void *PermanentStorage; // platform must clear to zero at startup
 
-    memory_idx TransientStorageSize;
+    mem_idx TransientStorageSize;
     void *TransientStorage; // platform must clear to zero at startup
 
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
