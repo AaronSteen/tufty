@@ -1139,7 +1139,7 @@ WinMain(HINSTANCE Instance,
             {
                 MonitorRefreshHz = Win32RefreshRate;
             }
-            f32 GameUpdateHz = (MonitorRefreshHz / 2.0f);
+            f32 GameUpdateHz = MonitorRefreshHz;
             f32 TargetSecondsPerFrame = 1.0f / (f32)GameUpdateHz;
 
             SoundOutput.SamplesPerSecond = WasapiAudio.BufferFormat->nSamplesPerSec;

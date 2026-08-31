@@ -4,6 +4,15 @@
 #define PLAYER_HEIGHT 16.0f
 #define PLAYER_WIDTH  16.0f
 
+enum
+{
+    DANDELION,
+    PUFF,
+    PATH,
+    LADYBUG,
+    APHID,
+};
+
 struct vertex
 {
     f32 X, Y, Z;
@@ -214,41 +223,44 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
-    s32 SrcOffset = 0;
 
-    u32 MinY = RoundF32ToU32(Min.Y);
-    u32 MaxY = RoundF32ToU32(Max.Y);
-    u32 MinX = RoundF32ToU32(Min.X);
-    u32 MaxX = RoundF32ToU32(Max.X);
+    s32 ScreenMinY = RoundF32ToU32(Min.Y);
+    s32 ScreenMaxY = RoundF32ToU32(Max.Y);
+    s32 ScreenMinX = RoundF32ToU32(Min.X);
+    s32 ScreenMaxX = RoundF32ToU32(Max.X);
 
-    if(MinY < 0)
+    s32 SampledScreenMinY = ScreenMinY;
+    s32 SampledScreenMaxY = ScreenMaxY;
+    s32 SampledScreenMinX = ScreenMinX;
+    s32 SampledScreenMaxX = ScreenMaxX;
+
+    if(ScreenMinY < 0)
     {
-        SrcOffset = MinY;
-        MinY = 0;
+        SampledScreenMinY = 0;
     }
-    if(MaxY > Buf->Height)
+    if(ScreenMinX < 0)
     {
-        MaxY = Buf->Height;
+        SampledScreenMinX = 0;
     }
-    if(MinX < 0)
+    if(ScreenMaxY > Buf->Height)
     {
-        MinX = 0;
+        SampledScreenMaxY = Buf->Height;
     }
-    if(MaxX > Buf->Width)
+    if(ScreenMaxX > Buf->Width)
     {
-        MaxX = Buf->Width;
+        SampledScreenMaxX = Buf->Width;
     }
 
     // Pixels are always 32 bits wide, memory order BB GG RR XX
-    u8 *DestRow = (u8 *)Buf->Memory + MinY * Buf->Pitch + MinX * Buf->BytesPerPixel;
-    for(int Y = MinY; Y < MaxY; ++Y)
+    u8 *DestRow = (u8 *)Buf->Memory + SampledScreenMinY * Buf->Pitch + SampledScreenMinX * Buf->BytesPerPixel;
+    for(int Y = SampledScreenMinY; Y < SampledScreenMaxY; ++Y)
     {
-        u32 SrcRowIdx = TruncateF32ToU32(YCoef*((f32)(Y-MinY)+0.5f));
+        u32 SrcRowIdx = TruncateF32ToU32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
         u32 SrcRow = Bitmap->Height - 1 - SrcRowIdx;
         u8 *DestPixel = DestRow;
-        for(int X = MinX; X < MaxX; ++X)
+        for(int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
         {
-            u32 SrcCol = TruncateF32ToU32(XCoef*((f32)(X-MinX)+0.5f));
+            u32 SrcCol = TruncateF32ToU32(XCoef*((f32)(X-ScreenMinX)+0.5f));
             u8 *SrcPixel = Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel;
 
             // Get the alpha value
@@ -344,14 +356,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         PushBitmapToArena(WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
         PushBitmapToArena(WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
 
-        enum
-        {
-            DANDELION,
-            PUFF,
-            PATH,
-            LADYBUG,
-            APHID,
-        };
 
         GameState->MaxThings = 10;
         GameState->Things = PushArray(WorldArena, thing, GameState->MaxThings);
@@ -367,25 +371,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Thing->Id = ThingIdx;
             PushBitmapToArena(WorldArena, ThingFilenames[ThingIdx], &Thing->Bitmap, Memory);
         }
-
-        // Dandelion
-        thing *Dandelion = Things + DANDELION;
-        Dandelion->Position = {0, (f32)(Buffer->Height - Dandelion->Bitmap.Height - 1)};
-
-        // Puff
-        thing *Puff = Things + PUFF;
-        Puff->Position = {(f32)Buffer->Width * 0.33f, (f32)Buffer->Height * 0.33f};
-
-        // Grass path
-        thing *Path = Things + PATH;
-        Path->Position = {(f32)(Buffer->Width * 0.5f) - 32.0f, -10.0f};
-
-        // Aphid
-        thing *Aphid = Things + APHID;
-        Aphid->Position = {Things[DANDELION].Position.X, Things[DANDELION].Position.Y - 10.0f};
-
-        thing *Ladybug = Things + LADYBUG;
-        Ladybug->Position = {(f32)Things[APHID].Position.X, Things[APHID].Position.Y - 30.0f};
 
         Memory->IsInitialized = true;
     }
@@ -440,23 +425,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
             NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;
 
-            if(NewPlayerP.X-(PLAYER_WIDTH*0.5) < 0)
-            {
-                NewPlayerP.X = PLAYER_WIDTH*0.5f;
-            }
-            if(NewPlayerP.X+(PLAYER_WIDTH*0.5) >= Buffer->Width)
-            {
-                NewPlayerP.X = Buffer->Width-(PLAYER_WIDTH*0.5f);
-            }
-            if(NewPlayerP.Y-PLAYER_HEIGHT < 0)
-            {
-                NewPlayerP.Y = PLAYER_HEIGHT;
-            }
-            if(NewPlayerP.Y >= Buffer->Height)
-            {
-                NewPlayerP.Y = Buffer->Height;
-            }
-
+            // if(NewPlayerP.X-(PLAYER_WIDTH*0.5) < 0)
+            // {
+            //     NewPlayerP.X = PLAYER_WIDTH*0.5f;
+            // }
+            // if(NewPlayerP.X+(PLAYER_WIDTH*0.5) >= Buffer->Width)
+            // {
+            //     NewPlayerP.X = Buffer->Width-(PLAYER_WIDTH*0.5f);
+            // }
+            // if(NewPlayerP.Y-PLAYER_HEIGHT < 0)
+            // {
+            //     NewPlayerP.Y = PLAYER_HEIGHT;
+            // }
+            // if(NewPlayerP.Y >= Buffer->Height)
+            // {
+            //     NewPlayerP.Y = Buffer->Height;
+            // }
+            //
             GameState->PlayerP = NewPlayerP;
         }
     }
@@ -489,6 +474,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
+
+    // Dandelion
+    thing *Things = GameState->Things;
+    thing *Dandelion = Things + DANDELION;
+    Dandelion->Position = {0, (f32)(Buffer->Height - Dandelion->Bitmap.Height - 1)};
+
+    // Puff
+    thing *Puff = Things + PUFF;
+    Puff->Position = {(f32)Buffer->Width * 0.33f, (f32)Buffer->Height * 0.33f};
+
+    // Grass path
+    thing *Path = Things + PATH;
+    Path->Position = {(f32)(Buffer->Width * 0.5f) - 32.0f, -40.0f};
+
+    // Aphid
+    thing *Aphid = Things + APHID;
+    Aphid->Position = {Things[DANDELION].Position.X, Things[DANDELION].Position.Y - 10.0f};
+
+    thing *Ladybug = Things + LADYBUG;
+    Ladybug->Position = {(f32)Things[APHID].Position.X, Things[APHID].Position.Y - 30.0f};
 
     for(thing *Thing = GameState->Things;
         Thing->Id < GameState->MaxThings;
