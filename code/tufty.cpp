@@ -80,7 +80,7 @@ DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
 }
 
 void
-DEBUGDrawText(game_offscreen_buffer *Buf,
+DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
               char *StringText, buffer RasterizedTextBuf,
               f32 R, f32 G, f32 B)
@@ -93,7 +93,7 @@ DEBUGDrawText(game_offscreen_buffer *Buf,
         quad *ThisQuad = (quad *)(RasterizedTextBuf.Start + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
         v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
-        DrawRect(Buf, Min, Max, R, G, B);
+        DrawRect(Backbuf, Min, Max, R, G, B);
     }
 }
 
@@ -226,11 +226,20 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
     }
 }
 
+static void
+PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory *Memory)
+{
+    FillThisOut->Filename = Filename;
+    FillThisOut->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filename);
+    FillThisOut->Buffer.Start = PushArray(Arena, u8, FillThisOut->Buffer.Size);
+    DEBUGReloadBitmapIfChanged(FillThisOut, Memory);
+}
+
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-    u32 DebugStateNumBytes = Megabytes(16);
-    u32 GameStateNumBytes = Memory->PermanentStorageSize - DebugStateNumBytes;
+    memory_idx DebugStateNumBytes = Megabytes(16);
+    memory_idx GameStateNumBytes = Memory->PermanentStorageSize - DebugStateNumBytes;
 
     debug_state *DebugState = (debug_state *)Memory->PermanentStorage;
     game_state *GameState = (game_state *)((u8 *)Memory->PermanentStorage + DebugStateNumBytes);
@@ -241,8 +250,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         InitializeArena(&DebugState->DebugArena,
                         ((u8 *)Memory->PermanentStorage + sizeof(debug_state)),
                         (DebugStateNumBytes - sizeof(debug_state)));
-        DebugState->DebugText = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
-        // DebugState->DebugText.Size = Megabytes(2);
+
+        DebugState->DebugTextBuf.Start = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
+        DebugState->DebugTextBuf.Size = Megabytes(2);
+        
         // DebugState->DebugText.Start = PushArray(&DebugState->DebugArena, u8, DebugText.Size);
 
         InitializeArena(&GameState->WorldArena, 
@@ -256,31 +267,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerFacing = EAST;
 
         // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
-        bitmap *East = &GameState->PlayerBitmaps[EAST];
-        East->Filename = "16x16faceright.bmp";
-        East->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(East->Filename));
-        DEBUGReloadBitmapIfChanged(East, Memory);
-
-        bitmap *North = &GameState->PlayerBitmaps[NORTH];
-        North->Filename = "16x16behindview.bmp";
-        North->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(North->Filename));
-        DEBUGReloadBitmapIfChanged(North, Memory);
-
-        bitmap *West = &GameState->PlayerBitmaps[WEST];
-        West->Filename = "16x16faceleft.bmp";
-        West->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(West->Filename));
-        DEBUGReloadBitmapIfChanged(West, Memory);
-
-        bitmap *South = &GameState->PlayerBitmaps[SOUTH];
-        South->Filename = "16x16frontview.bmp";
-        South->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(South->Filename));
-        DEBUGReloadBitmapIfChanged(South, Memory);
-
-        bitmap *EnvBitmaps = (bitmap *)&GameState->EnvironmentBitmaps;
-        bitmap *Dandelion = EnvBitmaps;
-        Dandelion->Filename = "64x64dandelion.bmp";
-        Dandelion->Buffer = PushArray(&GameState->WorldArena, u8, Memory->DEBUGPlatformGetFileSize(Dandelion->Filename));
-        DEBUGReloadBitmapIfChanged(Dandelion, Memory);
+        PushBitmapToArena(&GameState->WorldArena, "16x16faceright.bmp", &GameState->PlayerBitmaps[EAST], Memory);
+        PushBitmapToArena(&GameState->WorldArena, "16x16behindview.bmp", &GameState->PlayerBitmaps[NORTH], Memory);
+        PushBitmapToArena(&GameState->WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
+        PushBitmapToArena(&GameState->WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
 
         Memory->IsInitialized = true;
     }
@@ -373,15 +363,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
     // Dandelion
-    bitmap *Dandelion = (bitmap *)GameState->EnvironmentBitmaps;
-#if 0
-    v2 DandelionMin = {0, (f32)(Buffer->Height * 0.25f) - 1};
-    v2 DandelionMax = {(f32)(Buffer->Height * 0.75f), (f32)(Buffer->Height - 1)};
-#else
-    v2 DandelionMin = {0, 0};
-    v2 DandelionMax = {(f32)(Buffer->Height), (f32)(Buffer->Height - 1)};
-#endif
-    ScaleAndBlitBitmap(Buffer, DandelionMin, DandelionMax, Dandelion);
+//     bitmap *Dandelion = (bitmap *)GameState->EnvironmentBitmaps;
+// #if 0
+//     v2 DandelionMin = {0, (f32)(Buffer->Height * 0.25f) - 1};
+//     v2 DandelionMax = {(f32)(Buffer->Height * 0.75f), (f32)(Buffer->Height - 1)};
+// #else
+//     v2 DandelionMin = {0, 0};
+//     v2 DandelionMax = {(f32)(Buffer->Height), (f32)(Buffer->Height - 1)};
+// #endif
+//     ScaleAndBlitBitmap(Buffer, DandelionMin, DandelionMax, Dandelion);
 
 #define FPS_SNAPS 30 
     static f32 FpsSnaps[FPS_SNAPS] = {};
@@ -403,7 +393,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     char Temp[256];
     snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugText, 0.2f, 0.9f, 0.2f);
+    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugTextBuf, 0.2f, 0.9f, 0.2f);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

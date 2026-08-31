@@ -31,7 +31,7 @@ ArenaPush_(arena *Arena, memory_idx NumBytes)
     return(Result);
 }
 
-#define PushArray(Arena, Type, Count) (buffer){((Type *)ArenaPush_((Arena), sizeof(Type) * (Count))), Count}
+#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count))
 #define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type))
 
 struct v2
@@ -69,7 +69,7 @@ enum facing
 struct debug_state
 {
     arena DebugArena;
-    buffer DebugText;
+    buffer DebugTextBuf;
 };
 
 struct game_state
