@@ -240,8 +240,8 @@ OSXGetEXEPath(void)
             }
         }
 
-        memory_idx DirLength = OnePastLastSlash - PathBuffer;
-        for(memory_idx Index = 0;
+        mem_idx DirLength = OnePastLastSlash - PathBuffer;
+        for(mem_idx Index = 0;
             Index < DirLength;
             ++Index)
         {
