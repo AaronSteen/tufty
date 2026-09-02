@@ -224,10 +224,10 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
 
-    s32 ScreenMinY = RoundF32ToU32(Min.Y);
-    s32 ScreenMaxY = RoundF32ToU32(Max.Y);
-    s32 ScreenMinX = RoundF32ToU32(Min.X);
-    s32 ScreenMaxX = RoundF32ToU32(Max.X);
+    s32 ScreenMinY = RoundF32ToS32(Min.Y);
+    s32 ScreenMaxY = RoundF32ToS32(Max.Y);
+    s32 ScreenMinX = RoundF32ToS32(Min.X);
+    s32 ScreenMaxX = RoundF32ToS32(Max.X);
 
     s32 SampledScreenMinY = ScreenMinY;
     s32 SampledScreenMaxY = ScreenMaxY;
