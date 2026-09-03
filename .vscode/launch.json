@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "debug tufty",
+            "program": "/Users/owner/work/tufty/build/tufty",
+            "args": [],
+            "cwd": "/Users/owner/work/tufty/data"
+        }
+    ]
+}
