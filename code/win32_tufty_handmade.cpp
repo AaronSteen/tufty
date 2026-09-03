@@ -785,7 +785,7 @@ Win32PlayBackInput(win32_state *State, game_input *NewInput)
 }
 
 static void
-Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, game_mouse_input *Mouse)
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, function_keys *FunctionKeys, game_mouse_input *Mouse)
 {
     MSG Message;
     while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -888,6 +888,56 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                                 Win32EndInputPlayBack(State);
                             }
                         }
+                    }
+                    //     VK_F2 	0x71 	F2 key
+                    //     VK_F3 	0x72 	F3 key
+                    //     VK_F4 	0x73 	F4 key
+                    //     VK_F5 	0x74 	F5 key
+                    //     VK_F6 	0x75 	F6 key
+                    //     VK_F7 	0x76 	F7 key
+                    //     VK_F8 	0x77 	F8 key
+                    //     VK_F9 	0x78 	F9 key
+                    //     VK_F10 	0x79 	F10 key
+                // Function keys
+                    else if(VKCode == VK_F1)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F1, IsDown);
+                    }
+                    else if(VKCode == VK_F2)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F2, IsDown);
+                    }
+                    else if(VKCode == VK_F3)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F3, IsDown);
+                    }
+                    else if(VKCode == VK_F4)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F4, IsDown);
+                    }
+                    else if(VKCode == VK_F5)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F5, IsDown);
+                    }
+                    else if(VKCode == VK_F6)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F6, IsDown);
+                    }
+                    else if(VKCode == VK_F7)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F7, IsDown);
+                    }
+                    else if(VKCode == VK_F8)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F8, IsDown);
+                    }
+                    else if(VKCode == VK_F9)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F9, IsDown);
+                    }
+                    else if(VKCode == VK_F10)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F10, IsDown);
                     }
 #endif
                 }
@@ -1269,7 +1319,17 @@ WinMain(HINSTANCE Instance,
                     NewMouse->X = MouseP.x - WIN32_BACKBUFFER_OFFSET_X;
                     NewMouse->Y = MouseP.y - WIN32_BACKBUFFER_OFFSET_Y;
 
-                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewMouse);
+                    function_keys *OldFunctionKeys = &OldInput->FunctionKeys;
+                    function_keys *NewFunctionKeys = &NewInput->FunctionKeys;
+                    *NewFunctionKeys = {};
+                    for(int FnKeyIdx = 0;
+                        FnKeyIdx < ArrayCount(NewFunctionKeys->Keys);
+                        ++FnKeyIdx)
+                    {
+                        NewFunctionKeys->Keys[FnKeyIdx].EndedDown = OldFunctionKeys->Keys[FnKeyIdx].EndedDown;
+                    }
+
+                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewFunctionKeys, NewMouse);
 
                     if(!GlobalPause)
                     {

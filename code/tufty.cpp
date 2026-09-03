@@ -53,41 +53,47 @@ LerpS32(s32 A, s32 B, f32 T)
     return(Result);
 }
 
-static void
-DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
+void
+DrawSimpleRect(game_offscreen_buffer *Buf,
+               v2 Min, v2 Max,
+               f32 R, f32 G, f32 B, f32 Alpha = 0.5f,
+               b32 Outline = false)
 {
     s32 MinX = RoundF32ToS32(Min.X);
     s32 MinY = RoundF32ToS32(Min.Y);
     s32 MaxX = RoundF32ToS32(Max.X);
     s32 MaxY = RoundF32ToS32(Max.Y);
 
-    if(MinX < 0)
-    {
-        MinX = 0;
-    }
     if(MinY < 0)
     {
         MinY = 0;
     }
-    if(MaxX >= Buf->Width)
-    {
-        MaxX = Buf->Width;
-    }
-    if(MaxY >= Buf->Height)
+    if(MaxY > Buf->Height)
     {
         MaxY = Buf->Height;
     }
+    if(MinX < 0)
+    {
+        MinX = 0;
+    }
+    if(MaxX > Buf->Width)
+    {
+        MaxX = Buf->Width;
+    }
 
-    u32 Color = (((RoundF32ToU32(R * 255.0f)) << 16) |
-                 ((RoundF32ToU32(G * 255.0f)) <<  8) |
-                 ((RoundF32ToU32(B * 255.0f)) <<  0));
+    u32 Color = ((RoundF32ToU32(R * 255.0f) << 16) |
+                 (RoundF32ToU32(G * 255.0f) << 8)  |
+                 (RoundF32ToU32(B * 255.0f) << 0));
 
-    u8 *Row = (u8 *)Buf->Memory + MinY * Buf->Pitch + MinX * Buf->BytesPerPixel;
-
-    for(int Y = MinY; Y < MaxY; ++Y)
+    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
+    for(int Y = MinY;
+        Y < MaxY;
+        ++Y)
     {
         u32 *Pixel = (u32 *)Row;
-        for(int X = MinX; X < MaxX; ++X)
+        for(int X = MinX;
+            X < MaxX;
+            ++X)
         {
             *Pixel++ = Color;
         }
@@ -96,9 +102,9 @@ DrawRect(game_offscreen_buffer *Buf, v2 Min, v2 Max, f32 R, f32 G, f32 B)
 }
 
 void
-DrawOpaqueRectWithOutline(game_offscreen_buffer *Buffer,
-                    v2 Min, v2 Max,
-                    f32 R, f32 G, f32 B)
+DrawSpecialRect(game_offscreen_buffer *Buf,
+                v2 Min, v2 Max,
+                f32 R, f32 G, f32 B, b32 Outline = false, f32 Alpha = 0.5f)
 {
     s32 MinX = RoundF32ToS32(Min.X);
     s32 MinY = RoundF32ToS32(Min.Y);
@@ -109,25 +115,24 @@ DrawOpaqueRectWithOutline(game_offscreen_buffer *Buffer,
     {
         MinY = 0;
     }
-    if(MaxY > Buffer->Height)
+    if(MaxY > Buf->Height)
     {
-        MaxY = Buffer->Height;
+        MaxY = Buf->Height;
     }
     if(MinX < 0)
     {
         MinX = 0;
     }
-    if(MaxX > Buffer->Width)
+    if(MaxX > Buf->Width)
     {
-        MaxX = Buffer->Width;
+        MaxX = Buf->Width;
     }
 
     u32 Blue = RoundF32ToU32(B * 255.0f);
     u32 Green = RoundF32ToU32(G * 255.0f);
     u32 Red = RoundF32ToU32(R * 255.0f);
-    f32 Alpha = 0.5f;
 
-    u8 *Row = (u8 *)Buffer->Memory + (MinY * Buffer->Pitch) + (MinX * Buffer->BytesPerPixel);
+    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
     for(int Y = MinY;
         Y < MaxY;
         ++Y)
@@ -137,15 +142,13 @@ DrawOpaqueRectWithOutline(game_offscreen_buffer *Buffer,
             X < MaxX;
             ++X)
         {
-            if(Y == MinY)
+            if((Y == MinY) && Outline)
             {
                 *(u32 *)Pixel = 0;
-                Pixel += sizeof(u32);
             }
-            else if(X == MinX)
+            else if((X == MinX) && Outline)
             {
                 *(u32 *)Pixel = 0;                
-                Pixel += sizeof(u32);
             }
             else
             {
@@ -158,17 +161,20 @@ DrawOpaqueRectWithOutline(game_offscreen_buffer *Buffer,
                 // Red
                 Pixel[2] = LerpS32(Pixel[2], Red, Alpha);
 
-                Pixel += sizeof(u32);
             }
+            Pixel += sizeof(u32);
         }
-        Row += Buffer->Pitch;
+        Row += Buf->Pitch;
     }
 }
+
+
 void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
               char *StringText, buffer RasterizedTextBuf,
-              f32 R, f32 G, f32 B)
+              f32 R, f32 G, f32 B,
+              f32 Alpha = 1.0f)
 {
     int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuf.Start, RasterizedTextBuf.Size);
     for(int QuadIdx = 0;
@@ -178,8 +184,42 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
         quad *ThisQuad = (quad *)(RasterizedTextBuf.Start + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
         v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
-        DrawRect(Backbuf, Min, Max, R, G, B);
+        if(Alpha == 1.0f)
+        {
+            DrawSimpleRect(Backbuf, Min, Max, R, G, B);
+        }
+        else
+        {
+            DrawSpecialRect(Backbuf, Min, Max, R, G, B, false, Alpha);
+        }
     }
+}
+
+void
+DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, buffer DebugTextBuf)
+{
+#define FPS_SNAPS 30
+    static f32 FpsSnaps[FPS_SNAPS] = {};
+    static int FpsPrintCounter = 0;
+    f32 FpsAvg = 0;
+    FpsSnaps[FpsPrintCounter] = NewFpsReading;
+    ++FpsPrintCounter;
+    for(int SnapIdx = 0;
+        SnapIdx < FPS_SNAPS;
+        ++SnapIdx)
+    {
+        FpsAvg += FpsSnaps[SnapIdx];
+    }
+    FpsAvg /= FPS_SNAPS;
+
+    if(FpsPrintCounter == FPS_SNAPS)
+    {
+        FpsPrintCounter = 0;
+    }
+    char Temp[256];
+    snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
+    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, DebugTextBuf, 0.9f, 0.2f, 0.5f);
+#undef FPS_SNAPS
 }
 
 
@@ -425,31 +465,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
             NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;
 
-            // if(NewPlayerP.X-(PLAYER_WIDTH*0.5) < 0)
-            // {
-            //     NewPlayerP.X = PLAYER_WIDTH*0.5f;
-            // }
-            // if(NewPlayerP.X+(PLAYER_WIDTH*0.5) >= Buffer->Width)
-            // {
-            //     NewPlayerP.X = Buffer->Width-(PLAYER_WIDTH*0.5f);
-            // }
-            // if(NewPlayerP.Y-PLAYER_HEIGHT < 0)
-            // {
-            //     NewPlayerP.Y = PLAYER_HEIGHT;
-            // }
-            // if(NewPlayerP.Y >= Buffer->Height)
-            // {
-            //     NewPlayerP.Y = Buffer->Height;
-            // }
-            //
             GameState->PlayerP = NewPlayerP;
         }
+    }
+
+    if(Input->FunctionKeys.F1.EndedDown && Input->FunctionKeys.F1.HalfTransitionCount == 1)
+    {
+        GameState->Editor = !GameState->Editor;
     }
 
     // Underlayer
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
-    DrawRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
+    DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
 
     // Tiles
     for(int Row = 0; 
@@ -462,7 +490,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         {
             v2 TileMin = {Col * 64.0f, Row * 64.0f};
             v2 TileMax = TileMin + (v2){64.0f, 64.0f};
-            DrawOpaqueRectWithOutline(Buffer, TileMin, TileMax, 0.75, 0.75, 0.75);
+            DrawSpecialRect(Buffer, TileMin, TileMax, 0.42f, 0.62f, 0.6f, true);
         }
     }
     // Player
@@ -507,34 +535,59 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         v2 ThingMax = Thing->Position + (v2){(f32)Thing->Bitmap.Width, (f32)Thing->Bitmap.Height};
         ScaleAndBlitBitmap(Buffer, Thing->Position, ThingMax, &Thing->Bitmap);
     }
-        
-
-    // Dandelion
-    // thing *Dandelion = GameState->Things + 0;
-    // v2 DandelionMax = {Dandelion->Position.X + Dandelion->Bitmap.Width, Dandelion->Position.Y + Dandelion->Bitmap.Height};
-    // ScaleAndBlitBitmap(Buffer, Dandelion->Position, DandelionMax, &Dandelion->Bitmap);
-
-#define FPS_SNAPS 30 
-    static f32 FpsSnaps[FPS_SNAPS] = {};
-    static int FpsPrintCounter = 0;
-    f32 FpsAvg = 0;
-    FpsSnaps[FpsPrintCounter] = Input->Fps;
-    ++FpsPrintCounter;
-    for(int SnapIdx = 0;
-        SnapIdx < FPS_SNAPS;
-        ++SnapIdx)
+    // Draw tile browser
+    if(GameState->Editor)
     {
-        FpsAvg += FpsSnaps[SnapIdx];
+        v2 BrowserMin = {(f32)(Buffer->Width * 0.8f), 0};
+        v2 BrowserMax = {(f32)(Buffer->Width), (f32)(Buffer->Height)};
+        DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.5f);
     }
-    FpsAvg /= FPS_SNAPS;
 
-    if(FpsPrintCounter == FPS_SNAPS)
+    struct fn_key_attributes
     {
-        FpsPrintCounter = 0;
+        u64 FrameCount;
+        f32 Opacity;
+    };
+
+    static fn_key_attributes FnKeyAttributes[10];
+    static b32 FnKeysInit = false;
+    if(!FnKeysInit)
+    {
+        for(int i = 0;
+            i < ArrayCount(FnKeyAttributes);
+            ++i)
+        {
+            FnKeyAttributes[i].FrameCount = 180;
+        }
+
+        FnKeysInit = true;
     }
-    char Temp[256];
-    snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Buffer, (Buffer->Width * 0.85f), 30, Temp, DebugState->DebugTextBuf, 0.9f, 0.2f, 0.5f);
+
+    for(int FnKeyIdx = 0;
+        FnKeyIdx < ArrayCount(Input->FunctionKeys.Keys);
+        ++FnKeyIdx)
+    {
+        fn_key_attributes *It = FnKeyAttributes + FnKeyIdx;
+        if(Input->FunctionKeys.Keys[FnKeyIdx].EndedDown && Input->FunctionKeys.Keys[FnKeyIdx].HalfTransitionCount == 1)
+        {
+            It->FrameCount = 0;
+        }
+
+        if(It->FrameCount < 180)
+        {
+            It->Opacity = 1.0f - ((f32)It->FrameCount / 180.0f);
+            f32 PrintWidth = (f32)Buffer->Width * 0.1f;
+            f32 X = 30.0f + (f32)FnKeyIdx * PrintWidth;
+            f32 Y = Buffer->Height - (Buffer->Height * 0.33f);
+            char Temp[255];
+            snprintf(Temp, 255, "F%d", FnKeyIdx+1); 
+            DEBUGDrawText(Buffer, X, Y, Temp, DebugState->DebugTextBuf, 0.1f, 0.1f, 1, It->Opacity);
+        }
+
+        ++It->FrameCount;
+    }
+
+    DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

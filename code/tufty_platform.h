@@ -180,6 +180,29 @@ typedef struct game_mouse_input
     };
 } game_mouse_input;
 
+typedef struct function_keys
+{
+    // struct to store state of the function keys, which we use for dev tool purposes.
+    // Note(Aaron): We do not use F11 or F12 because those are not on my special keyboard :)
+    union
+    {
+        game_button_state Keys[10];
+        struct
+        {
+            game_button_state F1;
+            game_button_state F2;
+            game_button_state F3;
+            game_button_state F4;
+            game_button_state F5;
+            game_button_state F6;
+            game_button_state F7;
+            game_button_state F8;
+            game_button_state F9;
+            game_button_state F10;
+        };
+    };
+} function_keys;
+
 typedef struct game_input
 {
     game_mouse_input Mouse;
@@ -188,6 +211,7 @@ typedef struct game_input
     f32 Fps;
 
     game_controller_input Controllers[5];
+    function_keys FunctionKeys;
 } game_input;
 
 game_controller_input *

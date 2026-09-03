@@ -107,6 +107,7 @@ struct game_state
     bitmap PlayerBitmaps[4];
     thing *Things;
     int MaxThings;
+    b32 Editor;
 };
 
 #pragma pack(push, 1)
