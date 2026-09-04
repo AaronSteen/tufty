@@ -59,11 +59,13 @@ static char GlobalEXEPath[PATH_MAX];
 static u32 GlobalTempDylibCounter;
 static game_controller_input *GlobalKeyboardController;
 static game_mouse_input *GlobalMouse;
+static function_keys *GlobalFunctionKeys;
 static osx_audio GlobalAudio;
 
 static void
 OSXResizeBackbuffer(osx_offscreen_buffer *Buffer, int Width, int Height)
 {
+
     if(Buffer->Memory)
     {
         munmap(Buffer->Memory, Buffer->Pitch * Buffer->Height);
@@ -353,6 +355,16 @@ OSXUnloadGameCode(osx_game_code *GameCode)
 #define OSX_VK_P       0x23
 #define OSX_VK_SPACE   0x31
 #define OSX_VK_ESCAPE  0x35
+#define OSX_VK_F1      0x7A
+#define OSX_VK_F2      0x78
+#define OSX_VK_F3      0x63
+#define OSX_VK_F4      0x76
+#define OSX_VK_F5      0x60
+#define OSX_VK_F6      0x61
+#define OSX_VK_F7      0x62
+#define OSX_VK_F8      0x64
+#define OSX_VK_F9      0x65
+#define OSX_VK_F10     0x6D
 
 static void
 OSXProcessPendingEvents(NSApplication *App)
@@ -409,10 +421,29 @@ OSXProcessPendingEvents(NSApplication *App)
                     }
                 }
 
+                function_keys *FunctionKeys = GlobalFunctionKeys;
+                if(FunctionKeys)
+                {
+                    switch(KeyCode)
+                    {
+                        case OSX_VK_F1: OSXProcessButtonMessage(&FunctionKeys->F1, IsDown); break;
+                        case OSX_VK_F2: OSXProcessButtonMessage(&FunctionKeys->F2, IsDown); break;
+                        case OSX_VK_F3: OSXProcessButtonMessage(&FunctionKeys->F3, IsDown); break;
+                        case OSX_VK_F4: OSXProcessButtonMessage(&FunctionKeys->F4, IsDown); break;
+                        case OSX_VK_F5: OSXProcessButtonMessage(&FunctionKeys->F5, IsDown); break;
+                        case OSX_VK_F6: OSXProcessButtonMessage(&FunctionKeys->F6, IsDown); break;
+                        case OSX_VK_F7: OSXProcessButtonMessage(&FunctionKeys->F7, IsDown); break;
+                        case OSX_VK_F8: OSXProcessButtonMessage(&FunctionKeys->F8, IsDown); break;
+                        case OSX_VK_F9: OSXProcessButtonMessage(&FunctionKeys->F9, IsDown); break;
+                        case OSX_VK_F10: OSXProcessButtonMessage(&FunctionKeys->F10, IsDown); break;
+                    }
+                }
+
                 if(IsDown && CommandIsDown && (KeyCode == OSX_VK_Q))
                 {
                     GlobalRunning = false;
                 } 
+
             } break;
 
             case NSEventTypeLeftMouseDown: case NSEventTypeLeftMouseUp:
@@ -772,6 +803,16 @@ main(int ArgC, char **ArgVector)
                         OldKeyboardController->Buttons[ButtonIdx].EndedDown;
                 }
 
+                function_keys *OldFunctionKeys = &OldInput->FunctionKeys;
+                function_keys *NewFunctionKeys = &NewInput->FunctionKeys;
+                *NewFunctionKeys = {};
+                for(int FnKeyIdx = 0;
+                    FnKeyIdx < ArrayCount(NewFunctionKeys->Keys);
+                    ++FnKeyIdx)
+                {
+                    NewFunctionKeys->Keys[FnKeyIdx].EndedDown = OldFunctionKeys->Keys[FnKeyIdx].EndedDown;
+                }
+
                 game_mouse_input *OldMouse = &OldInput->Mouse;
                 game_mouse_input *NewMouse = &NewInput->Mouse;
                 *NewMouse = {};
@@ -792,8 +833,10 @@ main(int ArgC, char **ArgVector)
                 NewMouse->X = (s32)(MouseViewP.x * MouseXScale);
                 NewMouse->Y = (s32)(((f32)ViewBounds.size.height - MouseViewP.y) * MouseYScale);
 
+                
                 GlobalKeyboardController = NewKeyboardController;
                 GlobalMouse = NewMouse;
+                GlobalFunctionKeys = NewFunctionKeys;
 
                 OSXProcessPendingEvents(App);
 
