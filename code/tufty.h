@@ -5,6 +5,37 @@
 #endif
 #include "tufty_platform.h"
 
+static u32
+RoundF32ToU32(f32 Real)
+{
+    u32 Result = (u32)(Real + 0.5f);
+    return(Result);
+}
+
+static s32
+RoundF32ToS32(f32 Real)
+{
+    s32 Result = (s32)(Real + 0.5f);
+    return(Result);
+}
+
+static u32
+TruncateF32ToU32(f32 Real)
+{
+    u32 Result = (u32)Real;
+    return(Result);
+}
+
+
+static s32
+LerpS32(s32 A, s32 B, f32 T)
+{
+    s32 Result = A + T * (B - A);
+    return(Result);
+}
+
+#include "myrandom.h"
+
 struct arena
 {
     u8 *Start;
@@ -84,29 +115,35 @@ enum facing
     SOUTH
 };
 
-
 struct debug_state
 {
     arena DebugArena;
     buffer DebugTextBuf;
 };
 
-struct thing
+struct tile_map
 {
-    int Id;
-    bitmap Bitmap;
-    buffer ScaledBitmap;
-    v2 Position;
+    u32 TileRows;
+    u32 TileCols;
+    f32 TileDim;
+    u32 NumTileTypes;
+    bitmap *TileBitmaps;
+    int NumTiles;
+    s32 *TileValues;
 };
 
 struct game_state
 {
     arena WorldArena;
+
+    tile_map TileMap;
+
+    random_series RandomSeries;
+
     v2 PlayerP;
     facing PlayerFacing;
     bitmap PlayerBitmaps[4];
-    thing *Things;
-    int MaxThings;
+
     b32 Editor;
 };
 

@@ -1466,6 +1466,11 @@ WinMain(HINSTANCE Instance,
                         }
                         if(Game.UpdateAndRender)
                         {
+                            // HACK: I am not sure if this is the correct place to do this,
+                            //      but for now this is one way to get a suitably random value 
+                            //      that we need for seeding the random series in the game code 
+                            //      when initializing the game (AS, 9/4/26)
+                            NewInput->CpuTimerReading = ReadCpuTimer();
                             Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
                         }
 

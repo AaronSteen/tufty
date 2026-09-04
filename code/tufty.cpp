@@ -6,6 +6,7 @@
 
 enum
 {
+    TILE_INVALID = -1,
     DANDELION,
     PUFF,
     PATH,
@@ -23,35 +24,6 @@ struct quad
 {
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
-
-static u32
-RoundF32ToU32(f32 Real)
-{
-    u32 Result = (u32)(Real + 0.5f);
-    return(Result);
-}
-
-static s32
-RoundF32ToS32(f32 Real)
-{
-    s32 Result = (s32)(Real + 0.5f);
-    return(Result);
-}
-
-static u32
-TruncateF32ToU32(f32 Real)
-{
-    u32 Result = (u32)Real;
-    return(Result);
-}
-
-
-static s32
-LerpS32(s32 A, s32 B, f32 T)
-{
-    s32 Result = A + T * (B - A);
-    return(Result);
-}
 
 void
 DrawSimpleRect(game_offscreen_buffer *Buf,
@@ -85,7 +57,7 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
                  (RoundF32ToU32(G * 255.0f) << 8)  |
                  (RoundF32ToU32(B * 255.0f) << 0));
 
-    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
+u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
     for(int Y = MinY;
         Y < MaxY;
         ++Y)
@@ -368,9 +340,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     debug_state *DebugState = (debug_state *)Memory->PermanentStorage;
     game_state *GameState = (game_state *)((u8 *)Memory->PermanentStorage + DebugStateNumBytes);
 
-    if(!(Memory->IsInitialized))
+    if(!Memory->IsInitialized)
     {
-
         InitializeArena(&DebugState->DebugArena,
                         ((u8 *)Memory->PermanentStorage + sizeof(debug_state)),
                         (DebugStateNumBytes - sizeof(debug_state)));
@@ -385,10 +356,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         arena *WorldArena = &GameState->WorldArena;
         Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + WorldArena->Size) == Memory->PermanentStorageSize);
 
+// Player
         GameState->PlayerP.X = Buffer->Width / 2;
         GameState->PlayerP.Y = Buffer->Height / 2;
         GameState->PlayerFacing = EAST;
-
 
         // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
         PushBitmapToArena(WorldArena, "16x16faceright.bmp", &GameState->PlayerBitmaps[EAST], Memory);
@@ -396,20 +367,32 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         PushBitmapToArena(WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
         PushBitmapToArena(WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
 
+// Random
+        GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
-        GameState->MaxThings = 10;
-        GameState->Things = PushArray(WorldArena, thing, GameState->MaxThings);
-        thing *Things = GameState->Things;
+// Tiles        
+        tile_map *TileMap = &GameState->TileMap;
 
-        char *ThingFilenames[] = {"64x64dandelion.bmp", "64x64dandelionpuff.bmp", "64x64grasspath.bmp", "64x64ladybug.bmp", "64x64aphid.bmp"};
-
-        for(int ThingIdx = 0;
-            ThingIdx < ArrayCount(ThingFilenames);
-            ++ThingIdx)
+        TileMap->TileDim = 96.0f;
+        TileMap->TileRows = (Buffer->Height / TileMap->TileDim) + 1;
+        TileMap->TileCols = (Buffer->Width / TileMap->TileDim) + 1;
+        char *TileFilenames[] = {"64x64dandelion.bmp", "64x64dandelionpuff.bmp", "64x64grasspath.bmp", "64x64ladybug.bmp", "64x64aphid.bmp"};
+        TileMap->NumTileTypes = ArrayCount(TileFilenames);
+        TileMap->TileBitmaps = PushArray(WorldArena, bitmap, TileMap->NumTileTypes);
+        for(int BitmapIdx = 0;
+            BitmapIdx < TileMap->NumTileTypes;
+            ++BitmapIdx)
         {
-            thing *Thing = Things + ThingIdx;
-            Thing->Id = ThingIdx;
-            PushBitmapToArena(WorldArena, ThingFilenames[ThingIdx], &Thing->Bitmap, Memory);
+            PushBitmapToArena(WorldArena, TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
+        }
+
+        TileMap->NumTiles = TileMap->TileRows * TileMap->TileCols;
+        TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTiles); 
+        for(int TileIdx = 0;
+            TileIdx < TileMap->NumTiles;
+            ++TileIdx)
+        {
+            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, -1, 4);
         }
 
         Memory->IsInitialized = true;
@@ -421,6 +404,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         ++PlayerBitmapIdx)
     {
         DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
+    }
+
+    for(int TileBitmapIdx = 0;
+        TileBitmapIdx < GameState->TileMap.NumTileTypes;
+        ++TileBitmapIdx)
+    {
+        DEBUGReloadBitmapIfChanged(&GameState->TileMap.TileBitmaps[TileBitmapIdx], Memory);
     }
 
     for(int ControllerIdx = 0;
@@ -479,18 +469,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
     DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
 
+    tile_map *TileMap = &GameState->TileMap;
     // Tiles
     for(int Row = 0; 
-        Row < RoundF32ToS32((f32)Buffer->Height / 64.0f); 
+        Row < TileMap->TileRows;
         ++Row)
     {
         for(int Col = 0;
-            Col < RoundF32ToS32((f32)Buffer->Width / 64.0f); 
+            Col < TileMap->TileCols; 
             ++Col)
         {
-            v2 TileMin = {Col * 64.0f, Row * 64.0f};
-            v2 TileMax = TileMin + (v2){64.0f, 64.0f};
-            DrawSpecialRect(Buffer, TileMin, TileMax, 0.42f, 0.62f, 0.6f, true);
+            s32 TileOneDimensionalIndex = Row * TileMap->TileCols + Col;
+            s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
+            if(TileValue >= 0)
+            {
+                v2 TileMin = {Col * TileMap->TileDim, Row * TileMap->TileDim};
+                v2 TileMax = TileMin + (v2){TileMap->TileDim, TileMap->TileDim};
+                bitmap *TileBitmap = TileMap->TileBitmaps + TileValue;
+                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
+            }
         }
     }
     // Player
@@ -503,38 +500,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      in the game when moving character around. test this.
     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
 
-    // Dandelion
-    thing *Things = GameState->Things;
-    thing *Dandelion = Things + DANDELION;
-    Dandelion->Position = {0, (f32)(Buffer->Height - Dandelion->Bitmap.Height - 1)};
-
-    // Puff
-    thing *Puff = Things + PUFF;
-    Puff->Position = {(f32)Buffer->Width * 0.33f, (f32)Buffer->Height * 0.33f};
-
-    // Grass path
-    thing *Path = Things + PATH;
-    Path->Position = {(f32)(Buffer->Width * 0.5f) - 32.0f, -40.0f};
-
-    // Aphid
-    thing *Aphid = Things + APHID;
-    Aphid->Position = {Things[DANDELION].Position.X, Things[DANDELION].Position.Y - 10.0f};
-
-    thing *Ladybug = Things + LADYBUG;
-    Ladybug->Position = {(f32)Things[APHID].Position.X, Things[APHID].Position.Y - 30.0f};
-
-    for(thing *Thing = GameState->Things;
-        Thing->Id < GameState->MaxThings;
-        ++Thing)
-    {
-        if(Thing->Position == (v2){0, 0})
-        {
-            continue;
-        }
-
-        v2 ThingMax = Thing->Position + (v2){(f32)Thing->Bitmap.Width, (f32)Thing->Bitmap.Height};
-        ScaleAndBlitBitmap(Buffer, Thing->Position, ThingMax, &Thing->Bitmap);
-    }
     // Draw tile browser
     if(GameState->Editor)
     {
@@ -543,52 +508,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.5f);
     }
 
-    struct fn_key_attributes
-    {
-        u64 FrameCount;
-        f32 Opacity;
-    };
-
-    static fn_key_attributes FnKeyAttributes[10];
-    static b32 FnKeysInit = false;
-    if(!FnKeysInit)
-    {
-        for(int i = 0;
-            i < ArrayCount(FnKeyAttributes);
-            ++i)
-        {
-            FnKeyAttributes[i].FrameCount = 180;
-        }
-
-        FnKeysInit = true;
-    }
-
-    for(int FnKeyIdx = 0;
-        FnKeyIdx < ArrayCount(Input->FunctionKeys.Keys);
-        ++FnKeyIdx)
-    {
-        fn_key_attributes *It = FnKeyAttributes + FnKeyIdx;
-        if(Input->FunctionKeys.Keys[FnKeyIdx].EndedDown && Input->FunctionKeys.Keys[FnKeyIdx].HalfTransitionCount == 1)
-        {
-            It->FrameCount = 0;
-        }
-
-        if(It->FrameCount < 180)
-        {
-            It->Opacity = 1.0f - ((f32)It->FrameCount / 180.0f);
-            f32 PrintWidth = (f32)Buffer->Width * 0.1f;
-            f32 X = 30.0f + (f32)FnKeyIdx * PrintWidth;
-            f32 Y = Buffer->Height - (Buffer->Height * 0.33f);
-            char Temp[255];
-            snprintf(Temp, 255, "F%d", FnKeyIdx+1); 
-            DEBUGDrawText(Buffer, X, Y, Temp, DebugState->DebugTextBuf, 0.1f, 0.1f, 1, It->Opacity);
-        }
-
-        ++It->FrameCount;
-    }
-
     DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
 }
+
+
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {

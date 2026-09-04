@@ -209,6 +209,7 @@ typedef struct game_input
 
     f32 dtForFrame;
     f32 Fps;
+    u64 CpuTimerReading;
 
     game_controller_input Controllers[5];
     function_keys FunctionKeys;
