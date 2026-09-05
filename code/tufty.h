@@ -4,18 +4,19 @@
 #include <stdio.h>
 #endif
 #include "tufty_platform.h"
+#include <math.h>
 
 static u32
 RoundF32ToU32(f32 Real)
 {
-    u32 Result = (u32)(Real + 0.5f);
+    u32 Result = (u32)roundf(Real);
     return(Result);
 }
 
 static s32
 RoundF32ToS32(f32 Real)
 {
-    s32 Result = (s32)(Real + 0.5f);
+    s32 Result = (s32)roundf(Real);
     return(Result);
 }
 

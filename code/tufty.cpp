@@ -6,7 +6,7 @@
 
 enum
 {
-    TILE_INVALID = -1,
+    TILE_INVALID = 0,
     DANDELION,
     PUFF,
     PATH,
@@ -392,7 +392,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileIdx < TileMap->NumTiles;
             ++TileIdx)
         {
-            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, -1, 4);
+            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 4);
         }
 
         Memory->IsInitialized = true;
@@ -481,7 +481,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         {
             s32 TileOneDimensionalIndex = Row * TileMap->TileCols + Col;
             s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
-            if(TileValue >= 0)
+            if(TileValue > 0)
             {
                 v2 TileMin = {Col * TileMap->TileDim, Row * TileMap->TileDim};
                 v2 TileMax = TileMin + (v2){TileMap->TileDim, TileMap->TileDim};
