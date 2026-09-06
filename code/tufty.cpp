@@ -3,6 +3,10 @@
 
 #define PLAYER_HEIGHT 16.0f
 #define PLAYER_WIDTH  16.0f
+#define MAX_TILE_TYPES 200
+// Assume average filename length of 20
+#define TILE_FILENAME_BUFSIZE 200 * 20
+
 
 enum
 {
@@ -24,6 +28,26 @@ struct quad
 {
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
+
+// void
+// RefreshTiles(buffer *TileFilenameList, u32 *NumTileTypes)
+// {
+//     u8 NewTileFilenameList[TILE_FILENAME_BUFSIZE];
+//
+//     u32 NewTileFilenameCount = 0;
+//     PlatformGetListOfDirContents(&NewTileFilenameList, TILE_FILENAME_BUFSIZE, "tiles", &NewTileFilenameCount);
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+// }
+
 
 void
 DrawSimpleRect(game_offscreen_buffer *Buf,
@@ -371,34 +395,68 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
 // Tiles        
+        // How we are doing this.
+        //      While we are making the game, we want to be able to add tiles to the tufty/data/tiles/ dir
+        //          as it's running, and have the game dynamically load them in so that we can place them
+        //          using the tile editor.
+        //
+        //      Our process is as follows:
+        //          On init, we allocate a buffer in the Debug arena to store the list of the filenames
+        //              currently in the tiles/ directory. 
+        //          We call "GetListOfDirContents" to fill out this buffer.
+        //          Assumptions are that we have no more than 200 tile types in the game, and that
+        //              filenames for these tiles have an average length of 20 characters.
+        //          GetListOfDirContents fills the buffer with buffer structs containing the filenames
+        //              (note buffer struct just contains a u8 pointer and the number of bytes in the buffer),
+        //              and tells us how many files it found.
+        //          Then we visit each of those filenames in the buffer and load them into the TileBitmaps array.
+        //
+        //          While the game is running, once per frame, we call the GetListOfDirContents function
+        //              and determine whether the list is the same. We do this naively: we just check to see
+        //              if the contents of the list is byte-for-byte the same. If not, we zero the list of tiles
+        //              and the buffer of bitmaps for the tiles and reload them. This is inefficient, but
+        //              in a shipping game we would know the exact list of tiles and won't have to do this.
+        //
         tile_map *TileMap = &GameState->TileMap;
+        buffer *TilesList = &DebugState->ListOfFilesInTilesDir;
 
+        TilesList->Size = MAX_TILE_TYPES * 20;
+        TilesList->Start = PushArray(&DebugState->DebugArena, u8, TilesList->Size);
+        
+
+        Memory->DEBUGPlatformGetListOfDirContents(TilesList->Start, TilesList->Size, "tiles", &TileMap->NumTileTypes);
+        TileMap->TileFilenames = &DebugState->ListOfFilesInTilesDir;
+
+        TileMap->TileBitmaps = PushArray(WorldArena, bitmap, TileMap->NumTileTypes);
+        // for(int BitmapIdx = 0;
+        //     BitmapIdx < TileMap->NumTileTypes;
+        //     ++BitmapIdx)
+        // {
+        //     PushBitmapToArena(WorldArena, TileMap->TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
+        // }
+
+        // TileMap dimensions
         TileMap->TileDim = 96.0f;
         TileMap->TileRows = (Buffer->Height / TileMap->TileDim) + 1;
         TileMap->TileCols = (Buffer->Width / TileMap->TileDim) + 1;
-        char *TileFilenames[] = {"64x64dandelion.bmp", "64x64dandelionpuff.bmp", "64x64grasspath.bmp", "64x64ladybug.bmp", "64x64aphid.bmp"};
-        TileMap->NumTileTypes = ArrayCount(TileFilenames);
-        TileMap->TileBitmaps = PushArray(WorldArena, bitmap, TileMap->NumTileTypes);
-        for(int BitmapIdx = 0;
-            BitmapIdx < TileMap->NumTileTypes;
-            ++BitmapIdx)
-        {
-            PushBitmapToArena(WorldArena, TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
-        }
 
-        TileMap->NumTiles = TileMap->TileRows * TileMap->TileCols;
-        TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTiles); 
+        TileMap->NumTilesInWorld = TileMap->TileRows * TileMap->TileCols;
+        TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
         for(int TileIdx = 0;
-            TileIdx < TileMap->NumTiles;
+            TileIdx < TileMap->NumTilesInWorld;
             ++TileIdx)
         {
             TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 4);
         }
 
+
+
+
+
         Memory->IsInitialized = true;
     }
 
-    // hot reload bitmaps
+    // hot reload player bitmaps
     for(int PlayerBitmapIdx = 0;
         PlayerBitmapIdx < 4;
         ++PlayerBitmapIdx)
@@ -406,6 +464,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
     }
 
+    // hot reload tile bitmaps
     for(int TileBitmapIdx = 0;
         TileBitmapIdx < GameState->TileMap.NumTileTypes;
         ++TileBitmapIdx)
@@ -413,6 +472,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DEBUGReloadBitmapIfChanged(&GameState->TileMap.TileBitmaps[TileBitmapIdx], Memory);
     }
 
+
+
+
+    // What to do:
+    //      1. Push a reasonably sized array to DebugArena: 4096 bytes
+    //      2. Pass this to platform layer along with path to directory to read.
+    //              Say platform layer and game layer share a data structure "buffer"
+    //                  which contains a byte count and a u8 pointer.
+    //      3. Platform layer reads the directory and fills out 
+    //      3
+    //
     for(int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
         ++ControllerIdx)

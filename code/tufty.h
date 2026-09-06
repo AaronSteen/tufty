@@ -90,11 +90,6 @@ operator==(v2 A, v2 B)
     return(Result);
 }
 
-struct buffer
-{
-    u8 *Start;
-    mem_idx Size;
-};
 
 struct bitmap
 {
@@ -120,6 +115,7 @@ struct debug_state
 {
     arena DebugArena;
     buffer DebugTextBuf;
+    buffer ListOfFilesInTilesDir;
 };
 
 struct tile_map
@@ -128,8 +124,9 @@ struct tile_map
     u32 TileCols;
     f32 TileDim;
     u32 NumTileTypes;
+    buffer *TileFilenames;
     bitmap *TileBitmaps;
-    int NumTiles;
+    int NumTilesInWorld;
     s32 *TileValues;
 };
 

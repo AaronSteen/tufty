@@ -73,17 +73,28 @@ SafeTruncateU64ToU32(u64 SixtyFour)
     return(Result);
 }
 
+// Need a basic buffer struct for communication
+struct buffer
+{
+    u8 *Start;
+    mem_idx Size;
+};
+
 // *** SERVICES THE PLATFORM PROVIDES TO THE GAME ***
 
 #if TUFTY_INTERNAL
 // Casey says we need to write better versions for any shipping version of the game, since these will
 //      block the thread and the write doesn't protect against lost data
 
+
 typedef struct debug_read_file_result
 {
     u32 ContentsSize;
     void *Contents;
 } debug_read_file_result;
+
+#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(u8 *GameFilenameArrayStart, mem_idx GameFilenameArraySize, char *DirName, u32 *NumFilesFound)
+typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 #define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
@@ -241,6 +252,7 @@ typedef struct game_memory
     debug_platform_get_file_size *DEBUGPlatformGetFileSize;
     debug_platform_read_file_into *DEBUGPlatformReadFileInto;
     debug_platform_get_file_write_time *DEBUGPlatformGetFileWriteTime;
+    debug_platform_get_list_of_dir_contents *DEBUGPlatformGetListOfDirContents;
 } game_memory;
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
