@@ -3,10 +3,8 @@
 
 #define PLAYER_HEIGHT 16.0f
 #define PLAYER_WIDTH  16.0f
-#define MAX_TILE_TYPES 200
-// Assume average filename length of 20
-#define TILE_FILENAME_BUFSIZE 200 * 20
 
+#define MAX_TILE_TYPES 200
 
 enum
 {
@@ -29,24 +27,43 @@ struct quad
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
-// void
-// RefreshTiles(buffer *TileFilenameList, u32 *NumTileTypes)
-// {
-//     u8 NewTileFilenameList[TILE_FILENAME_BUFSIZE];
-//
-//     u32 NewTileFilenameCount = 0;
-//     PlatformGetListOfDirContents(&NewTileFilenameList, TILE_FILENAME_BUFSIZE, "tiles", &NewTileFilenameCount);
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-// }
+void
+RefreshTiles(arena *DebugArena, buffer PackedTileFilenames, tile_map *TileMap)
+{
+    buffer TilesDirContents;
+    // Assume avg 20 chars for tile filenames
+    TilesDirContents.Size = (MAX_TILE_TYPES * 20);
+    TilesDirContents.Data = PushArray(DebugArena, u8, TilesDirContents.Size);
+
+    u32 NewTileFilenameCount = 0;
+    PlatformGetListOfDirContents(TilesDirContents, "tiles", &NewTileFilenameCount);
+
+    b32 AreEqual = true;
+    for(int BufIdx = 0;
+        BufIdx < MAX_TILE_TYPES * 20;
+        ++BufIdx)
+    {
+        if(PackedTileFilenames[BufIdx] != TilesDirContents[BufIdx])
+        {
+            AreEqual = false;
+            break;
+        }
+    }
+    if(!AreEqual)
+    {
+        TileMap->
+    }
+
+
+
+
+
+
+
+
+
+
+}
 
 
 void
@@ -81,7 +98,7 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
                  (RoundF32ToU32(G * 255.0f) << 8)  |
                  (RoundF32ToU32(B * 255.0f) << 0));
 
-u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
+    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
     for(int Y = MinY;
         Y < MaxY;
         ++Y)
@@ -164,7 +181,6 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
     }
 }
 
-
 void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
@@ -172,12 +188,12 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 R, f32 G, f32 B,
               f32 Alpha = 1.0f)
 {
-    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuf.Start, RasterizedTextBuf.Size);
+    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuf.Data, RasterizedTextBuf.Size);
     for(int QuadIdx = 0;
         QuadIdx < NumQuads;
         ++QuadIdx)
     {
-        quad *ThisQuad = (quad *)(RasterizedTextBuf.Start + QuadIdx * sizeof(quad));
+        quad *ThisQuad = (quad *)(RasterizedTextBuf.Data + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
         v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
         if(Alpha == 1.0f)
@@ -320,8 +336,8 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 static void
 ParseBitmapHeader(bitmap *Bitmap)
 {
-    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Start;
-    Bitmap->Pixels = Bitmap->Buffer.Start + Header->DataOffset;
+    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
+    Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
     Bitmap->Height = Header->Height;
     Bitmap->Width = Header->Width;
     Assert(Header->BitsPerPixel == 32);
@@ -337,7 +353,7 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
     if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
     {
         Bitmap->Buffer.Size = Memory->DEBUGPlatformReadFileInto(Bitmap->Filename,
-                                             (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Start);
+                                             (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
         if(Bitmap->Buffer.Size)
         {
             ParseBitmapHeader(Bitmap);
@@ -351,7 +367,7 @@ PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory
 {
     FillThisOut->Filename = Filename;
     FillThisOut->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filename);
-    FillThisOut->Buffer.Start = PushArray(Arena, u8, FillThisOut->Buffer.Size);
+    FillThisOut->Buffer.Data = PushArray(Arena, u8, FillThisOut->Buffer.Size);
     DEBUGReloadBitmapIfChanged(FillThisOut, Memory);
 }
 
@@ -370,8 +386,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         ((u8 *)Memory->PermanentStorage + sizeof(debug_state)),
                         (DebugStateNumBytes - sizeof(debug_state)));
 
-        DebugState->DebugTextBuf.Start = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
+        DebugState->DebugTextBuf.Data = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
         DebugState->DebugTextBuf.Size = Megabytes(2);
+
+
+        DebugState->PackedTileFilenames.Size = MAX_TILE_TYPES * 20;
+        DebugState->PackedTileFilenames.Data = PushArray(&DebugState->DebugArena, u8, DebugState->PackedTileFilenames.Size);
         
         InitializeArena(&GameState->WorldArena, 
                         ((u8 *)Memory->PermanentStorage + DebugStateNumBytes + sizeof(game_state)),
@@ -379,6 +399,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         arena *WorldArena = &GameState->WorldArena;
         Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + WorldArena->Size) == Memory->PermanentStorageSize);
+
 
 // Player
         GameState->PlayerP.X = Buffer->Width / 2;
@@ -395,45 +416,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
 // Tiles        
-        // How we are doing this.
-        //      While we are making the game, we want to be able to add tiles to the tufty/data/tiles/ dir
-        //          as it's running, and have the game dynamically load them in so that we can place them
-        //          using the tile editor.
-        //
-        //      Our process is as follows:
-        //          On init, we allocate a buffer in the Debug arena to store the list of the filenames
-        //              currently in the tiles/ directory. 
-        //          We call "GetListOfDirContents" to fill out this buffer.
-        //          Assumptions are that we have no more than 200 tile types in the game, and that
-        //              filenames for these tiles have an average length of 20 characters.
-        //          GetListOfDirContents fills the buffer with buffer structs containing the filenames
-        //              (note buffer struct just contains a u8 pointer and the number of bytes in the buffer),
-        //              and tells us how many files it found.
-        //          Then we visit each of those filenames in the buffer and load them into the TileBitmaps array.
-        //
-        //          While the game is running, once per frame, we call the GetListOfDirContents function
-        //              and determine whether the list is the same. We do this naively: we just check to see
-        //              if the contents of the list is byte-for-byte the same. If not, we zero the list of tiles
-        //              and the buffer of bitmaps for the tiles and reload them. This is inefficient, but
-        //              in a shipping game we would know the exact list of tiles and won't have to do this.
-        //
+        // Get tile filenames
         tile_map *TileMap = &GameState->TileMap;
-        buffer *TilesList = &DebugState->ListOfFilesInTilesDir;
+        Memory->DEBUGPlatformGetListOfDirContents(DebugState->PackedTileFilenames, "tiles", &TileMap->NumTileTypes);
 
-        TilesList->Size = MAX_TILE_TYPES * 20;
-        TilesList->Start = PushArray(&DebugState->DebugArena, u8, TilesList->Size);
-        
-
-        Memory->DEBUGPlatformGetListOfDirContents(TilesList->Start, TilesList->Size, "tiles", &TileMap->NumTileTypes);
-        TileMap->TileFilenames = &DebugState->ListOfFilesInTilesDir;
+        TileMap->TileFilenames = PushArray(WorldArena, char *, MAX_TILE_TYPES);
+        char *PackedFilenamesCursor = (char *)DebugState->PackedTileFilenames.Data;
+        for(int FilenameIdx = 0;
+            FilenameIdx < TileMap->NumTileTypes;
+            ++FilenameIdx)
+        {
+            TileMap->TileFilenames[FilenameIdx] = PackedFilenamesCursor;
+            while(*PackedFilenamesCursor)
+            {
+                ++PackedFilenamesCursor;
+            }
+            ++PackedFilenamesCursor;
+        }
 
         TileMap->TileBitmaps = PushArray(WorldArena, bitmap, TileMap->NumTileTypes);
-        // for(int BitmapIdx = 0;
-        //     BitmapIdx < TileMap->NumTileTypes;
-        //     ++BitmapIdx)
-        // {
-        //     PushBitmapToArena(WorldArena, TileMap->TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
-        // }
+        for(int BitmapIdx = 0;
+            BitmapIdx < TileMap->NumTileTypes;
+            ++BitmapIdx)
+        {
+            PushBitmapToArena(WorldArena, TileMap->TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
+        }
 
         // TileMap dimensions
         TileMap->TileDim = 96.0f;

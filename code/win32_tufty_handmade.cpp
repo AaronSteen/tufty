@@ -311,20 +311,21 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
     return(Result);
 }
 
-// PlatformGetListOfDirContents(u8 *GameFilenameArrayStart, mem_idx GameFilenameArraySize, char *DirName, int *NumFilesFound)
 DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 {
 #define SEARCH_TERM_MAX_LEN 256
     WIN32_FIND_DATAA FindData = {};
     char SearchTerm[SEARCH_TERM_MAX_LEN];
-    size_t DirNameLen = StringLength(DirName);
-    if(DirNameLen+2 > SEARCH_TERM_MAX_LEN)
+    char *SearchTermSuffix = "\\*.bmp";
+    if(StringLength(DirName) + StringLength(SearchTermSuffix) > SEARCH_TERM_MAX_LEN)
     {
         *NumFilesFound = 0;
         return;
     }
     
-    CatStrings(DirNameLen, DirName, 2, "\\*", SEARCH_TERM_MAX_LEN, SearchTerm);
+    CatStrings(StringLength(DirName), DirName, 
+               StringLength(SearchTermSuffix), SearchTermSuffix, 
+               SEARCH_TERM_MAX_LEN, SearchTerm);
 
     HANDLE SearchHandle = FindFirstFileA((LPCSTR)SearchTerm, &FindData);
     if(!SearchHandle)
@@ -333,62 +334,29 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
         return;
     }
 
-    u8 *GameFilenameArrayCursor = GameFilenameArrayStart;
+    u8 *GameCursor = GamePackedFilenames.Data;
     b32 KeepSearching = true;
     while(KeepSearching)
     {
-        buffer *ThisFilenameBuffer = (buffer *)GameFilenameArrayCursor;
-        char *GameFilenameCursor = (char *)ThisFilenameBuffer->Start;
-        char *Win32FilenameCursor = (char *)FindData.cFileName;
-
-        // Check file extension. Skip the .
-        char *Extension = FindData.cFileName;
-        if(*Extension == '.')
+        char *Win32Cursor = (char *)FindData.cFileName;
+        while(*Win32Cursor)
         {
-            KeepSearching = FindNextFileA(SearchHandle, &FindData);
-            continue;
-        }
-        while(*Extension)
-        {
-            ++Extension;
-        }
-        while((*Extension != '.'))
-        {
-            --Extension;
-            if(Extension == FindData.cFileName)
+            if(GameCursor+1 < GamePackedFilenames.Data + GamePackedFilenames.Size)
             {
-                *NumFilesFound = 0;
-                return;
-            }
-        }
-
-        ++Extension;
-
-        if(strncmp(Extension, "bmp", 3) != 0)
-        {
-            KeepSearching = FindNextFileA(SearchHandle, &FindData);
-            continue;
-        }
-
-        // STOP. This seems to be copying characters correctly but I've made some mistake with the naming. Check that we are copying to
-        //      this filename's buffer and not the start of the full filename array, etc...
-        while(*Win32FilenameCursor)
-        {
-            if(GameFilenameArrayCursor+1 < GameFilenameArrayStart + GameFilenameArraySize)
-            {
-                *GameFilenameArrayCursor++ = *Win32FilenameCursor++;
-                ++ThisFilenameBuffer->Size;
+                *GameCursor++ = *Win32Cursor++;
             }
             else
             {
+                // This means we were about to overrun GamePackedFilenamesArray
                 *NumFilesFound = 0;
                 return;
             }
         }
+        *GameCursor++ = '\0';
         *NumFilesFound += 1;
-
         KeepSearching = FindNextFileA(SearchHandle, &FindData);
     }
+#undef SEARCH_TERM_MAX_LEN 
 }
 
 static u64

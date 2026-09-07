@@ -115,7 +115,7 @@ struct debug_state
 {
     arena DebugArena;
     buffer DebugTextBuf;
-    buffer ListOfFilesInTilesDir;
+    buffer PackedTileFilenames;
 };
 
 struct tile_map
@@ -124,7 +124,7 @@ struct tile_map
     u32 TileCols;
     f32 TileDim;
     u32 NumTileTypes;
-    buffer *TileFilenames;
+    char **TileFilenames;
     bitmap *TileBitmaps;
     int NumTilesInWorld;
     s32 *TileValues;

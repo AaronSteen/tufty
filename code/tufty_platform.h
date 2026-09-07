@@ -73,11 +73,10 @@ SafeTruncateU64ToU32(u64 SixtyFour)
     return(Result);
 }
 
-// Need a basic buffer struct for communication
 struct buffer
 {
-    u8 *Start;
     mem_idx Size;
+    u8 *Data;
 };
 
 // *** SERVICES THE PLATFORM PROVIDES TO THE GAME ***
@@ -93,7 +92,7 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
-#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(u8 *GameFilenameArrayStart, mem_idx GameFilenameArraySize, char *DirName, u32 *NumFilesFound)
+#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
 typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 #define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
