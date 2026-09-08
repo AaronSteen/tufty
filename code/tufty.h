@@ -44,6 +44,20 @@ struct arena
     mem_idx Cursor;
 };
 
+#define NUM_SCRATCHES 10
+
+struct scratch_arena
+{
+    b32 IsFree;
+    arena Arena;
+};
+
+struct scratch_header
+{
+    u32 Count;
+    scratch_arena ScratchArenas[NUM_SCRATCHES];
+};
+
 static void
 InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 {
@@ -114,6 +128,8 @@ enum facing
 struct debug_state
 {
     arena DebugArena;
+    scratch_header *ScratchHeader;
+    arena TilesArena;
     buffer DebugTextBuf;
     buffer PackedTileFilenames;
 };

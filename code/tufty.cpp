@@ -28,42 +28,88 @@ struct quad
 };
 
 void
-RefreshTiles(arena *DebugArena, buffer PackedTileFilenames, tile_map *TileMap)
+ZeroArena(arena *Arena)
 {
-    buffer TilesDirContents;
-    // Assume avg 20 chars for tile filenames
-    TilesDirContents.Size = (MAX_TILE_TYPES * 20);
-    TilesDirContents.Data = PushArray(DebugArena, u8, TilesDirContents.Size);
-
-    u32 NewTileFilenameCount = 0;
-    PlatformGetListOfDirContents(TilesDirContents, "tiles", &NewTileFilenameCount);
-
-    b32 AreEqual = true;
-    for(int BufIdx = 0;
-        BufIdx < MAX_TILE_TYPES * 20;
-        ++BufIdx)
+    for(int Idx = 0;
+        Idx < Arena->Size;
+        ++Idx)
     {
-        if(PackedTileFilenames[BufIdx] != TilesDirContents[BufIdx])
-        {
-            AreEqual = false;
-            break;
-        }
+        Arena->Start[Idx] = 0;
     }
-    if(!AreEqual)
-    {
-        TileMap->
-    }
-
-
-
-
-
-
-
-
-
-
 }
+
+void
+ResetArena(arena *Arena)
+{
+    ZeroArena(Arena);
+    Arena->Cursor = 0;
+}
+
+scratch_arena *
+GetScratchArena(scratch_header *ScratchHeader)
+{
+    for(int Idx = 0;
+        Idx < ScratchHeader->Count;
+        ++Idx)
+    {
+        scratch_arena *It = (scratch_arena *)ScratchHeader->ScratchArenas + Idx;
+        if(It->IsFree)
+        {
+            It->IsFree = false;
+            ZeroArena(&It->Arena);
+            It->Arena.Cursor = 0;
+        }
+        return(It);
+    }
+
+    // If we got here there were no free scratches and we need to make more
+    __debugbreak();
+    return((scratch_arena *)0);
+}
+
+void
+FreeScratchArena(scratch_arena *Scratch)
+{
+    Scratch->IsFree = true;
+}
+
+// void
+// RefreshTiles(arena *DebugArena, buffer PackedTileFilenames, tile_map *TileMap)
+// {
+//     buffer TilesDirContents;
+//     // Assume avg 20 chars for tile filenames
+//     TilesDirContents.Size = (MAX_TILE_TYPES * 20);
+//     TilesDirContents.Data = PushArray(DebugArena, u8, TilesDirContents.Size);
+//
+//     u32 NewTileFilenameCount = 0;
+//     PlatformGetListOfDirContents(TilesDirContents, "tiles", &NewTileFilenameCount);
+//
+//     b32 AreEqual = true;
+//     for(int BufIdx = 0;
+//         BufIdx < MAX_TILE_TYPES * 20;
+//         ++BufIdx)
+//     {
+//         if(PackedTileFilenames[BufIdx] != TilesDirContents[BufIdx])
+//         {
+//             AreEqual = false;
+//             break;
+//         }
+//     }
+//     if(!AreEqual)
+//     {
+//         TileMap->
+//     }
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+// }
 
 
 void
@@ -184,16 +230,16 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
 void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
-              char *StringText, buffer RasterizedTextBuf,
+              char *StringText, buffer TextQuadBuf,
               f32 R, f32 G, f32 B,
               f32 Alpha = 1.0f)
 {
-    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, RasterizedTextBuf.Data, RasterizedTextBuf.Size);
+    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, TextQuadBuf.Data, TextQuadBuf.Size);
     for(int QuadIdx = 0;
         QuadIdx < NumQuads;
         ++QuadIdx)
     {
-        quad *ThisQuad = (quad *)(RasterizedTextBuf.Data + QuadIdx * sizeof(quad));
+        quad *ThisQuad = (quad *)(TextQuadBuf.Data + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
         v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
         if(Alpha == 1.0f)
@@ -382,13 +428,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(!Memory->IsInitialized)
     {
+// Arenas
         InitializeArena(&DebugState->DebugArena,
                         ((u8 *)Memory->PermanentStorage + sizeof(debug_state)),
                         (DebugStateNumBytes - sizeof(debug_state)));
 
         DebugState->DebugTextBuf.Data = PushArray(&DebugState->DebugArena, u8, Megabytes(2));
         DebugState->DebugTextBuf.Size = Megabytes(2);
-
 
         DebugState->PackedTileFilenames.Size = MAX_TILE_TYPES * 20;
         DebugState->PackedTileFilenames.Data = PushArray(&DebugState->DebugArena, u8, DebugState->PackedTileFilenames.Size);
@@ -400,6 +446,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         arena *WorldArena = &GameState->WorldArena;
         Assert((sizeof(debug_state) + DebugState->DebugArena.Size + sizeof(game_state) + WorldArena->Size) == Memory->PermanentStorageSize);
 
+        // Scratch
+        DebugState->ScratchHeader = (scratch_header *)Memory->TransientStorage;
+        scratch_arena *ScratchArenas = (scratch_arena *)DebugState->ScratchHeader->ScratchArenas;
+        for(int ScratchIdx = 0;
+            ScratchIdx < NUM_SCRATCHES;
+            ++ScratchIdx)
+        {
+            scratch_arena *It = ScratchArenas + ScratchIdx;
+            It->IsFree = true;
+            mem_idx ScratchSize = Kilobytes(10);
+            InitializeArena(&It->Arena, 
+                            (u8 *)Memory->TransientStorage + sizeof(scratch_header) + (ScratchIdx * ScratchSize), 
+                            Kilobytes(10));
+        }
 
 // Player
         GameState->PlayerP.X = Buffer->Width / 2;
