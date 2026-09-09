@@ -5,6 +5,9 @@
 #endif
 #include "tufty_platform.h"
 #include <math.h>
+#include <string.h>
+
+#define MAX_STRING_LEN 512
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -21,12 +24,18 @@ RoundF32ToS32(f32 Real)
 }
 
 static u32
-TruncateF32ToU32(f32 Real)
+FloorF32ToU32(f32 Real)
 {
-    u32 Result = (u32)Real;
+    u32 Result = (u32)floorf(Real);
     return(Result);
 }
 
+static s32
+CeilingF32ToS32(f32 Real)
+{
+    s32 Result = (s32)ceilf(Real);
+    return(Result);
+}
 
 static s32
 LerpS32(s32 A, s32 B, f32 T)
@@ -34,6 +43,7 @@ LerpS32(s32 A, s32 B, f32 T)
     s32 Result = A + T * (B - A);
     return(Result);
 }
+
 
 #include "myrandom.h"
 
@@ -109,7 +119,7 @@ struct bitmap
 {
     // This is the entire bitmap file, including the header
     buffer Buffer;
-    char *Filename;
+    char Filepath[MAX_STRING_LEN];
     u64 LastWriteTime;
 
     // Where the pixels actually live
@@ -125,24 +135,29 @@ enum facing
     SOUTH
 };
 
+struct mem_region
+{
+    mem_idx Size;
+    u8 *Data;
+};
+
 struct debug_state
 {
     arena DebugArena;
-    scratch_header *ScratchHeader;
-    arena TilesArena;
     buffer DebugTextBuf;
-    buffer PackedTileFilenames;
+    
+    
+    u64 LastTileDirUpdate;
 };
 
 struct tile_map
 {
-    u32 TileRows;
-    u32 TileCols;
-    f32 TileDim;
+    u32 NumRows;
+    u32 NumCols;
     u32 NumTileTypes;
-    char **TileFilenames;
-    bitmap *TileBitmaps;
+    bitmap *Bitmaps;
     int NumTilesInWorld;
+    f32 TileSideInPixels;
     s32 *TileValues;
 };
 
@@ -151,6 +166,7 @@ struct game_state
     arena WorldArena;
 
     tile_map TileMap;
+    arena TilesArena;
 
     random_series RandomSeries;
 

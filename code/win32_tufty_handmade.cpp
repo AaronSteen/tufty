@@ -84,30 +84,6 @@ static x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
 static void
-CatStrings(size_t SourceACount, char *SourceA,
-           size_t SourceBCount, char *SourceB,
-           size_t DestCount, char *Dest)
-{
-    // TODO(casey): Dest bounds checking!
-    
-    for(int Index = 0;
-        Index < SourceACount;
-        ++Index)
-    {
-        *Dest++ = *SourceA++;
-    }
-
-    for(int Index = 0;
-        Index < SourceBCount;
-        ++Index)
-    {
-        *Dest++ = *SourceB++;
-    }
-
-    *Dest++ = 0;
-}
-
-static void
 Win32GetEXEFileName(win32_state *State)
 {
     // NOTE(casey): Never use MAX_PATH in code that is user-facing, because it
@@ -311,6 +287,35 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
     return(Result);
 }
 
+
+// DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *Dirname)
+DEBUG_PLATFORM_GET_DIR_WRITE_TIME(DEBUGPlatformGetDirWriteTime)
+{
+    u64 Result = 0;
+    HANDLE DirHandle = CreateFileA(Dirname,
+                                   FILE_READ_ATTRIBUTES,
+                                   FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                                   0,
+                                   OPEN_EXISTING,
+                                   FILE_FLAG_BACKUP_SEMANTICS,
+                                   0);
+    if(DirHandle != INVALID_HANDLE_VALUE)
+    {
+        BY_HANDLE_FILE_INFORMATION Info;
+        if(GetFileInformationByHandle(DirHandle, &Info))
+        {
+            ULARGE_INTEGER Time;
+            Time.LowPart = Info.ftLastWriteTime.dwLowDateTime;
+            Time.HighPart = Info.ftLastWriteTime.dwHighDateTime;
+            Result = Time.QuadPart;
+        }
+        CloseHandle(DirHandle);
+    }
+
+    return(Result);
+}
+
+// #define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
 DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 {
 #define SEARCH_TERM_MAX_LEN 256
@@ -322,13 +327,13 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
         *NumFilesFound = 0;
         return;
     }
-    
+
     CatStrings(StringLength(DirName), DirName, 
                StringLength(SearchTermSuffix), SearchTermSuffix, 
                SEARCH_TERM_MAX_LEN, SearchTerm);
 
     HANDLE SearchHandle = FindFirstFileA((LPCSTR)SearchTerm, &FindData);
-    if(!SearchHandle)
+    if(SearchHandle == INVALID_HANDLE_VALUE)
     {
         *NumFilesFound = 0;
         return;
@@ -1264,8 +1269,7 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformGetFileSize = DEBUGPlatformGetFileSize;
             GameMemory.DEBUGPlatformReadFileInto = DEBUGPlatformReadFileInto;
             GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
-            GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
-
+            GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token

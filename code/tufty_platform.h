@@ -37,7 +37,7 @@
 //  And also we have some typedefs that both game and platform use.
 
 
-// *** TYPES AND MACROS HERE SO BOTH GAME AND PLATFORM CAN USE ***
+// *** TYPES, UTILITY FUNCTIONS, AND MACROS HERE SO BOTH GAME AND PLATFORM CAN USE ***
 extern "C" {
 
 #include <stdint.h>
@@ -73,6 +73,30 @@ SafeTruncateU64ToU32(u64 SixtyFour)
     return(Result);
 }
 
+void
+CatStrings(size_t SourceACount, char *SourceA,
+           size_t SourceBCount, char *SourceB,
+           size_t DestCount, char *Dest)
+{
+    // TODO(casey): Dest bounds checking!
+
+    for(int Index = 0;
+        Index < SourceACount;
+        ++Index)
+    {
+        *Dest++ = *SourceA++;
+    }
+
+    for(int Index = 0;
+        Index < SourceBCount;
+        ++Index)
+    {
+        *Dest++ = *SourceB++;
+    }
+
+    *Dest++ = 0;
+}
+
 struct buffer
 {
     mem_idx Size;
@@ -92,9 +116,6 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
-#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
-typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
-
 #define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
 
@@ -109,6 +130,12 @@ typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 
 #define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
 typedef DEBUG_PLATFORM_GET_FILE_WRITE_TIME(debug_platform_get_file_write_time);
+
+#define DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *Dirname)
+typedef DEBUG_PLATFORM_GET_DIR_WRITE_TIME(debug_platform_get_dir_write_time);
+
+#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
+typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 // this returns either the number of bytes read, or 0 if the file was missing, too big, or locked
 #define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
@@ -251,6 +278,7 @@ typedef struct game_memory
     debug_platform_get_file_size *DEBUGPlatformGetFileSize;
     debug_platform_read_file_into *DEBUGPlatformReadFileInto;
     debug_platform_get_file_write_time *DEBUGPlatformGetFileWriteTime;
+    debug_platform_get_dir_write_time *DEBUGPlatformGetDirWriteTime;
     debug_platform_get_list_of_dir_contents *DEBUGPlatformGetListOfDirContents;
 } game_memory;
 
