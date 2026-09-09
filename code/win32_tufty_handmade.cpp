@@ -339,14 +339,14 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
         return;
     }
 
-    u8 *GameCursor = GamePackedFilenames.Data;
+    u8 *GameCursor = GamePackedFilenames->Data;
     b32 KeepSearching = true;
     while(KeepSearching)
     {
         char *Win32Cursor = (char *)FindData.cFileName;
         while(*Win32Cursor)
         {
-            if(GameCursor+1 < GamePackedFilenames.Data + GamePackedFilenames.Size)
+            if(GameCursor+1 < GamePackedFilenames->Data + GamePackedFilenames->Size)
             {
                 *GameCursor++ = *Win32Cursor++;
             }
@@ -1270,6 +1270,8 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformReadFileInto = DEBUGPlatformReadFileInto;
             GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
             GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
+            GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
+
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token

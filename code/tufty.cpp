@@ -107,40 +107,43 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 static void
 PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory *Memory)
 {
-    strncpy_s(FillThisOut->Filepath, Filename, sizeof(Filename));
+    strncpy_s(FillThisOut->Filepath, Filename, strnlen(Filename, MAX_STRING_LEN));
     FillThisOut->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filename);
     FillThisOut->Buffer.Data = PushArray(Arena, u8, FillThisOut->Buffer.Size);
     DEBUGReloadBitmapIfChanged(FillThisOut, Memory);
 }
 
 void
-LoadTileBitmaps(arena *TilesArena, char **TileFilenames, tile_map *TileMap, 
+LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, 
                 scratch_header *ScratchHeader,
                 u64 *LastUpdateTime, game_memory *Memory)
 {
-    if(*LastUpdateTime == Memory->DEBUGPlatformGetDirWriteTime("tiles"))
+    u64 CheckUpdateTime = Memory->DEBUGPlatformGetDirWriteTime("tiles");
+    if(*LastUpdateTime == CheckUpdateTime)
     {
         return;
     }
 
+    *LastUpdateTime = CheckUpdateTime;
     ResetArena(TilesArena);
-    
+    TileMap->Bitmaps = PushArray(TilesArena, bitmap, MAX_TILE_TYPES);
+
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     buffer Filenames;
     Filenames.Size = MAX_TILE_TYPES * AVG_TILE_FILENAME_LEN;
     Filenames.Data = PushArray(&Scratch->Arena, u8, Filenames.Size);
-    Memory->DEBUGPlatformGetListOfDirContents(Filenames, "tiles", &TileMap->NumTileTypes);
+    Memory->DEBUGPlatformGetListOfDirContents(&Filenames, "tiles", &TileMap->NumTileTypes);
 
     char *Filename = (char *)Filenames.Data;
-    bitmap *Bitmap = TileMap->Bitmaps;
     for(int TileIdx = 0;
         TileIdx < TileMap->NumTileTypes;
         ++TileIdx)
     {
+        bitmap *It = TileMap->Bitmaps + TileIdx;
         char BitmapFilepath[MAX_STRING_LEN];
         snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
-        PushBitmapToArena(TilesArena, BitmapFilepath, Bitmap, Memory);
-        ++Bitmap;
+        PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
+
         while(*Filename)
         {
             ++Filename;
@@ -453,7 +456,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
          *
          *          - GameRegion 50,331,648 bytes
          *              - struct GameState
-         *              - arena TilesArena: (max 200 tiles): 3,290,800 with some padding = 4mb
+         *              - arena TilesArena: (max 200 tiles): 110,000 + 3,290,800 with some padding = 4mb
+         *                  Bitmap structs 550 bytes * 200 = 110,000
          *                  Bitmaps: 64 x 64, 16,454 bytes each * 200 = 3,290,800 bytes
          *              - arena WorldArena: 
          *                  - TileValues: sizeof(s32) * 30 tile cols * 17 tile cols = 4 * 510 = 2,040 bytes
@@ -467,6 +471,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
          *
          */
         
+
+        // Random
+        GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
         // Debug
         InitializeArena(&DebugState->DebugArena, (DebugRegion.Data + sizeof(debug_state)), (DebugRegion.Size - sizeof(debug_state)) );
@@ -488,9 +495,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         arena *WorldArena = &GameState->WorldArena;
 
         // Scratch
+        ScratchHeader->Count = NUM_SCRATCHES;
         scratch_arena *ScratchArenas = ScratchHeader->ScratchArenas;
         for(int ScratchIdx = 0;
-            ScratchIdx < NUM_SCRATCHES;
+            ScratchIdx < ScratchHeader->Count;
             ++ScratchIdx)
         {
             scratch_arena *It = ScratchArenas + ScratchIdx;
@@ -509,6 +517,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
+        TileMap->Bitmaps = (bitmap *)&GameState->TilesArena.Start;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
         for(int TileIdx = 0;
             TileIdx < TileMap->NumTilesInWorld;
@@ -517,17 +526,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 4);
         }
 
-        // Get tile filenames
-        // Fix this:
-        // for(int BitmapIdx = 0;
-        //     BitmapIdx < TileMap->NumTileTypes;
-        //     ++BitmapIdx)
-        // {
-        //     PushBitmapToArena(WorldArena, TileMap->TileFilenames[BitmapIdx], TileMap->TileBitmaps + BitmapIdx, Memory);
-        // }
-        
-        
-        char *TempBitmapFilepaths[] = {"player\\16x16faceright.bmp", 
+        // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
+        char *TempPlayerBitmapFilepaths[] = {"player\\16x16faceright.bmp", 
                                         "player\\16x16behindview.bmp", 
                                         "player\\16x16faceleft.bmp", 
                                         "player\\16x16frontview.bmp"};
@@ -537,13 +537,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         {
             bitmap *It = &GameState->PlayerBitmaps[PlayerBitmapIdx];
             // Per tufty.h enum order is East = 0, North = 1, West = 2, South = 3
-            PushBitmapToArena(WorldArena, TempBitmapFilepaths[PlayerBitmapIdx], It, Memory);
+            PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
         }
 
-// STOP: i changed a lot. todo:
-//      check that Ceiling functions work as expected
-//      check that copying strings into filepaths work as expected
-//      call ReloadTileBitmaps function and step through it and check it.
+        LoadTileBitmaps(&GameState->TilesArena, TileMap, ScratchHeader, &DebugState->LastTileDirUpdate, Memory);
 
 
 // Player
@@ -551,14 +548,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerP.Y = Buffer->Height / 2;
         GameState->PlayerFacing = EAST;
 
-        // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
-        // PushBitmapToArena(WorldArena, "16x16faceright.bmp", &GameState->PlayerBitmaps[EAST], Memory);
-        // PushBitmapToArena(WorldArena, "16x16behindview.bmp", &GameState->PlayerBitmaps[NORTH], Memory);
-        // PushBitmapToArena(WorldArena, "16x16faceleft.bmp", &GameState->PlayerBitmaps[WEST], Memory);
-        // PushBitmapToArena(WorldArena, "16x16frontview.bmp", &GameState->PlayerBitmaps[SOUTH], Memory);
-
-// Random
-        GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
         Memory->IsInitialized = true;
     }
@@ -571,14 +560,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
     }
 
-    // hot reload tile bitmaps
-    for(int TileBitmapIdx = 0;
-        TileBitmapIdx < GameState->TileMap.NumTileTypes;
-        ++TileBitmapIdx)
-    {
-        DEBUGReloadBitmapIfChanged(&GameState->TileMap.Bitmaps[TileBitmapIdx], Memory);
-    }
-
+    // // hot reload tile bitmaps
+    // for(int TileBitmapIdx = 0;
+    //     TileBitmapIdx < GameState->TileMap.NumTileTypes;
+    //     ++TileBitmapIdx)
+    // {
+    //     DEBUGReloadBitmapIfChanged(&GameState->TileMap.Bitmaps[TileBitmapIdx], Memory);
+    // }
+    //
 
 
 
@@ -660,9 +649,56 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
             if(TileValue > 0)
             {
+                bitmap *TileBitmap;
+                switch(TileValue)
+                {
+                    case 1:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "dandelion"))
+                        {
+                            ++TileBitmap;
+                        }
+                    } break;
+
+                    case 2:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "puff"))
+                        {
+                            ++TileBitmap;
+                        }
+                    } break;
+
+                    case 3:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "path"))
+                        {
+                            ++TileBitmap;
+                        }
+                    } break;
+                    
+                    case 4:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "ladybug"))
+                        {
+                            ++TileBitmap;
+                        }
+                    } break;
+                    
+                    case 5:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "aphid"))
+                        {
+                            ++TileBitmap;
+                        }
+                    } break;
+                }
                 v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
                 v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
-                bitmap *TileBitmap = TileMap->Bitmaps + TileValue;
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
             }
         }

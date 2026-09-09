@@ -145,8 +145,6 @@ struct debug_state
 {
     arena DebugArena;
     buffer DebugTextBuf;
-    
-    
     u64 LastTileDirUpdate;
 };
 

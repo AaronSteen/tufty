@@ -134,7 +134,7 @@ typedef DEBUG_PLATFORM_GET_FILE_WRITE_TIME(debug_platform_get_file_write_time);
 #define DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *Dirname)
 typedef DEBUG_PLATFORM_GET_DIR_WRITE_TIME(debug_platform_get_dir_write_time);
 
-#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
+#define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer *GamePackedFilenames, char *DirName, u32 *NumFilesFound)
 typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 // this returns either the number of bytes read, or 0 if the file was missing, too big, or locked
