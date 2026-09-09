@@ -126,7 +126,6 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
 
     *LastUpdateTime = CheckUpdateTime;
     ResetArena(TilesArena);
-    TileMap->Bitmaps = PushArray(TilesArena, bitmap, MAX_TILE_TYPES);
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     buffer Filenames;
@@ -135,14 +134,17 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
     Memory->DEBUGPlatformGetListOfDirContents(&Filenames, "tiles", &TileMap->NumTileTypes);
 
     char *Filename = (char *)Filenames.Data;
+    TileMap->Bitmaps = PushStruct(TilesArena, bitmap);
+    bitmap *It = TileMap->Bitmaps;
     for(int TileIdx = 0;
         TileIdx < TileMap->NumTileTypes;
         ++TileIdx)
     {
-        bitmap *It = TileMap->Bitmaps + TileIdx;
         char BitmapFilepath[MAX_STRING_LEN];
         snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
         PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
+        It->Next = PushStruct(TilesArena, bitmap);
+        It = It->Next;
 
         while(*Filename)
         {
@@ -517,13 +519,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-        TileMap->Bitmaps = (bitmap *)&GameState->TilesArena.Start;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
         for(int TileIdx = 0;
             TileIdx < TileMap->NumTilesInWorld;
             ++TileIdx)
         {
             TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 4);
+
         }
 
         // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
@@ -657,7 +659,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "dandelion"))
                         {
-                            ++TileBitmap;
+                            TileBitmap = TileBitmap->Next;
                         }
                     } break;
 
@@ -666,7 +668,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "puff"))
                         {
-                            ++TileBitmap;
+                            TileBitmap = TileBitmap->Next;
                         }
                     } break;
 
@@ -675,7 +677,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "path"))
                         {
-                            ++TileBitmap;
+                            TileBitmap = TileBitmap->Next;
                         }
                     } break;
                     
@@ -684,7 +686,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "ladybug"))
                         {
-                            ++TileBitmap;
+                            TileBitmap = TileBitmap->Next;
                         }
                     } break;
                     
@@ -693,7 +695,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "aphid"))
                         {
-                            ++TileBitmap;
+                            TileBitmap = TileBitmap->Next;
                         }
                     } break;
                 }

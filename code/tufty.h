@@ -125,6 +125,8 @@ struct bitmap
     // Where the pixels actually live
     u8 *Pixels;
     int Height, Width, BytesPerPixel, Pitch;
+
+    bitmap *Next;
 };
 
 enum facing
