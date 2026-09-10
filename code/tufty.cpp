@@ -16,7 +16,6 @@ enum
     PATH,
     LADYBUG,
     APHID,
-    COOL
 };
 
 struct vertex
@@ -91,6 +90,8 @@ ParseBitmapHeader(bitmap *Bitmap)
 static void
 DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 {
+    // Wait one frame after bitmap change detected so we don't try to load it
+    //      while the save is in progress.
     if(Bitmap->ReadyToRead == true)
     {
         Bitmap->ReadyToRead = false;
@@ -125,23 +126,17 @@ PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory
 
 void
 LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, 
-                scratch_header *ScratchHeader,
-                u64 *LastUpdateTime, game_memory *Memory)
+                scratch_header *ScratchHeader, game_memory *Memory)
 {
-    u64 CheckUpdateTime = Memory->DEBUGPlatformGetDirWriteTime("tiles");
-    if(*LastUpdateTime == CheckUpdateTime)
-    {
-        return;
-    }
-
-    *LastUpdateTime = CheckUpdateTime;
     ResetArena(TilesArena);
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     buffer Filenames;
     Filenames.Size = MAX_TILE_TYPES * AVG_TILE_FILENAME_LEN;
     Filenames.Data = PushArray(&Scratch->Arena, u8, Filenames.Size);
-    Memory->DEBUGPlatformGetListOfDirContents(&Filenames, "tiles", &TileMap->NumTileTypes);
+    u32 NumFilesFound = 0;
+    Memory->DEBUGPlatformGetListOfDirContents(&Filenames, "tiles", &NumFilesFound);
+    TileMap->NumTileTypes = NumFilesFound;
 
     char *Filename = (char *)Filenames.Data;
     TileMap->Bitmaps = PushStruct(TilesArena, bitmap);
@@ -154,14 +149,21 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
         snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
         It->ReadyToRead = true;
         PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
-        It->Next = PushStruct(TilesArena, bitmap);
-        It = It->Next;
-
-        while(*Filename)
+        if(TileIdx == TileMap->NumTileTypes-1)
         {
+            It->Next = 0;
+        }
+        else
+        {
+            It->Next = PushStruct(TilesArena, bitmap);
+            It = It->Next;
+
+            while(*Filename)
+            {
+                ++Filename;
+            }
             ++Filename;
         }
-        ++Filename;
     }
     
     FreeScratchArena(Scratch);
@@ -535,7 +537,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileIdx < TileMap->NumTilesInWorld;
             ++TileIdx)
         {
-            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 6);
+            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 5);
 
         }
 
@@ -554,8 +556,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
         }
 
-        LoadTileBitmaps(&GameState->TilesArena, TileMap, ScratchHeader, &DebugState->LastTileDirUpdate, Memory);
-
+        LoadTileBitmaps(&GameState->TilesArena, TileMap, ScratchHeader, Memory);
+        DebugState->LastTileDirUpdate = Memory->DEBUGPlatformGetDirWriteTime("tiles");
+        DebugState->ReadyToReload = false;
 
 // Player
         GameState->PlayerP.X = Buffer->Width / 2;
@@ -565,6 +568,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         Memory->IsInitialized = true;
     }
+
+    // Convenience pointer to TileMap
+    tile_map *TileMap = &GameState->TileMap;
 
     // hot reload player bitmaps
     for(int PlayerBitmapIdx = 0;
@@ -582,6 +588,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DEBUGReloadBitmapIfChanged(Bitmap, Memory);
     }
 
+    // Check if new tile bitmaps added; if so unload and reload all bitmaps.
+    // Wait one frame after bitmap change detected so we don't try to load it
+    //      while the save is in progress.
+    if(DebugState->ReadyToReload == true)
+    {
+        DebugState->ReadyToReload = false;
+        LoadTileBitmaps(&GameState->TilesArena, TileMap, ScratchHeader, Memory);
+    }
+    else
+    {
+        u64 CheckUpdateTime = Memory->DEBUGPlatformGetDirWriteTime("tiles");
+        if(DebugState->LastTileDirUpdate != CheckUpdateTime)
+        {
+            DebugState->LastTileDirUpdate = CheckUpdateTime;
+            DebugState->ReadyToReload = true;
+        }
+    }
+
+    // Controller
     for(int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
         ++ControllerIdx)
@@ -638,7 +663,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
     DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
 
-    tile_map *TileMap = &GameState->TileMap;
     // Tiles
     for(int Row = 0; 
         Row < TileMap->NumRows;
@@ -700,14 +724,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         }
                     } break;
 
-                    case 6:
-                    {
-                        TileBitmap = TileMap->Bitmaps;
-                        while(!strstr(TileBitmap->Filepath, "cool"))
-                        {
-                            TileBitmap = TileBitmap->Next;
-                        }
-                    } break;
+                    // case 6:
+                    // {
+                    //     TileBitmap = TileMap->Bitmaps;
+                    //     while(!strstr(TileBitmap->Filepath, "cool"))
+                    //     {
+                    //         TileBitmap = TileBitmap->Next;
+                    //     }
+                    // } break;
                 }
                 v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
                 v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};

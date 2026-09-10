@@ -150,6 +150,7 @@ struct debug_state
     arena DebugArena;
     buffer DebugTextBuf;
     u64 LastTileDirUpdate;
+    b32 ReadyToReload;
 };
 
 struct tile_map
