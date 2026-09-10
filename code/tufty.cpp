@@ -1,8 +1,8 @@
 #include "tufty.h"
 #include "stb_easy_font.h"
 
-#define PLAYER_HEIGHT 16.0f
-#define PLAYER_WIDTH  16.0f
+#define PLAYER_HEIGHT 64.0f
+#define PLAYER_WIDTH  64.0f
 
 #define MAX_TILE_TYPES 200
 #define AVG_TILE_FILENAME_LEN 30
@@ -16,6 +16,7 @@ enum
     PATH,
     LADYBUG,
     APHID,
+    COOL
 };
 
 struct vertex
@@ -90,15 +91,24 @@ ParseBitmapHeader(bitmap *Bitmap)
 static void
 DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 {
-    // NOTE(Aaron): as of now, reloaded bitmap is REQUIRED to have the same dimensions as the old one,
-    u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filepath);
-    if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
+    if(Bitmap->ReadyToRead == true)
     {
-        Bitmap->Buffer.Size = Memory->DEBUGPlatformReadFileInto(Bitmap->Filepath,
-                                                                (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
-        if(Bitmap->Buffer.Size)
+        Bitmap->ReadyToRead = false;
+        mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Bitmap->Filepath,
+                                                              (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
+        if(BytesRead)
         {
+            Bitmap->Buffer.Size = BytesRead;
             ParseBitmapHeader(Bitmap);
+        }
+    }
+    else
+    {
+        // NOTE(Aaron): as of now, reloaded bitmap is REQUIRED to have the same dimensions as the old one,
+        u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filepath);
+        if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
+        {
+            Bitmap->ReadyToRead = true;
             Bitmap->LastWriteTime = WriteTime;
         }
     }
@@ -142,6 +152,7 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
     {
         char BitmapFilepath[MAX_STRING_LEN];
         snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
+        It->ReadyToRead = true;
         PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
         It->Next = PushStruct(TilesArena, bitmap);
         It = It->Next;
@@ -524,7 +535,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileIdx < TileMap->NumTilesInWorld;
             ++TileIdx)
         {
-            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 4);
+            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 6);
 
         }
 
@@ -538,6 +549,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             ++PlayerBitmapIdx)
         {
             bitmap *It = &GameState->PlayerBitmaps[PlayerBitmapIdx];
+            It->ReadyToRead = true;
             // Per tufty.h enum order is East = 0, North = 1, West = 2, South = 3
             PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
         }
@@ -562,25 +574,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
     }
 
-    // // hot reload tile bitmaps
-    // for(int TileBitmapIdx = 0;
-    //     TileBitmapIdx < GameState->TileMap.NumTileTypes;
-    //     ++TileBitmapIdx)
-    // {
-    //     DEBUGReloadBitmapIfChanged(&GameState->TileMap.Bitmaps[TileBitmapIdx], Memory);
-    // }
-    //
+    // hot reload tile bitmaps
+    for(bitmap *Bitmap = GameState->TileMap.Bitmaps;
+        Bitmap->Next;
+        Bitmap = Bitmap->Next)
+    {
+        DEBUGReloadBitmapIfChanged(Bitmap, Memory);
+    }
 
-
-
-    // What to do:
-    //      1. Push a reasonably sized array to DebugArena: 4096 bytes
-    //      2. Pass this to platform layer along with path to directory to read.
-    //              Say platform layer and game layer share a data structure "buffer"
-    //                  which contains a byte count and a u8 pointer.
-    //      3. Platform layer reads the directory and fills out 
-    //      3
-    //
     for(int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
         ++ControllerIdx)
@@ -694,6 +695,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     {
                         TileBitmap = TileMap->Bitmaps;
                         while(!strstr(TileBitmap->Filepath, "aphid"))
+                        {
+                            TileBitmap = TileBitmap->Next;
+                        }
+                    } break;
+
+                    case 6:
+                    {
+                        TileBitmap = TileMap->Bitmaps;
+                        while(!strstr(TileBitmap->Filepath, "cool"))
                         {
                             TileBitmap = TileBitmap->Next;
                         }

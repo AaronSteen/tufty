@@ -243,13 +243,27 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
 {
     u64 Result = 0;
-    WIN32_FILE_ATTRIBUTE_DATA Data;
-    if(GetFileAttributesEx(Filename, GetFileExInfoStandard, &Data))
+    HANDLE Handle = CreateFileA(Filename,
+                                GENERIC_READ,
+                                FILE_SHARE_READ|FILE_SHARE_WRITE,
+                                0,
+                                OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL,
+                                0);
+    if(Handle != INVALID_HANDLE_VALUE)
     {
-        ULARGE_INTEGER Time;
-        Time.LowPart  = Data.ftLastWriteTime.dwLowDateTime;
-        Time.HighPart = Data.ftLastWriteTime.dwHighDateTime;
-        Result = Time.QuadPart;
+        FILETIME FileTime;
+        if(GetFileTime(Handle, 0, 0, &FileTime))
+        {
+            ULARGE_INTEGER Big;
+            Big.LowPart = FileTime.dwLowDateTime;
+            Big.HighPart = FileTime.dwHighDateTime;
+            if(Big.QuadPart)
+            {
+                Result = Big.QuadPart;
+            }
+        }
+        CloseHandle(Handle);
     }
     return(Result);
 }

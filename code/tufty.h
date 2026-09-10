@@ -120,6 +120,8 @@ struct bitmap
     // This is the entire bitmap file, including the header
     buffer Buffer;
     char Filepath[MAX_STRING_LEN];
+
+    b32 ReadyToRead;
     u64 LastWriteTime;
 
     // Where the pixels actually live
