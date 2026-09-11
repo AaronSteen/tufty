@@ -4,7 +4,6 @@
 #define PLAYER_HEIGHT 64.0f
 #define PLAYER_WIDTH  64.0f
 
-#define MAX_TILE_TYPES 200
 #define AVG_TILE_FILENAME_LEN 30
 #define SCRATCH_SIZE Kilobytes(10)
 
@@ -115,13 +114,15 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
     }
 }
 
-static void
-PushBitmapToArena(arena *Arena, char *Filename, bitmap *FillThisOut, game_memory *Memory)
+static bitmap *
+PushBitmapToArena(arena *Arena, char *Filepath, game_memory *Memory)
 {
-    strncpy_s(FillThisOut->Filepath, Filename, strnlen(Filename, MAX_STRING_LEN));
-    FillThisOut->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filename);
-    FillThisOut->Buffer.Data = PushArray(Arena, u8, FillThisOut->Buffer.Size);
-    DEBUGReloadBitmapIfChanged(FillThisOut, Memory);
+    bitmap *Bitmap = PushStruct(Arena, bitmap);
+    Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
+    Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
+    Bitmap->ReadyToRead = true;
+    DEBUGReloadBitmapIfChanged(Bitmap, Memory);
+    return(Bitmap);
 }
 
 void
@@ -131,55 +132,87 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
     ResetArena(TilesArena);
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-    buffer Filenames;
-    Filenames.Size = MAX_TILE_TYPES * AVG_TILE_FILENAME_LEN;
-    Filenames.Data = PushArray(&Scratch->Arena, u8, Filenames.Size);
+    buffer FoundFilenames;
+    FoundFilenames.Size = MAX_TILE_TYPES * AVG_TILE_FILENAME_LEN;
+    FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
     u32 NumFilesFound = 0;
-    Memory->DEBUGPlatformGetListOfDirContents(&Filenames, "tiles", &NumFilesFound);
+    Memory->DEBUGPlatformGetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
     TileMap->NumTileTypes = NumFilesFound;
 
-    char *Filename = (char *)Filenames.Data;
-    TileMap->Bitmaps = PushStruct(TilesArena, bitmap);
-    bitmap *It = TileMap->Bitmaps;
-    for(int TileIdx = 0;
-        TileIdx < TileMap->NumTileTypes;
-        ++TileIdx)
-    {
-        char BitmapFilepath[MAX_STRING_LEN];
-        snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
-        It->ReadyToRead = true;
-        PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
-        
-        // Assign slot
-        // STOP. Do this:
-        //      1. When we load a bitmap, scan the TileMap->TileIDs array to see if a bitmap
-        //          with that filename already has a slot in the array:
-        //              - If it does, update the pointer in that slot to be the pointer
-        //                  for the re-loaded bitmap
-        //              - If not, assign it to the first free slot in TileIDs
-        //      2. Will need to update the hot reloading code for individual tile bitmaps.
-        for(int TileIDIdx = 0;
-            TileIDIdx < TileMap->TileIDs;
-            ++TileIDIdx)
-        {
-        }
-        TileMap->MapIDToBitmaps[TileIdx] = It;
-        if(TileIdx == TileMap->NumTileTypes-1)
-        {
-            It->Next = 0;
-        }
-        else
-        {
-            It->Next = PushStruct(TilesArena, bitmap);
-            It = It->Next;
+    // Load the bitmap for every .bmp filepath found in the tiles/ dir
+    char *ThisFilename = (char *)FoundFilenames.Data;
 
-            while(*Filename)
+    tile_id *IDs = TileMap->TileIDs;
+
+    u32 UsedIDs[MAX_TILE_TYPES];
+    for(int NthBitmapToLoad = 0;
+        NthBitmapToLoad < TileMap->NumTileTypes;
+        ++NthBitmapToLoad)
+    {
+        // Below, FilepathToLoad is a temp buffer composed with the prefix tiles/ followed by <filename returned by the OS>. 
+        // We use this to push the bitmap to the tiles arena.
+        // Then, we scan the tile_id array to determine whether a bitmap with this filepath
+        //      has been loaded yet. If so, the bitmap was already in the game, and we have
+        //      simply reloaded it. In this case, we just relink the reloaded bitmap
+        //      and its previous ID by pointing the bitmap's Filepath field at
+        //      TileID->Filepath, and by pointing the ID struct's bitmap field at the reloaded bitmap.
+        //      
+        //      If we don't find a bitmap with this filepath, we assign it to the first
+        //          sequentially available tile_id in the array and link them in the same way,
+        //          except for that since this filepath hasn't been used yet, we have to copy it
+        //          into TileID->Filepath.
+        char FilepathToLoad[MAX_STRING_LEN];
+        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles\\%s", ThisFilename);
+
+        bitmap *Bitmap = PushBitmapToArena(TilesArena, FilepathToLoad, Memory); 
+
+        u32 FirstAvailable = 0;
+
+        // Always keep 0th slot empty
+        for(u32 NthSlot = 1;
+            NthSlot < MAX_TILE_TYPES + 1;
+            ++NthSlot)
+        {
+            tile_id *ThisID = IDs + NthSlot;
+            if(ThisID->Filepath[0] == 0)
             {
-                ++Filename;
+                if(!FirstAvailable)
+                {
+                    FirstAvailable = NthSlot;
+                }
             }
-            ++Filename;
+
+            else
+            {
+                if(strncmp(FilepathToLoad, ThisID->Filepath, MAX_STRING_LEN) == 0)
+                {
+                    ThisID->Bitmap = Bitmap;
+                    Bitmap->Filepath = ThisID->Filepath;
+                    break;
+                }
+            }
         }
+
+        // If the bitmap wasn't in the game previously, we pick the first available ID slot.
+        //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
+        if(!Bitmap->Filepath)
+        {
+            Assert(strnlen(FilepathToLoad, MAX_STRING_LEN) < MAX_STRING_LEN);
+            tile_id *IDForNewBitmap = IDs + FirstAvailable;
+            strncpy_s(IDForNewBitmap->Filepath, FilepathToLoad, MAX_STRING_LEN);
+            Bitmap->Filepath = IDForNewBitmap->Filepath;
+        }
+
+        while(*ThisFilename)
+        {
+            ++ThisFilename;
+        }
+        ++ThisFilename;
     }
+
+    
+
+
     
     FreeScratchArena(Scratch);
 }
@@ -547,34 +580,29 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
+        mem_idx TileIdArraySize = sizeof(tile_id) * TILE_ID_ARRAY_LEN;
+        memset(TileMap->TileIDs, 0, TileIdArraySize);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
-        for(int TileIdx = 0;
-            TileIdx < TileMap->NumTilesInWorld;
-            ++TileIdx)
-        {
-            TileMap->TileValues[TileIdx] = RandomS32InRange(&GameState->RandomSeries, 0, 5);
-
-        }
-
-        // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
-        char *TempPlayerBitmapFilepaths[] = {"player\\16x16faceright.bmp", 
-                                        "player\\16x16behindview.bmp", 
-                                        "player\\16x16faceleft.bmp", 
-                                        "player\\16x16frontview.bmp"};
-        for(int PlayerBitmapIdx = 0;
-            PlayerBitmapIdx < 4;
-            ++PlayerBitmapIdx)
-        {
-            bitmap *It = &GameState->PlayerBitmaps[PlayerBitmapIdx];
-            It->ReadyToRead = true;
-            // Per tufty.h enum order is East = 0, North = 1, West = 2, South = 3
-            PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
-        }
+        // // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
+        // char *TempPlayerBitmapFilepaths[] = {"player\\16x16faceright.bmp", 
+        //                                 "player\\16x16behindview.bmp", 
+        //                                 "player\\16x16faceleft.bmp", 
+        //                                 "player\\16x16frontview.bmp"};
+        // for(int PlayerBitmapIdx = 0;
+        //     PlayerBitmapIdx < 4;
+        //     ++PlayerBitmapIdx)
+        // {
+        //     bitmap *It = &GameState->PlayerBitmaps[PlayerBitmapIdx];
+        //     It->ReadyToRead = true;
+        //     // Per tufty.h enum order is East = 0, North = 1, West = 2, South = 3
+        //     PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
+        // }
 
         LoadTileBitmaps(&GameState->TilesArena, TileMap, ScratchHeader, Memory);
         DebugState->LastTileDirUpdate = Memory->DEBUGPlatformGetDirWriteTime("tiles");
         DebugState->ReadyToReload = false;
+
 
 // Player
         GameState->PlayerP.X = Buffer->Width / 2;
@@ -590,20 +618,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Convenience pointer to TileMap
     tile_map *TileMap = &GameState->TileMap;
 
-    // hot reload player bitmaps
-    for(int PlayerBitmapIdx = 0;
-        PlayerBitmapIdx < 4;
-        ++PlayerBitmapIdx)
-    {
-        DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
-    }
+    // // hot reload player bitmaps
+    // for(int PlayerBitmapIdx = 0;
+    //     PlayerBitmapIdx < 4;
+    //     ++PlayerBitmapIdx)
+    // {
+    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
+    // }
 
     // hot reload tile bitmaps
-    for(bitmap *Bitmap = GameState->TileMap.Bitmaps;
-        Bitmap->Next;
-        Bitmap = Bitmap->Next)
+    for(u32 ID = 1;
+        ID < TILE_ID_ARRAY_LEN;
+        ++ID)
     {
-        DEBUGReloadBitmapIfChanged(Bitmap, Memory);
+        tile_id *ThisID = TileMap->TileIDs + ID;
+        if(ThisID->Filepath[0])
+        {
+            DEBUGReloadBitmapIfChanged(ThisID->Bitmap, Memory);
+        }
     }
 
     // Check if new tile bitmaps added; if so unload and reload all bitmaps.
@@ -805,18 +837,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    else
-    {
-        // Player
-        v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
-            GameState->PlayerP.Y - PLAYER_HEIGHT};
-        v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
-            GameState->PlayerP.Y};
-
-        // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-        //      in the game when moving character around. test this.
-        ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
-    }
+    // else
+    // {
+    //     // Player
+    //     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
+    //         GameState->PlayerP.Y - PLAYER_HEIGHT};
+    //     v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
+    //         GameState->PlayerP.Y};
+    //
+    //     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+    //     //      in the game when moving character around. test this.
+    //     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
+    // }
 
     DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
 }
