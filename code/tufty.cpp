@@ -259,11 +259,10 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
             X < MaxX;
             ++X)
         {
-            if((Y == MinY) && Outline)
-            {
-                *(u32 *)Pixel = 0;
-            }
-            else if((X == MinX) && Outline)
+            if( ((X == MinX) && Outline) ||
+                ((Y == MinY) && Outline) ||
+                ((X == MaxX-1) && Outline) ||
+                ((Y == MaxY-1) && Outline))
             {
                 *(u32 *)Pixel = 0;                
             }
@@ -290,16 +289,18 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
               char *StringText, buffer TextQuadBuf,
               f32 R, f32 G, f32 B,
-              f32 Alpha = 1.0f)
+              f32 Alpha = 1.0f,
+              f32 Scale = 1.0f)
 {
+    Scale *= 2.5f;
     int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, TextQuadBuf.Data, TextQuadBuf.Size);
     for(int QuadIdx = 0;
         QuadIdx < NumQuads;
         ++QuadIdx)
     {
         quad *ThisQuad = (quad *)(TextQuadBuf.Data + QuadIdx * sizeof(quad));
-        v2 Min = {(X + ThisQuad->TopLeft.X*2.5f), (Y + ThisQuad->TopLeft.Y*2.5f)};
-        v2 Max = {(X + ThisQuad->BottomRight.X*2.5f), (Y + ThisQuad->BottomRight.Y*2.5f)};
+        v2 Min = {(X + ThisQuad->TopLeft.X*Scale), (Y + ThisQuad->TopLeft.Y*Scale)};
+        v2 Max = {(X + ThisQuad->BottomRight.X*Scale), (Y + ThisQuad->BottomRight.Y*Scale)};
         if(Alpha == 1.0f)
         {
             DrawSimpleRect(Backbuf, Min, Max, R, G, B);
@@ -437,7 +438,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     }
 }
 
-// Framebuffer is 1920 x 1080
+// Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -655,7 +656,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(Input->FunctionKeys.F1.EndedDown && Input->FunctionKeys.F1.HalfTransitionCount == 1)
     {
-        GameState->Editor = !GameState->Editor;
+        GameState->EditMode = !GameState->EditMode;
     }
 
     // Underlayer
@@ -739,23 +740,64 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
         }
     }
-    // Player
-    v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
-                    GameState->PlayerP.Y - PLAYER_HEIGHT};
-    v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
-                    GameState->PlayerP.Y};
 
-    // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-    //      in the game when moving character around. test this.
-    ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
-
-    // Draw tile browser
-    if(GameState->Editor)
+    if(GameState->EditMode)
     {
+
         v2 BrowserMin = {(f32)(Buffer->Width * 0.8f), 0};
         v2 BrowserMax = {(f32)(Buffer->Width), (f32)(Buffer->Height)};
-        DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.5f);
+        DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+
+        DEBUGDrawText(Buffer, BrowserMin.X + 75, 80,
+                      "Tile Menu", DebugState->DebugTextBuf,
+                      1, 1, 1, 1, 2);
+
+        int TilesDrawnInThisRow = 0;
+        f32 Y = 160;
+        f32 InnerPadding = 40;
+        f32 OuterPadding = 56;
+        f32 StartX = BrowserMin.X + OuterPadding;
+        f32 X = StartX;
+        for(bitmap *TileBitmap = TileMap->Bitmaps;
+            TileBitmap;
+            TileBitmap = TileBitmap->Next)
+        {
+            v2 TileMin = {X, Y};
+            v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
+            ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
+            v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
+            v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
+            DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+
+            ++TilesDrawnInThisRow;
+
+            if(TilesDrawnInThisRow == 3)
+            {
+                TilesDrawnInThisRow = 0;
+
+                X = StartX;
+                Y += TileMap->TileSideInPixels + InnerPadding;
+            }
+            else
+            {
+                X += TileMap->TileSideInPixels + InnerPadding;
+            }
+        }
     }
+
+    else
+    {
+        // Player
+        v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
+            GameState->PlayerP.Y - PLAYER_HEIGHT};
+        v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
+            GameState->PlayerP.Y};
+
+        // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+        //      in the game when moving character around. test this.
+        ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
+    }
+
 
     DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
 }

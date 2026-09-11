@@ -177,7 +177,7 @@ struct game_state
     facing PlayerFacing;
     bitmap PlayerBitmaps[4];
 
-    b32 Editor;
+    b32 EditMode;
 };
 
 #pragma pack(push, 1)
