@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 
-#define MAX_STRING_LEN 512
+#define STRING_LEN 40
 #define MAX_TILE_TYPES 200
 #define TILE_ID_ARRAY_LEN MAX_TILE_TYPES + 1
 
@@ -155,7 +155,7 @@ struct debug_state
 
 struct tile_id
 {
-    char Filepath[MAX_STRING_LEN];
+    char Filepath[STRING_LEN];
     bitmap *Bitmap;
 };
 
