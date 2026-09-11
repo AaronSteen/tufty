@@ -1197,6 +1197,7 @@ WinMain(HINSTANCE Instance,
     WindowClass.style = CS_HREDRAW|CS_VREDRAW;
     WindowClass.lpfnWndProc = Win32MainWindowCallback;
     WindowClass.hInstance = Instance;
+    WindowClass.hCursor = LoadCursorA(0, IDC_ARROW);
 //    WindowClass.hIcon;
     WindowClass.lpszClassName = "TuftyWindowClass";
 

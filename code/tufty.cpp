@@ -675,6 +675,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         {
             s32 TileOneDimensionalIndex = Row * TileMap->NumCols + Col;
             s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
+            v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
+            v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
             if(TileValue > 0)
             {
                 bitmap *TileBitmap;
@@ -734,9 +736,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     //     }
                     // } break;
                 }
-                v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
-                v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
+            }
+            if(GameState->EditMode)
+            {
+                DrawSpecialRect(Buffer, TileMin, TileMax, 0, 0, 0, true, 0);
             }
         }
     }
