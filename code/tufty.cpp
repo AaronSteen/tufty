@@ -149,6 +149,21 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap,
         snprintf(BitmapFilepath, sizeof(BitmapFilepath), "tiles\\%s", Filename);
         It->ReadyToRead = true;
         PushBitmapToArena(TilesArena, BitmapFilepath, It, Memory);
+        
+        // Assign slot
+        // STOP. Do this:
+        //      1. When we load a bitmap, scan the TileMap->TileIDs array to see if a bitmap
+        //          with that filename already has a slot in the array:
+        //              - If it does, update the pointer in that slot to be the pointer
+        //                  for the re-loaded bitmap
+        //              - If not, assign it to the first free slot in TileIDs
+        //      2. Will need to update the hot reloading code for individual tile bitmaps.
+        for(int TileIDIdx = 0;
+            TileIDIdx < TileMap->TileIDs;
+            ++TileIDIdx)
+        {
+        }
+        TileMap->MapIDToBitmaps[TileIdx] = It;
         if(TileIdx == TileMap->NumTileTypes-1)
         {
             It->Next = 0;
@@ -569,6 +584,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         Memory->IsInitialized = true;
     }
+    
+    ///////////////////////////////////////// INIT END, MAIN LOOP START ////////////////////////////////////////////
 
     // Convenience pointer to TileMap
     tile_map *TileMap = &GameState->TileMap;
@@ -747,7 +764,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(GameState->EditMode)
     {
-
         v2 BrowserMin = {(f32)(Buffer->Width * 0.8f), 0};
         v2 BrowserMax = {(f32)(Buffer->Width), (f32)(Buffer->Height)};
         DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
@@ -802,10 +818,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
     }
 
-
     DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
 }
-
 
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

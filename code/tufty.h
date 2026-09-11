@@ -153,12 +153,19 @@ struct debug_state
     b32 ReadyToReload;
 };
 
+struct TileID
+{
+    char Filename[MAX_STRING_LEN];
+    bitmap *Bitmap;
+}
+
 struct tile_map
 {
     u32 NumRows;
     u32 NumCols;
     u32 NumTileTypes;
     bitmap *Bitmaps;
+    TileID TileIDs[MAX_TILE_TYPES];
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
