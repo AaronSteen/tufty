@@ -86,25 +86,26 @@ ParseBitmapHeader(bitmap *Bitmap)
 }
 
 static void
-DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
+DEBUGReloadBitmapIfChanged(tile *Tile, game_memory *Memory)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
+    bitmap *Bitmap = &Tile->Bitmap;
+    char *Filepath = Tile->Filepath;
     if(Bitmap->ReadyToRead == true)
     {
         Bitmap->ReadyToRead = false;
-        mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Bitmap->Filepath,
-                                                              (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
+        mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
         if(BytesRead == Bitmap->Buffer.Size)
         {
             Bitmap->Buffer.Size = BytesRead;
             ParseBitmapHeader(Bitmap);
-            Bitmap->LastWriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filepath);
+            Bitmap->LastWriteTime = Memory->DEBUGPlatformGetFileWriteTime(Filepath);
         }
     }
     else
     {
-        u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bitmap->Filepath);
+        u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Filepath);
         if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
         {
             Bitmap->ReadyToRead = true;
@@ -114,12 +115,14 @@ DEBUGReloadBitmapIfChanged(bitmap *Bitmap, game_memory *Memory)
 }
 
 static void
-LoadBitmap(arena *Arena, bitmap *Bitmap, game_memory *Memory)
+LoadBitmap(arena *Arena, tile *Tile, game_memory *Memory)
 {
-    Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Bitmap->Filepath);
+    bitmap *Bitmap = &Tile->Bitmap;
+    char *Filepath = Tile->Filepath;
+    Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
     Bitmap->ReadyToRead = true;
-    DEBUGReloadBitmapIfChanged(Bitmap, Memory);
+    DEBUGReloadBitmapIfChanged(Tile, Memory);
 }
 
 void
@@ -127,14 +130,14 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
                 scratch_header *ScratchHeader, game_memory *Memory)
 {
     ResetArena(TilesArena);
-    tile_id *IDs = TileMap->TileIDs;
+    tile *Tiles = TileMap->Tiles;
 
-    // Clear bitmap pointers in TileID array
+    // Clear bitmap structs in tiles array
     for(int ID = 1;
-        ID < TILE_ID_ARRAY_LEN;
+        ID < TILE_ARRAY_LEN;
         ++ID)
     {
-        IDs[ID].Bitmap = 0;
+        Tiles[ID].Bitmap = {};
     }
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
@@ -152,30 +155,26 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         ++NthBitmapToLoad)
     {
         // Below, FilepathToLoad is a temp buffer composed with the prefix tiles/ followed by <filename returned by the OS>. 
-        // We use this to push the bitmap to the tiles arena.
         // Then, we scan the tile_id array to determine whether a bitmap with this filepath
         //      has been loaded yet. If so, the bitmap was already in the game, and we have
-        //      simply reloaded it. In this case, we just relink the reloaded bitmap
-        //      and its previous ID by pointing the bitmap's Filepath field at
-        //      TileID->Filepath, and by pointing the ID struct's bitmap field at the reloaded bitmap.
+        //      reloaded it; we fill out the bitmap struct again with whatever info we find
+        //      for the bitmap at that filepath upon reload. If we eventually serialize the tilemap
+        //      this will allow us to, e.g., change the dimensions of the tile in between runs of the game.
         //      
         //      If we don't find a bitmap with this filepath, we assign it to the first
-        //          sequentially available tile_id in the array and link them in the same way,
-        //          except for that since this filepath hasn't been used yet, we have to copy it
-        //          into TileID->Filepath.
+        //          sequentially available tile_id in the array.
         char FilepathToLoad[STRING_LEN];
         snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles\\%s", ThisFilename);
 
         u32 FirstAvailable = 0;
-
-        bitmap *Bitmap = 0;
+        b32 ExistingTile = false;
         // Always keep 0th slot empty
         for(u32 NthSlot = 1;
             NthSlot < MAX_TILE_TYPES + 1;
             ++NthSlot)
         {
-            tile_id *ThisID = IDs + NthSlot;
-            if(ThisID->Filepath[0] == 0)
+            tile *Tile = Tiles + NthSlot;
+            if(Tile->Filepath[0] == 0)
             {
                 if(!FirstAvailable)
                 {
@@ -185,12 +184,10 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
 
             else
             {
-                if(strncmp(FilepathToLoad, ThisID->Filepath, STRING_LEN) == 0)
+                if(strncmp(FilepathToLoad, Tile->Filepath, STRING_LEN) == 0)
                 {
-                    Bitmap = PushStruct(TilesArena, bitmap);
-                    Bitmap->Filepath = ThisID->Filepath;
-                    LoadBitmap(TilesArena, Bitmap, Memory);
-                    ThisID->Bitmap = Bitmap;
+                    LoadBitmap(TilesArena, Tile, Memory);
+                    ExistingTile = true;
                     break;
                 }
             }
@@ -198,15 +195,12 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
 
         // If the bitmap wasn't in the game previously, we pick the first available ID slot.
         //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
-        if(!Bitmap)
+        if(ExistingTile == false)
         {
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
-            tile_id *IDForNewBitmap = IDs + FirstAvailable;
-            strncpy_s(IDForNewBitmap->Filepath, FilepathToLoad, STRING_LEN);
-            Bitmap = PushStruct(TilesArena, bitmap);
-            Bitmap->Filepath = IDForNewBitmap->Filepath;
-            LoadBitmap(TilesArena, Bitmap, Memory);
-            IDForNewBitmap->Bitmap = Bitmap;
+            tile *SlotForNewBitmap = Tiles + FirstAvailable;
+            strncpy_s(SlotForNewBitmap->Filepath, FilepathToLoad, STRING_LEN);
+            LoadBitmap(TilesArena, SlotForNewBitmap, Memory);
         }
 
         while(*ThisFilename)
@@ -220,29 +214,30 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         //      These are tile bitmaps that were removed from the game. We want to reclaim
         //      the ID.
         //
-        //      Also note which IDs were used so we can do the random tile thing
+        //      Also note which IDs were used so we can do the random tile thing.
 
-    int UsedIDs[MAX_TILE_TYPES];
-    int UsedIDsIdx = 0;
-    for(int ID = 1;
-        ID < TILE_ID_ARRAY_LEN;
-        ++ID)
+    int UsedTileSlots[MAX_TILE_TYPES];
+    int LastUsedSlot = 0;
+    for(int Slot = 1;
+        Slot < TILE_ARRAY_LEN;
+        ++Slot)
     {
-        tile_id *TileID = IDs + ID;
-        if(TileID->Filepath[0]) // If the ID has a filepath
+        tile *Tile = Tiles + Slot;
+        bitmap *Bitmap = &Tile->Bitmap;
+        if(Tile->Filepath[0]) // If the ID has a filepath
         {
-            if(TileID->Bitmap == 0) // but the bitmap pointer is null
+            if(Bitmap->Buffer.Data == 0) // but the bitmap buffer pointer is null
             {
                 for(int LetterIdx = 0;
                     LetterIdx < STRING_LEN;
                     ++LetterIdx)
                 {
-                    TileID->Filepath[LetterIdx] = 0;
+                    Tile->Filepath[LetterIdx] = 0; // zero the filepath so we can reuse it
                 }
             }
             else // If the ID has a filepath and an active pointer, include it in the randomizer
             {
-                UsedIDs[UsedIDsIdx++] = ID;
+                UsedTileSlots[LastUsedSlot++] = Slot;
             }
         }
     }
@@ -253,7 +248,7 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         ++TileIdx)
     {
         s32 Random = RandomS32InRange(RandomSeries, 0, TileMap->NumTileTypes-1);
-        TileMap->TileValues[TileIdx] = UsedIDs[Random];
+        TileMap->TileValues[TileIdx] = UsedTileSlots[Random];
     }
 
     FreeScratchArena(Scratch);
@@ -562,8 +557,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
          *
          *          - GameRegion 50,331,648 bytes
          *              - struct GameState
-         *              - arena TilesArena: (max 200 tiles): 110,000 + 3,290,800 with some padding = 4mb
-         *                  Bitmap structs 550 bytes * 200 = 110,000
+         *              - arena TilesArena: (max 200 tiles): 3,290,800 with some padding = 4mb
          *                  Bitmaps: 64 x 64, 16,454 bytes each * 200 = 3,290,800 bytes
          *              - arena WorldArena: 
          *                  - TileValues: sizeof(s32) * 30 tile cols * 17 tile cols = 4 * 510 = 2,040 bytes
@@ -622,8 +616,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
-        mem_idx TileIdArraySize = sizeof(tile_id) * TILE_ID_ARRAY_LEN;
-        memset(TileMap->TileIDs, 0, TileIdArraySize);
+        mem_idx TileArraySize = sizeof(tile) * TILE_ARRAY_LEN;
+        memset(TileMap->Tiles, 0, TileArraySize);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
         // // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
@@ -669,14 +663,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
 
     // hot reload tile bitmaps
-    for(u32 ID = 1;
-        ID < TILE_ID_ARRAY_LEN;
-        ++ID)
+    for(u32 TileIdx = 1;
+        TileIdx < TILE_ARRAY_LEN;
+        ++TileIdx)
     {
-        tile_id *ThisID = TileMap->TileIDs + ID;
-        if(ThisID->Filepath[0])
+        tile *Tile = TileMap->Tiles + TileIdx;
+        if(Tile->Filepath[0])
         {
-            DEBUGReloadBitmapIfChanged(ThisID->Bitmap, Memory);
+            DEBUGReloadBitmapIfChanged(Tile, Memory);
         }
     }
 
@@ -770,7 +764,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
             if(TileValue > 0)
             {
-                bitmap *TileBitmap = TileMap->TileIDs[TileValue].Bitmap;
+                tile *Tile = TileMap->Tiles + TileValue;
+                bitmap *TileBitmap = &TileMap->Tiles[TileValue].Bitmap;
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
             }
             if(GameState->EditMode)
@@ -796,17 +791,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         f32 OuterPadding = 56;
         f32 StartX = BrowserMin.X + OuterPadding;
         f32 X = StartX;
-        for(int ID = 1;
-            ID < TILE_ID_ARRAY_LEN;
-            ++ID)
+        for(int TileIdx = 1;
+            TileIdx < TILE_ARRAY_LEN;
+            ++TileIdx)
         {
-            tile_id *ThisID = TileMap->TileIDs + ID;
-            if(ThisID->Filepath[0])
+            tile *Tile = TileMap->Tiles + TileIdx;
+            if(Tile->Filepath[0])
             {
-                Assert(ThisID->Bitmap);
+                Assert(Tile->Bitmap.Buffer.Data);
                 v2 TileMin = {X, Y};
                 v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, ThisID->Bitmap);
+                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &Tile->Bitmap);
                 v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
                 v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
                 DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);

@@ -9,7 +9,7 @@
 
 #define STRING_LEN 40
 #define MAX_TILE_TYPES 200
-#define TILE_ID_ARRAY_LEN MAX_TILE_TYPES + 1
+#define TILE_ARRAY_LEN MAX_TILE_TYPES + 1
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -121,8 +121,6 @@ struct bitmap
 {
     // This is the entire bitmap file, including the header
     buffer Buffer;
-    char *Filepath;
-
     b32 ReadyToRead;
     u64 LastWriteTime;
 
@@ -153,10 +151,10 @@ struct debug_state
     b32 ReadyToReload;
 };
 
-struct tile_id
+struct tile
 {
     char Filepath[STRING_LEN];
-    bitmap *Bitmap;
+    bitmap Bitmap;
 };
 
 struct tile_map
@@ -164,8 +162,7 @@ struct tile_map
     u32 NumRows;
     u32 NumCols;
     u32 NumTileTypes;
-    bitmap *Bitmaps;
-    tile_id TileIDs[TILE_ID_ARRAY_LEN];
+    tile Tiles[TILE_ARRAY_LEN];
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
