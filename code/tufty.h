@@ -159,9 +159,9 @@ struct tile
 
 struct tile_map
 {
-    u32 NumRows;
-    u32 NumCols;
-    u32 NumTileTypes;
+    int NumRows;
+    int NumCols;
+    int NumTileTypes;
     tile Tiles[TILE_ARRAY_LEN];
     int NumTilesInWorld;
     f32 TileSideInPixels;

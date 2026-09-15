@@ -144,9 +144,17 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
     buffer FoundFilenames;
     FoundFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
     FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
-    u32 NumFilesFound = 0;
+    int NumFilesFound = 0;
     Memory->DEBUGPlatformGetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
     TileMap->NumTileTypes = NumFilesFound;
+
+    if(TileMap->NumTileTypes == 0)
+    {
+        // We have no tiles; set all tile values to zero
+        memset(TileMap->TileValues, 0, sizeof(s32) * TileMap->NumTilesInWorld);
+        FreeScratchArena(Scratch);
+        return;
+    }
 
     // Load the bitmap for every .bmp filepath found in the tiles/ dir
     char *ThisFilename = (char *)FoundFilenames.Data;
@@ -166,10 +174,10 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         char FilepathToLoad[STRING_LEN];
         snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles\\%s", ThisFilename);
 
-        u32 FirstAvailable = 0;
+        int FirstAvailable = 0;
         b32 ExistingTile = false;
         // Always keep 0th slot empty
-        for(u32 NthSlot = 1;
+        for(int NthSlot = 1;
             NthSlot < MAX_TILE_TYPES + 1;
             ++NthSlot)
         {
@@ -216,7 +224,7 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         //
         //      Also note which IDs were used so we can do the random tile thing.
 
-    int UsedTileSlots[MAX_TILE_TYPES];
+    int UsedTileSlots[MAX_TILE_TYPES] = {0};
     int LastUsedSlot = 0;
     for(int Slot = 1;
         Slot < TILE_ARRAY_LEN;
@@ -654,26 +662,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Convenience pointer to TileMap
     tile_map *TileMap = &GameState->TileMap;
 
-    // // hot reload player bitmaps
-    // for(int PlayerBitmapIdx = 0;
-    //     PlayerBitmapIdx < 4;
-    //     ++PlayerBitmapIdx)
-    // {
-    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
-    // }
-
-    // hot reload tile bitmaps
-    for(u32 TileIdx = 1;
-        TileIdx < TILE_ARRAY_LEN;
-        ++TileIdx)
-    {
-        tile *Tile = TileMap->Tiles + TileIdx;
-        if(Tile->Filepath[0])
-        {
-            DEBUGReloadBitmapIfChanged(Tile, Memory);
-        }
-    }
-
     // Check if new tile bitmaps added; if so unload and reload all bitmaps.
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
@@ -691,6 +679,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             DebugState->ReadyToReload = true;
         }
     }
+
+    // hot reload tile bitmaps
+    if(DebugState->ReadyToReload == false)
+    {
+        for(int TileIdx = 1;
+            TileIdx < TILE_ARRAY_LEN;
+            ++TileIdx)
+        {
+            tile *Tile = TileMap->Tiles + TileIdx;
+            if(Tile->Filepath[0])
+            {
+                DEBUGReloadBitmapIfChanged(Tile, Memory);
+            }
+        }
+    }
+
+    // hot reload player bitmaps
+    // for(int PlayerBitmapIdx = 0;
+    //     PlayerBitmapIdx < 4;
+    //     ++PlayerBitmapIdx)
+    // {
+    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
+    // }
+    //
 
     // Controller
     for(int ControllerIdx = 0;
@@ -762,6 +774,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
             v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
             v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
+
             if(TileValue > 0)
             {
                 tile *Tile = TileMap->Tiles + TileValue;
