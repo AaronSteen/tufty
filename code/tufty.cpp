@@ -528,6 +528,50 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     }
 }
 
+static void
+DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
+{
+    v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
+    v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
+
+    // Panel
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+
+    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", DebugTextArena, 1, 1, 1, 1, 3.5);
+
+    f32 Y = 160;
+    f32 InnerPadding = 40;
+    f32 OuterPadding = 56;
+    f32 StartX = BrowserMin.X + OuterPadding;
+    f32 X = StartX;
+    int TilesDrawnInThisRow = 0;
+    for(int NthTile = 0;
+        NthTile < TileMap->NumTileTypes;
+        ++NthTile)
+    {
+        v2 TileMin = {X, Y};
+        v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels}; 
+        tile_type *NthTileType = TileMap->TileTypes + NthTile + 1;
+        ScaleAndBlitBitmap(Backbuf, TileMin, TileMax, &NthTileType->Bitmap);
+        v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
+        v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
+        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+        ++TilesDrawnInThisRow;
+
+        if(TilesDrawnInThisRow == 3)
+        {
+            TilesDrawnInThisRow = 0;
+
+            X = StartX;
+            Y += TileMap->TileSideInPixels + InnerPadding;
+        }
+        else
+        {
+            X += TileMap->TileSideInPixels + InnerPadding;
+        }
+    }
+}
+
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
@@ -761,63 +805,38 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(GameState->EditMode)
     {
-        v2 BrowserMin = {(f32)(Buffer->Width * 0.8f), 0};
-        v2 BrowserMax = {(f32)(Buffer->Width), (f32)(Buffer->Height)};
-        DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+        DrawEditor(Buffer, &DebugState->DebugTextArena, TileMap);
 
-        DEBUGDrawText(Buffer, BrowserMin.X + 120, 80,
-                      "Tile Menu", &DebugState->DebugTextArena,
-                      1, 1, 1, 1, 3.5);
-
-        int TilesDrawnInThisRow = 0;
-        f32 Y = 160;
-        f32 InnerPadding = 40;
-        f32 OuterPadding = 56;
-        f32 StartX = BrowserMin.X + OuterPadding;
-        f32 X = StartX;
-
-        // v2 *MenuSlots = PushArray(&DebugState->DebugArena, v2, TileMap->NumTileTypes);
-        // for(int SlotIdx = 0;
-        //     SlotIdx < TileMap->NumTileTypes;
-        //     ++SlotIdx)
+        // for(int TileIdx = 1;
+        //     TileIdx < TILE_ARRAY_LEN;
+        //     ++TileIdx)
         // {
-        //     v2 ThisSlot = MenuSlots + SlotIdx;
-        //     f32 X = StartX + OuterPadding + (InnerPadding + TileMap->TileDim) * (Slot + 1);
-        //     ThisSlot = {};
-        //     ThisSlot.X = 
-        // }
+        //     tile_type *TileType = TileMap->TileTypes + TileIdx;
+        //     if(TileType->Filepath[0])
+        //     {
+        //         Assert(TileType->Bitmap.Buffer.Data);
+        //         v2 TileMin = {X, Y};
+        //         v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
+        //         ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &TileType->Bitmap);
+        //         v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
+        //         v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
+        //         DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
         //
-
-        for(int TileIdx = 1;
-            TileIdx < TILE_ARRAY_LEN;
-            ++TileIdx)
-        {
-            tile_type *TileType = TileMap->TileTypes + TileIdx;
-            if(TileType->Filepath[0])
-            {
-                Assert(TileType->Bitmap.Buffer.Data);
-                v2 TileMin = {X, Y};
-                v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &TileType->Bitmap);
-                v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
-                v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
-                DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
-
-                ++TilesDrawnInThisRow;
-
-                if(TilesDrawnInThisRow == 3)
-                {
-                    TilesDrawnInThisRow = 0;
-
-                    X = StartX;
-                    Y += TileMap->TileSideInPixels + InnerPadding;
-                }
-                else
-                {
-                    X += TileMap->TileSideInPixels + InnerPadding;
-                }
-            }
-        }
+        //         ++TilesDrawnInThisRow;
+        //
+        //         if(TilesDrawnInThisRow == 3)
+        //         {
+        //             TilesDrawnInThisRow = 0;
+        //
+        //             X = StartX;
+        //             Y += TileMap->TileSideInPixels + InnerPadding;
+        //         }
+        //         else
+        //         {
+        //             X += TileMap->TileSideInPixels + InnerPadding;
+        //         }
+        //     }
+        // }
     }
 
     // else
@@ -834,7 +853,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
-    DEBUGDrawText(Buffer, 300, 300, "Hello", &DebugState->DebugTextArena, 0.75f, 0.3f, 1);
 }
 
 
