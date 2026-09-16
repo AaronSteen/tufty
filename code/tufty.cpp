@@ -30,12 +30,7 @@ struct quad
 void
 ZeroArena(arena *Arena)
 {
-    for(int Idx = 0;
-        Idx < Arena->Size;
-        ++Idx)
-    {
-        Arena->Start[Idx] = 0;
-    }
+    memset(Arena->Data, 0, Arena->Size);
 }
 
 void
@@ -86,12 +81,12 @@ ParseBitmapHeader(bitmap *Bitmap)
 }
 
 static void
-DEBUGReloadBitmapIfChanged(tile *Tile, game_memory *Memory)
+DEBUGReloadBitmapIfChanged(tile_type *TileType, game_memory *Memory)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
-    bitmap *Bitmap = &Tile->Bitmap;
-    char *Filepath = Tile->Filepath;
+    bitmap *Bitmap = &TileType->Bitmap;
+    char *Filepath = TileType->Filepath;
     if(Bitmap->ReadyToRead == true)
     {
         Bitmap->ReadyToRead = false;
@@ -115,14 +110,14 @@ DEBUGReloadBitmapIfChanged(tile *Tile, game_memory *Memory)
 }
 
 static void
-LoadBitmap(arena *Arena, tile *Tile, game_memory *Memory)
+LoadBitmap(arena *Arena, tile_type *TileType, game_memory *Memory)
 {
-    bitmap *Bitmap = &Tile->Bitmap;
-    char *Filepath = Tile->Filepath;
+    bitmap *Bitmap = &TileType->Bitmap;
+    char *Filepath = TileType->Filepath;
     Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
     Bitmap->ReadyToRead = true;
-    DEBUGReloadBitmapIfChanged(Tile, Memory);
+    DEBUGReloadBitmapIfChanged(TileType, Memory);
 }
 
 void
@@ -130,14 +125,14 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
                 scratch_header *ScratchHeader, game_memory *Memory)
 {
     ResetArena(TilesArena);
-    tile *Tiles = TileMap->Tiles;
+    tile_type *TileTypes = TileMap->TileTypes;
 
     // Clear bitmap structs in tiles array
     for(int ID = 1;
         ID < TILE_ARRAY_LEN;
         ++ID)
     {
-        Tiles[ID].Bitmap = {};
+        TileTypes[ID].Bitmap = {};
     }
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
@@ -175,14 +170,14 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles\\%s", ThisFilename);
 
         int FirstAvailable = 0;
-        b32 ExistingTile = false;
+        b32 ExistingTileType = false;
         // Always keep 0th slot empty
         for(int NthSlot = 1;
             NthSlot < MAX_TILE_TYPES + 1;
             ++NthSlot)
         {
-            tile *Tile = Tiles + NthSlot;
-            if(Tile->Filepath[0] == 0)
+            tile_type *TileType = TileTypes + NthSlot;
+            if(TileType->Filepath[0] == 0)
             {
                 if(!FirstAvailable)
                 {
@@ -192,10 +187,10 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
 
             else
             {
-                if(strncmp(FilepathToLoad, Tile->Filepath, STRING_LEN) == 0)
+                if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
                 {
-                    LoadBitmap(TilesArena, Tile, Memory);
-                    ExistingTile = true;
+                    LoadBitmap(TilesArena, TileType, Memory);
+                    ExistingTileType = true;
                     break;
                 }
             }
@@ -203,10 +198,10 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
 
         // If the bitmap wasn't in the game previously, we pick the first available ID slot.
         //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
-        if(ExistingTile == false)
+        if(ExistingTileType == false)
         {
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
-            tile *SlotForNewBitmap = Tiles + FirstAvailable;
+            tile_type *SlotForNewBitmap = TileTypes + FirstAvailable;
             strncpy_s(SlotForNewBitmap->Filepath, FilepathToLoad, STRING_LEN);
             LoadBitmap(TilesArena, SlotForNewBitmap, Memory);
         }
@@ -230,9 +225,9 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         Slot < TILE_ARRAY_LEN;
         ++Slot)
     {
-        tile *Tile = Tiles + Slot;
-        bitmap *Bitmap = &Tile->Bitmap;
-        if(Tile->Filepath[0]) // If the ID has a filepath
+        tile_type *TileType = TileTypes + Slot;
+        bitmap *Bitmap = &TileType->Bitmap;
+        if(TileType->Filepath[0]) // If the ID has a filepath
         {
             if(Bitmap->Buffer.Data == 0) // but the bitmap buffer pointer is null
             {
@@ -240,7 +235,7 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
                     LetterIdx < STRING_LEN;
                     ++LetterIdx)
                 {
-                    Tile->Filepath[LetterIdx] = 0; // zero the filepath so we can reuse it
+                    TileType->Filepath[LetterIdx] = 0; // zero the filepath so we can reuse it
                 }
             }
             else // If the ID has a filepath and an active pointer, include it in the randomizer
@@ -380,18 +375,20 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
 void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
-              char *StringText, buffer TextQuadBuf,
+              char *StringText, arena *DebugTextArena,
               f32 R, f32 G, f32 B,
               f32 Alpha = 1.0f,
-              f32 Scale = 1.0f)
+              f32 Scale = 3.5f)
 {
-    Scale *= 2.5f;
-    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, TextQuadBuf.Data, TextQuadBuf.Size);
+    buffer QuadBuf = {};
+    QuadBuf.Size = Kilobytes(10);
+    QuadBuf.Data = PushArray(DebugTextArena, u8, QuadBuf.Size);
+    int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, QuadBuf.Data, QuadBuf.Size);
     for(int QuadIdx = 0;
         QuadIdx < NumQuads;
         ++QuadIdx)
     {
-        quad *ThisQuad = (quad *)(TextQuadBuf.Data + QuadIdx * sizeof(quad));
+        quad *ThisQuad = (quad *)(QuadBuf.Data + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*Scale), (Y + ThisQuad->TopLeft.Y*Scale)};
         v2 Max = {(X + ThisQuad->BottomRight.X*Scale), (Y + ThisQuad->BottomRight.Y*Scale)};
         if(Alpha == 1.0f)
@@ -406,7 +403,7 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
 }
 
 void
-DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, buffer DebugTextBuf)
+DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTextArena)
 {
 #define FPS_SNAPS 30
     static f32 FpsSnaps[FPS_SNAPS] = {};
@@ -428,7 +425,7 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, buffer DebugTex
     }
     char Temp[256];
     snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, DebugTextBuf, 0.9f, 0.2f, 0.5f);
+    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
 #undef FPS_SNAPS
 }
 
@@ -553,42 +550,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(!Memory->IsInitialized)
     {
-// Arenas
-        /* Layout.
-         *
-         *      - PermanentStorage 67,108,864 bytes
-         *
-         *          - DebugRegion 16,777,216 bytes
-         *              - struct DebugState 
-         *              - arena DebugArena 16,777,128 bytes 
-         *                  - buffer DebugTextBuf 4096 bytes
-         *
-         *          - GameRegion 50,331,648 bytes
-         *              - struct GameState
-         *              - arena TilesArena: (max 200 tiles): 3,290,800 with some padding = 4mb
-         *                  Bitmaps: 64 x 64, 16,454 bytes each * 200 = 3,290,800 bytes
-         *              - arena WorldArena: 
-         *                  - TileValues: sizeof(s32) * 30 tile cols * 17 tile cols = 4 * 510 = 2,040 bytes
-         *                  - PlayerBitmaps: 16 x 16, 1094 bytes each * 4 bitmaps = 4,376 bytes
-         *                  
-         *
-         *      - TransientStorage: 1,073,741,824 bytes
-         *
-         *          - struct ScratchHeader
-         *          - ScratchArenas: 10 arenas at 10,240 bytes each: 100,240 bytes
-         *
-         */
-        
-
         // Random
         GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
-        // Debug
-        InitializeArena(&DebugState->DebugArena, (DebugRegion.Data + sizeof(debug_state)), (DebugRegion.Size - sizeof(debug_state)) );
-        Assert(DebugRegion.Size == sizeof(debug_state) + DebugState->DebugArena.Size);
+// Arenas
 
-        DebugState->DebugTextBuf.Data = PushArray(&DebugState->DebugArena, u8, Kilobytes(4) );
-        DebugState->DebugTextBuf.Size = Kilobytes(4);
+        // Debug
+        DebugState->ReadyToReload = true;
+        InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
+
 
         // Tiles
         InitializeArena(&GameState->TilesArena, (GameRegion.Data + sizeof(game_state)), Megabytes(4) );
@@ -624,8 +594,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
-        mem_idx TileArraySize = sizeof(tile) * TILE_ARRAY_LEN;
-        memset(TileMap->Tiles, 0, TileArraySize);
+        mem_idx TileArraySize = sizeof(tile_type) * TILE_ARRAY_LEN;
+        memset(TileMap->TileTypes, 0, TileArraySize);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
         // // TODO(Aaron): Load default bitmap if one failed that indicates obvious failure
@@ -659,6 +629,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     ///////////////////////////////////////// INIT END, MAIN LOOP START ////////////////////////////////////////////
 
+    DebugState->DebugTextArena.Cursor = 0;
     // Convenience pointer to TileMap
     tile_map *TileMap = &GameState->TileMap;
 
@@ -687,10 +658,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileIdx < TILE_ARRAY_LEN;
             ++TileIdx)
         {
-            tile *Tile = TileMap->Tiles + TileIdx;
-            if(Tile->Filepath[0])
+            tile_type *TileType = TileMap->TileTypes + TileIdx;
+            if(TileType->Filepath[0])
             {
-                DEBUGReloadBitmapIfChanged(Tile, Memory);
+                DEBUGReloadBitmapIfChanged(TileType, Memory);
             }
         }
     }
@@ -777,8 +748,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
             if(TileValue > 0)
             {
-                tile *Tile = TileMap->Tiles + TileValue;
-                bitmap *TileBitmap = &TileMap->Tiles[TileValue].Bitmap;
+                tile_type *TileType = TileMap->TileTypes + TileValue;
+                bitmap *TileBitmap = &TileMap->TileTypes[TileValue].Bitmap;
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
             }
             if(GameState->EditMode)
@@ -794,9 +765,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         v2 BrowserMax = {(f32)(Buffer->Width), (f32)(Buffer->Height)};
         DrawSpecialRect(Buffer, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
 
-        DEBUGDrawText(Buffer, BrowserMin.X + 75, 80,
-                      "Tile Menu", DebugState->DebugTextBuf,
-                      1, 1, 1, 1, 2);
+        DEBUGDrawText(Buffer, BrowserMin.X + 120, 80,
+                      "Tile Menu", &DebugState->DebugTextArena,
+                      1, 1, 1, 1, 3.5);
 
         int TilesDrawnInThisRow = 0;
         f32 Y = 160;
@@ -804,17 +775,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         f32 OuterPadding = 56;
         f32 StartX = BrowserMin.X + OuterPadding;
         f32 X = StartX;
+
+        // v2 *MenuSlots = PushArray(&DebugState->DebugArena, v2, TileMap->NumTileTypes);
+        // for(int SlotIdx = 0;
+        //     SlotIdx < TileMap->NumTileTypes;
+        //     ++SlotIdx)
+        // {
+        //     v2 ThisSlot = MenuSlots + SlotIdx;
+        //     f32 X = StartX + OuterPadding + (InnerPadding + TileMap->TileDim) * (Slot + 1);
+        //     ThisSlot = {};
+        //     ThisSlot.X = 
+        // }
+        //
+
         for(int TileIdx = 1;
             TileIdx < TILE_ARRAY_LEN;
             ++TileIdx)
         {
-            tile *Tile = TileMap->Tiles + TileIdx;
-            if(Tile->Filepath[0])
+            tile_type *TileType = TileMap->TileTypes + TileIdx;
+            if(TileType->Filepath[0])
             {
-                Assert(Tile->Bitmap.Buffer.Data);
+                Assert(TileType->Bitmap.Buffer.Data);
                 v2 TileMin = {X, Y};
                 v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &Tile->Bitmap);
+                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &TileType->Bitmap);
                 v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
                 v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
                 DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
@@ -849,7 +833,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[GameState->PlayerFacing]);
     // }
 
-    DEBUGPrintFps(Buffer, Input->Fps, DebugState->DebugTextBuf);
+    DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
+    DEBUGDrawText(Buffer, 300, 300, "Hello", &DebugState->DebugTextArena, 0.75f, 0.3f, 1);
 }
 
 

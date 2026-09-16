@@ -51,7 +51,7 @@ LerpS32(s32 A, s32 B, f32 T)
 
 struct arena
 {
-    u8 *Start;
+    u8 *Data;
     mem_idx Size;
     mem_idx Cursor;
 };
@@ -73,7 +73,7 @@ struct scratch_header
 static void
 InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 {
-    Arena->Start = Start;
+    Arena->Data = Start;
     Arena->Size = Size;
     Arena->Cursor = 0;
 }
@@ -83,7 +83,7 @@ ArenaPush_(arena *Arena, mem_idx NumBytes)
 {
     Assert(Arena->Cursor+NumBytes < Arena->Size);
 
-    void *Result = Arena->Start + Arena->Cursor;
+    void *Result = Arena->Data + Arena->Cursor;
     Arena->Cursor += NumBytes;
 
     return(Result);
@@ -145,13 +145,12 @@ struct mem_region
 
 struct debug_state
 {
-    arena DebugArena;
-    buffer DebugTextBuf;
+    arena DebugTextArena;
     u64 LastTileDirUpdate;
     b32 ReadyToReload;
 };
 
-struct tile
+struct tile_type
 {
     char Filepath[STRING_LEN];
     bitmap Bitmap;
@@ -162,7 +161,7 @@ struct tile_map
     int NumRows;
     int NumCols;
     int NumTileTypes;
-    tile Tiles[TILE_ARRAY_LEN];
+    tile_type TileTypes[TILE_ARRAY_LEN];
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
