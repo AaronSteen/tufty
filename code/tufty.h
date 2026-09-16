@@ -143,13 +143,6 @@ struct mem_region
     u8 *Data;
 };
 
-struct debug_state
-{
-    arena DebugTextArena;
-    u64 LastTileDirUpdate;
-    b32 ReadyToReload;
-};
-
 struct tile_type
 {
     char Filepath[STRING_LEN];
@@ -181,6 +174,19 @@ struct game_state
     bitmap PlayerBitmaps[4];
 
     b32 EditMode;
+};
+
+struct editor_state
+{
+    tile_type *HeldTileType;
+};
+
+struct debug_state
+{
+    arena DebugTextArena;
+    u64 LastTileDirUpdate;
+    editor_state EditorState;
+    b32 ReadyToReload;
 };
 
 #pragma pack(push, 1)

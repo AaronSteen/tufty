@@ -529,7 +529,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 }
 
 static void
-DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
+DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap, game_mouse_input *Mouse, editor_state *EditorState)
 {
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
@@ -555,7 +555,22 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
         ScaleAndBlitBitmap(Backbuf, TileMin, TileMax, &NthTileType->Bitmap);
         v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
         v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
-        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+
+        if(Mouse->X >= TileMin.X &&
+           Mouse->Y >= TileMin.Y &&
+           Mouse->X <= TileMax.X &&
+           Mouse->Y <= TileMax.Y)
+        {
+            if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
+            {
+                EditorState->HeldTileType = NthTileType;
+            }
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
+        }
+        else
+        {
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+        }
         ++TilesDrawnInThisRow;
 
         if(TilesDrawnInThisRow == 3)
@@ -569,6 +584,17 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
         {
             X += TileMap->TileSideInPixels + InnerPadding;
         }
+    }
+    if(Mouse->Secondary.EndedDown && EditorState->HeldTileType)
+    {
+        EditorState->HeldTileType = nullptr;
+    }
+    if(EditorState->HeldTileType != nullptr)
+    {
+        v2 TinyTileMin = {((f32)Mouse->X + 20), ((f32)Mouse->Y + 20)};
+        v2 TinyTileMax = TinyTileMin + (v2){(f32)(TileMap->TileSideInPixels * 0.5), (f32)(TileMap->TileSideInPixels * 0.5)};
+        ScaleAndBlitBitmap(Backbuf, TinyTileMin, TinyTileMax, &EditorState->HeldTileType->Bitmap);
+        DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, true, 0);
     }
 }
 
@@ -602,7 +628,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Debug
         DebugState->ReadyToReload = true;
         InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
-
 
         // Tiles
         InitializeArena(&GameState->TilesArena, (GameRegion.Data + sizeof(game_state)), Megabytes(4) );
@@ -805,38 +830,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(GameState->EditMode)
     {
-        DrawEditor(Buffer, &DebugState->DebugTextArena, TileMap);
-
-        // for(int TileIdx = 1;
-        //     TileIdx < TILE_ARRAY_LEN;
-        //     ++TileIdx)
-        // {
-        //     tile_type *TileType = TileMap->TileTypes + TileIdx;
-        //     if(TileType->Filepath[0])
-        //     {
-        //         Assert(TileType->Bitmap.Buffer.Data);
-        //         v2 TileMin = {X, Y};
-        //         v2 TileMax = {(TileMin.X + TileMap->TileSideInPixels), (TileMin.Y + TileMap->TileSideInPixels)};
-        //         ScaleAndBlitBitmap(Buffer, TileMin, TileMax, &TileType->Bitmap);
-        //         v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
-        //         v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
-        //         DrawSpecialRect(Buffer, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
-        //
-        //         ++TilesDrawnInThisRow;
-        //
-        //         if(TilesDrawnInThisRow == 3)
-        //         {
-        //             TilesDrawnInThisRow = 0;
-        //
-        //             X = StartX;
-        //             Y += TileMap->TileSideInPixels + InnerPadding;
-        //         }
-        //         else
-        //         {
-        //             X += TileMap->TileSideInPixels + InnerPadding;
-        //         }
-        //     }
-        // }
+        DrawEditor(Buffer, &DebugState->DebugTextArena, TileMap, &Input->Mouse, &DebugState->EditorState);
     }
 
     // else
