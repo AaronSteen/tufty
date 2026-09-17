@@ -543,6 +543,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     v2 MouseCoords = {(f32)Mouse->X, (f32)Mouse->Y};
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
+    b32 AlreadyClickedSecondary = false;
 
     // Panel
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
@@ -555,50 +556,77 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     f32 StartX = BrowserMin.X + OuterPadding;
     f32 X = StartX;
     int TilesDrawnInThisRow = 0;
-    for(int NthTile = 0;
-        NthTile < TileMap->NumTileTypes;
-        ++NthTile)
+
+    // Draw tiles in menu unless there are no tiles
+    if(TileMap->TileTypes[1].Bitmap.Pixels)
     {
-        v2 TileMin = {X, Y};
-        v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels}; 
-        tile_type *NthTileType = TileMap->TileTypes + NthTile + 1;
-        ScaleAndBlitBitmap(Backbuf, TileMin, TileMax, &NthTileType->Bitmap);
-        v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
-        v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
-
-        if(MouseCoords.X >= TileMin.X &&
-           MouseCoords.Y >= TileMin.Y &&
-           MouseCoords.X <= TileMax.X &&
-           MouseCoords.Y <= TileMax.Y)
+        for(int NthTile = 0;
+            NthTile < TileMap->NumTileTypes;
+            ++NthTile)
         {
-            if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
+            v2 TileMin = {X, Y};
+            v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels}; 
+            tile_type *NthTileType = TileMap->TileTypes + NthTile + 1;
+            ScaleAndBlitBitmap(Backbuf, TileMin, TileMax, &NthTileType->Bitmap);
+            v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
+            v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
+
+            if(MouseCoords.X >= TileMin.X &&
+               MouseCoords.Y >= TileMin.Y &&
+               MouseCoords.X <= TileMax.X &&
+               MouseCoords.Y <= TileMax.Y)
             {
-                EditorState->HeldTileType = NthTileType;
+                if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
+                {
+                    EditorState->HeldTileType = NthTileType;
+                }
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
             }
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
-        }
-        else
-        {
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
-        }
-        ++TilesDrawnInThisRow;
+            else
+            {
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+            }
+            ++TilesDrawnInThisRow;
 
-        if(TilesDrawnInThisRow == 3)
-        {
-            TilesDrawnInThisRow = 0;
+            if(TilesDrawnInThisRow == 3)
+            {
+                TilesDrawnInThisRow = 0;
 
-            X = StartX;
-            Y += TileMap->TileSideInPixels + InnerPadding;
-        }
-        else
-        {
-            X += TileMap->TileSideInPixels + InnerPadding;
+                X = StartX;
+                Y += TileMap->TileSideInPixels + InnerPadding;
+            }
+            else
+            {
+                X += TileMap->TileSideInPixels + InnerPadding;
+            }
         }
     }
-    if(Mouse->Secondary.EndedDown && EditorState->HeldTileType)
+
+    // If there are no tiles, set HeldTileType to nullptr so we don't try to draw it and crash
+    else
     {
         EditorState->HeldTileType = nullptr;
     }
+
+
+    // If the user secondary-clicked while holding a tile type, stop holding tile type.
+    //      AlreadyClickedSecondary prevents the following situation:
+    //          - The user is holding a tile and secondary clicks with the pointer over a tile in the game
+    //          - HeldTileType changes to nullptr (this is good)
+    //          - But the tile in the game under the pointer is set to TILE_INVALID (this is not good)
+    //      We want the interaction flow to be: 
+    //          - if user is hovering over a tile and they are holding a tile type and they secondary click, 
+    //                  stop holding that tile type and do nothing else
+    //          - then, if they secondary click again, set the tile value for tile under their cursor to be TILE_INVALID
+    if((Mouse->Secondary.EndedDown) && 
+       (Mouse->Secondary.HalfTransitionCount == 1) &&
+       (EditorState->HeldTileType))
+    {
+        EditorState->HeldTileType = nullptr;
+        AlreadyClickedSecondary = true;
+    }
+
+    // Draw a tiny version of the held tile
     if(EditorState->HeldTileType != nullptr)
     {
         v2 TinyTileMin = MouseCoords + (v2){20.0f, 20.0f};
@@ -607,16 +635,32 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
         DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, true, 0);
     }
     
-    // If mouse is not in editor panel
+    // If mouse is not in editor panel, we need to:
+    //      - Highlight whatever tile pointer hovers over
+    //      - If user clicks primary mouse button while HeldTileType != nullptr, set type of tile under cursor to be equal
+    //              to held tile type
+    //      - If user clicks seconary mouse button while HeldTileType == nullptr, set type of tile under cursor to 
+    //              0 (TILE_INVALID), in which case we draw nothing
     if(MouseCoords.X < BrowserMin.X)
     {
-        // And user clicked on a game tile while they were holding a tile type from the editor
-        if((Mouse->Primary.EndedDown) && 
-           (Mouse->Primary.HalfTransitionCount == 1) &&
+        v2 TileAsV2 = GetTileCoordsFromMouseCoords(MouseCoords, TileMap->TileSideInPixels);
+        v2 OutlineMin = {TileAsV2.X * TileMap->TileSideInPixels, TileAsV2.Y * TileMap->TileSideInPixels};
+        v2 OutlineMax = OutlineMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
+        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
+        s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
+
+        if((Mouse->Secondary.EndedDown) &&
+           (Mouse->Secondary.HalfTransitionCount == 1) &&
+           (EditorState->HeldTileType == nullptr) &&
+           (AlreadyClickedSecondary == false))
+        {
+            *(TileMap->TileValues + OneDimensionalTileIndex) = TILE_INVALID;
+        }
+
+        else if((Mouse->Primary.EndedDown) && 
+           (Mouse->Primary.HalfTransitionCount == 1) && 
            (EditorState->HeldTileType != nullptr))
         {
-            v2 TileAsV2 = GetTileCoordsFromMouseCoords(MouseCoords, TileMap->TileSideInPixels);
-            s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
             mem_idx NthTileValue = EditorState->HeldTileType - TileMap->TileTypes;
             *(TileMap->TileValues + OneDimensionalTileIndex) = NthTileValue;
         }
