@@ -1,0 +1,10 @@
+TILEMAP FILE SPEC (#pragma pack)
+TYPE                        BYTES                                                           CONTENTS
+char                        0-3                                                             Magic number e.g. TILE
+int                         4-7                                                             NumRows
+int                         8-11                                                            NumCols
+int                         12-15                                                           Tile type filepath offset (20)
+int                         16-19                                                           Tile value array offset (8052)
+tile_type                   Comprises 201 * STRING_LEN = 201 * 40 = 8040 bytes.             Tile type filepaths
+                            12-8051 
+tile_value                  Comprises (NumRows * NumCols) * 4 bytes per s32                 enum tile_value

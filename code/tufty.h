@@ -160,6 +160,7 @@ struct tile_map
     s32 *TileValues;
 };
 
+
 struct game_state
 {
     arena WorldArena;
@@ -210,5 +211,6 @@ struct bitmap_header
     // NOTE(Aaron): May need to adopt alpha and RGB masks fields from Beaver at some point, but
     //      for now we don't use.
 };
+
 #pragma pack(pop)
 

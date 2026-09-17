@@ -591,7 +591,6 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
             if(TilesDrawnInThisRow == 3)
             {
                 TilesDrawnInThisRow = 0;
-
                 X = StartX;
                 Y += TileMap->TileSideInPixels + InnerPadding;
             }
@@ -607,7 +606,6 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     {
         EditorState->HeldTileType = nullptr;
     }
-
 
     // If the user secondary-clicked while holding a tile type, stop holding tile type.
     //      AlreadyClickedSecondary prevents the following situation:
@@ -666,6 +664,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
         }
     }
 }
+
 
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
