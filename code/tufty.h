@@ -9,7 +9,7 @@
 
 #define STRING_LEN 40
 #define MAX_TILE_TYPES 200
-#define TILE_ARRAY_LEN MAX_TILE_TYPES + 1
+#define TILE_ARRAY_LEN (MAX_TILE_TYPES + 1)
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -212,5 +212,15 @@ struct bitmap_header
     //      for now we don't use.
 };
 
+struct serialized_tile_map
+{
+    char MagicNumber[4];
+    int NumRows;
+    int NumCols;
+    int TileTypeFilepathsOffset;
+    int TileValuesOffset;
+    char TileTypeFilepaths[TILE_ARRAY_LEN * STRING_LEN];
+    s32 TileValues[];
+};
 #pragma pack(pop)
 

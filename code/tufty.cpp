@@ -665,6 +665,43 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     }
 }
 
+static b32
+SerializeTileMap(tile_map *TileMap, scratch_header *ScratchHeader, debug_platform_write_entire_file *WriteFile)
+{
+    if(TileMap->NumTileTypes == 0)
+    {
+        return false;
+    }
+
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    serialized_tile_map *ToWrite = PushStruct(&Scratch->Arena, serialized_tile_map);
+
+    mem_idx BytesNeeded = sizeof(serialized_tile_map);
+    char *MagicNumber = "TILE";
+    mem_idx MagicNumberSize = strlen(MagicNumber);
+    Assert(MagicNumberSize == 4);
+
+    strncpy_s(ToWrite->MagicNumber, MagicNumber, MagicNumberSize);
+    ToWrite->NumRows = TileMap->NumRows;
+    ToWrite->NumCols = TileMap->NumCols;
+    ToWrite->TileTypeFilepathsOffset = 20;
+    mem_idx HeaderStuffLen = MagicNumberSize + sizeof(ToWrite->NumRows) + sizeof(ToWrite->NumCols) + 
+                                sizeof(ToWrite->TileTypeFilepathsOffset) + sizeof(ToWrite->TileValuesOffset);
+    Assert(ToWrite->TileTypeFilepathsOffset == HeaderStuffLen);
+
+    ToWrite->TileValuesOffset = ToWrite->TileTypeFilepathsOffset + (TILE_ARRAY_LEN * STRING_LEN);
+
+    mem_idx TileValuesArraySize = ToWrite->NumRows * ToWrite->NumCols * sizeof(s32);
+    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileValuesArraySize);
+    memcpy(WriteTileValuesHere, TileMap->TileValues, TileValuesArraySize);
+
+    BytesNeeded += TileValuesArraySize;
+
+    WriteFile("test.tilemap", BytesNeeded, Scratch->Arena.Data);
+
+    FreeScratchArena(Scratch);
+    return(true);
+}
 
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
@@ -915,6 +952,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
+
+    b32 Result = SerializeTileMap(TileMap, ScratchHeader, Memory->DEBUGPlatformWriteEntireFile);
 }
 
 
