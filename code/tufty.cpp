@@ -4,7 +4,18 @@
 #define PLAYER_HEIGHT 64.0f
 #define PLAYER_WIDTH  64.0f
 
-#define SCRATCH_SIZE Kilobytes(10)
+#define SCRATCH_SIZE Megabytes(1)
+
+// DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
+// DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
+// DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *Filename)
+// DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, u32 MemorySize, void *Memory)
+// DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
+// DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *Dirname)
+// DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer *GamePackedFilenames, char *DirName, int *NumFilesFound)
+// returns either the number of bytes read, or 0 if the file was missing, too big, or locked
+// DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
+
 
 enum
 {
@@ -666,40 +677,81 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
 }
 
 static b32
-SerializeTileMap(tile_map *TileMap, scratch_header *ScratchHeader, debug_platform_write_entire_file *WriteFile)
+SerializeTileMap(tile_map *TileMap, char *Filepath, scratch_header *ScratchHeader, debug_platform_write_entire_file *WriteFile)
 {
+    b32 Success = false;
     if(TileMap->NumTileTypes == 0)
     {
-        return false;
+        return(Success);
     }
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     serialized_tile_map *ToWrite = PushStruct(&Scratch->Arena, serialized_tile_map);
 
-    mem_idx BytesNeeded = sizeof(serialized_tile_map);
+    mem_idx BytesToWrite = sizeof(serialized_tile_map);
     char *MagicNumber = "TILE";
-    mem_idx MagicNumberSize = strlen(MagicNumber);
+    mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
     Assert(MagicNumberSize == 4);
 
-    strncpy_s(ToWrite->MagicNumber, MagicNumber, MagicNumberSize);
+    for(int NthLetter = 0;
+        NthLetter < MagicNumberSize;
+        ++NthLetter)
+    {
+        ToWrite->MagicNumber[NthLetter] = MagicNumber[NthLetter];
+    }
+
     ToWrite->NumRows = TileMap->NumRows;
     ToWrite->NumCols = TileMap->NumCols;
-    ToWrite->TileTypeFilepathsOffset = 20;
-    mem_idx HeaderStuffLen = MagicNumberSize + sizeof(ToWrite->NumRows) + sizeof(ToWrite->NumCols) + 
-                                sizeof(ToWrite->TileTypeFilepathsOffset) + sizeof(ToWrite->TileValuesOffset);
-    Assert(ToWrite->TileTypeFilepathsOffset == HeaderStuffLen);
+    ToWrite->NumTileTypes = TileMap->NumTileTypes;
+    ToWrite->TileTypeFilepathsOffset = sizeof(serialized_tile_map);
 
-    ToWrite->TileValuesOffset = ToWrite->TileTypeFilepathsOffset + (TILE_ARRAY_LEN * STRING_LEN);
+    for(int TypeIdx = 1;
+        TypeIdx <= ToWrite->NumTileTypes;
+        ++TypeIdx)
+    {
+        char *FilepathToWrite = TileMap->TileTypes[TypeIdx].Filepath;
+        mem_idx FilepathBytesNeeded = strnlen(FilepathToWrite, STRING_LEN);
 
+        // For null terminator
+        FilepathBytesNeeded += 1;
+
+        char *WriteFilepathHere = PushArray(&Scratch->Arena, char, FilepathBytesNeeded);
+        strncpy_s(WriteFilepathHere, FilepathToWrite, FilepathBytesNeeded);
+        ToWrite->TileValuesOffset += FilepathBytesNeeded;
+        BytesToWrite += FilepathBytesNeeded;
+    }
+    
     mem_idx TileValuesArraySize = ToWrite->NumRows * ToWrite->NumCols * sizeof(s32);
-    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileValuesArraySize);
+    s32 *WriteTileValuesHere = PushArray(Scratch->Arena, s32, TileValuesArraySize);
     memcpy(WriteTileValuesHere, TileMap->TileValues, TileValuesArraySize);
 
-    BytesNeeded += TileValuesArraySize;
+    BytesToWrite += TileValuesArraySize;
 
-    WriteFile("test.tilemap", BytesNeeded, Scratch->Arena.Data);
+    Success = WriteFile(Filepath, BytesToWrite, Scratch->Arena.Data);
 
     FreeScratchArena(Scratch);
+    return(Success);
+}
+
+static b32
+LoadSavedTileMap(char *Filepath, tile_map *TileMap, 
+                 scratch_header *ScratchHeader, 
+                 debug_platform_get_file_size *GetFileSize, 
+                 debug_platform_read_file_into *ReadFileInto)
+{
+    // TODO: check for failure to get scratch in every function 
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    u32 Filesize = GetFileSize(Filepath);
+
+    ReadFileInto(Filepath, (Scratch->Arena.Size - Scratch->Arena.Cursor), Scratch->Arena.Data);
+
+
+
+
+
+
+    FreeScratchArena(Scratch);
+    
     return(true);
 }
 
@@ -759,8 +811,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                             (u8 *)Memory->TransientStorage + sizeof(scratch_header) + (ScratchIdx * SCRATCH_SIZE), 
                             SCRATCH_SIZE);
         }
-
-
 
 // Tiles        
         tile_map *TileMap = &GameState->TileMap;
@@ -953,7 +1003,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
 
-    b32 Result = SerializeTileMap(TileMap, ScratchHeader, Memory->DEBUGPlatformWriteEntireFile);
+    b32 WriteResult = SerializeTileMap(TileMap, "test.tilemap", ScratchHeader, Memory->DEBUGPlatformWriteEntireFile);
+    b32 ReadResult = LoadSavedTileMap("test.tilemap", TileMap, ScratchHeader, Memory->DEBUGPlatformGetFileSize, Memory->DEBUGPlatformReadFileInto);
+
 }
 
 

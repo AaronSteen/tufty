@@ -217,10 +217,9 @@ struct serialized_tile_map
     char MagicNumber[4];
     int NumRows;
     int NumCols;
+    int NumTileTypes;
     int TileTypeFilepathsOffset;
     int TileValuesOffset;
-    char TileTypeFilepaths[TILE_ARRAY_LEN * STRING_LEN];
-    s32 TileValues[];
 };
 #pragma pack(pop)
 
