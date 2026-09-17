@@ -25,10 +25,10 @@ RoundF32ToS32(f32 Real)
     return(Result);
 }
 
-static u32
-FloorF32ToU32(f32 Real)
+static s32
+FloorF32ToS32(f32 Real)
 {
-    u32 Result = (u32)floorf(Real);
+    s32 Result = (s32)floorf(Real);
     return(Result);
 }
 

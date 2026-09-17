@@ -502,12 +502,12 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     u8 *DestRow = (u8 *)Buf->Memory + SampledScreenMinY * Buf->Pitch + SampledScreenMinX * Buf->BytesPerPixel;
     for(int Y = SampledScreenMinY; Y < SampledScreenMaxY; ++Y)
     {
-        u32 SrcRowIdx = FloorF32ToU32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
-        u32 SrcRow = Bitmap->Height - 1 - SrcRowIdx;
+        s32 SrcRowIdx = FloorF32ToS32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
+        s32 SrcRow = Bitmap->Height - 1 - SrcRowIdx;
         u8 *DestPixel = DestRow;
         for(int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
         {
-            u32 SrcCol = FloorF32ToU32(XCoef*((f32)(X-ScreenMinX)+0.5f));
+            s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
             u8 *SrcPixel = Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel;
 
             // Get the alpha value
@@ -528,9 +528,19 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
     }
 }
 
+static v2
+GetTileCoordsFromMouseCoords(v2 MouseCoords, f32 TileSideInPixels)
+{
+    v2 Result = {};
+    Result.X = FloorF32ToS32(MouseCoords.X / (s32)TileSideInPixels);
+    Result.Y = FloorF32ToS32(MouseCoords.Y / (s32)TileSideInPixels);
+    return(Result);
+}
+
 static void
 DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap, game_mouse_input *Mouse, editor_state *EditorState)
 {
+    v2 MouseCoords = {(f32)Mouse->X, (f32)Mouse->Y};
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
 
@@ -556,10 +566,10 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
         v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
         v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
 
-        if(Mouse->X >= TileMin.X &&
-           Mouse->Y >= TileMin.Y &&
-           Mouse->X <= TileMax.X &&
-           Mouse->Y <= TileMax.Y)
+        if(MouseCoords.X >= TileMin.X &&
+           MouseCoords.Y >= TileMin.Y &&
+           MouseCoords.X <= TileMax.X &&
+           MouseCoords.Y <= TileMax.Y)
         {
             if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
             {
@@ -591,10 +601,25 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     }
     if(EditorState->HeldTileType != nullptr)
     {
-        v2 TinyTileMin = {((f32)Mouse->X + 20), ((f32)Mouse->Y + 20)};
+        v2 TinyTileMin = MouseCoords + (v2){20.0f, 20.0f};
         v2 TinyTileMax = TinyTileMin + (v2){(f32)(TileMap->TileSideInPixels * 0.5), (f32)(TileMap->TileSideInPixels * 0.5)};
         ScaleAndBlitBitmap(Backbuf, TinyTileMin, TinyTileMax, &EditorState->HeldTileType->Bitmap);
         DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, true, 0);
+    }
+    
+    // If mouse is not in editor panel
+    if(MouseCoords.X < BrowserMin.X)
+    {
+        // And user clicked on a game tile while they were holding a tile type from the editor
+        if((Mouse->Primary.EndedDown) && 
+           (Mouse->Primary.HalfTransitionCount == 1) &&
+           (EditorState->HeldTileType != nullptr))
+        {
+            v2 TileAsV2 = GetTileCoordsFromMouseCoords(MouseCoords, TileMap->TileSideInPixels);
+            s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
+            mem_idx NthTileValue = EditorState->HeldTileType - TileMap->TileTypes;
+            *(TileMap->TileValues + OneDimensionalTileIndex) = NthTileValue;
+        }
     }
 }
 
