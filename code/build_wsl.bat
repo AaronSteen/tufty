@@ -17,7 +17,7 @@ if exist win32_tufty_handmade.pdb del win32_tufty_handmade.pdb
 "%CLANGCL%" %CommonCompilerFlags% %CODE%\tufty.cpp -LD /link /MAP:tufty.map %CommonLinkerFlags% /EXPORT:GameUpdateAndRender /EXPORT:GameGetSoundSamples
 if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 echo tufty.dll: OK
-"%CLANGCL%" %CommonCompilerFlags% %CODE%\win32_tufty_handmade.cpp user32.lib gdi32.lib winmm.lib /link /MAP:win32_tufty_handmade.map %CommonLinkerFlags%
+"%CLANGCL%" %CommonCompilerFlags% %CODE%\win32_tufty_handmade.cpp user32.lib gdi32.lib winmm.lib comdlg32.lib /link /MAP:win32_tufty_handmade.map %CommonLinkerFlags%
 if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 echo win32_tufty_handmade.exe: OK
 popd

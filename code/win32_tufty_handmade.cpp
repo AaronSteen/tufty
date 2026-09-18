@@ -61,7 +61,12 @@ static b32 GlobalPause;
 static win32_offscreen_buffer GlobalBackbuffer;
 static win32_wasapi_audio WasapiAudio;
 static u64 GlobalCpuFreq;
-
+static HWND Window;
+static b32 GlobalDialogWasOpen;
+static win32_state *GlobalWin32State;
+static game_controller_input *GlobalKeyboardController;
+static special_keys *GlobalSpecialKeys;
+static game_mouse_input *GlobalMouse;
 
 // NOTE(casey): XInputGetState
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
@@ -378,6 +383,54 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 #undef SEARCH_TERM_MAX_LEN 
 }
 
+// Need forward declaration to call this here
+static void
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, special_keys *SpecialKeys, game_mouse_input *Mouse);
+
+// #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
+DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
+{
+    // The purpose of this global is to ignore any keyboard messages that appear in our MainWindowCallback function,
+    //      which will happen as we press keys while interacting with the file dialog, since the
+    //      file dialog we open below will automatically dispatch them to MainWindowCallback. There
+    //      is an assert in there that fires if a keyboard message is dispatched to MainWindowCallback.
+    //      Normally we want this assert to fire if a keyboard message appears there, because it means
+    //      we somehow failed to read keyboard input in our function for processing it. But
+    //      while the file dialog is open, it will send them there without us being able to intervene,
+    //      so we have this global variable that we can use in an if statement to guard against that.
+    //
+    //      AS, 9.17.26
+    GlobalDialogWasOpen = true;
+
+    OPENFILENAMEA Filename = {};
+    Filename.lStructSize = sizeof(OPENFILENAMEA);
+    Filename.hwndOwner = Window;
+    Filename.lpstrFile = Dest;
+    Filename.nMaxFile = DestSize;
+    Filename.lpstrFilter = "Tile map (.tilemap)\0*.tilemap\0All files\0*.*\0\0";
+    Filename.lpstrDefExt = ".tilemap";
+    Filename.Flags = OFN_OVERWRITEPROMPT|OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+
+    int Result = 0;
+    Win32ProcessPendingMessages(GlobalWin32State, GlobalKeyboardController, GlobalSpecialKeys, GlobalMouse);
+    if(IsSave)
+    {
+        Result = GetSaveFileNameA(&Filename);
+    }
+    else
+    {
+        Result = GetOpenFileNameA(&Filename);
+    }
+
+    // It might be the case that a key got stuck in an EndedDown state in the process of
+    //      pushing e.g. Ctrl+S to open the save dialog, so we zero all input here
+    *GlobalKeyboardController = {};
+    *GlobalSpecialKeys = {};
+    *GlobalMouse = {};
+    
+    return(Result);
+}
+
 static u64
 GetOsTimerFreq(void)
 {
@@ -692,7 +745,10 @@ Win32MainWindowCallback(HWND Window,
         case WM_KEYDOWN:
         case WM_KEYUP:
         {
-            Assert(!"Keyboard input came in through a non-dispatch message!");
+            if(!GlobalDialogWasOpen)
+            {
+                Assert(!"Keyboard input came in through a non-dispatch message!");
+            }
         } break;
         
         case WM_PAINT:
@@ -851,7 +907,7 @@ Win32PlayBackInput(win32_state *State, game_input *NewInput)
 }
 
 static void
-Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, function_keys *FunctionKeys, game_mouse_input *Mouse)
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, special_keys *SpecialKeys, game_mouse_input *Mouse)
 {
     MSG Message;
     while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -964,46 +1020,50 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                     //     VK_F8 	0x77 	F8 key
                     //     VK_F9 	0x78 	F9 key
                     //     VK_F10 	0x79 	F10 key
-                // Function keys
+                // Special keys
                     else if(VKCode == VK_F1)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F1, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F1, IsDown);
                     }
                     else if(VKCode == VK_F2)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F2, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F2, IsDown);
                     }
                     else if(VKCode == VK_F3)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F3, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F3, IsDown);
                     }
                     else if(VKCode == VK_F4)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F4, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F4, IsDown);
                     }
                     else if(VKCode == VK_F5)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F5, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F5, IsDown);
                     }
                     else if(VKCode == VK_F6)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F6, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F6, IsDown);
                     }
                     else if(VKCode == VK_F7)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F7, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F7, IsDown);
                     }
                     else if(VKCode == VK_F8)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F8, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F8, IsDown);
                     }
                     else if(VKCode == VK_F9)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F9, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F9, IsDown);
                     }
                     else if(VKCode == VK_F10)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&FunctionKeys->F10, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F10, IsDown);
+                    }
+                    else if(VKCode == VK_CONTROL)
+                    {
+                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->Ctrl, IsDown);
                     }
 #endif
                 }
@@ -1040,7 +1100,6 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 {
                     Button = &Mouse->Secondary;
                 }
-
                 Win32ProcessKeyboardAndMouseMessage(Button, IsDown);
             } break;
 
@@ -1170,6 +1229,7 @@ WinMain(HINSTANCE Instance,
         int ShowCode)
 {
     win32_state Win32State = {};
+    GlobalWin32State = &Win32State;
 
     GlobalCpuFreq = GuessCpuTimerFreq();
 
@@ -1216,7 +1276,7 @@ WinMain(HINSTANCE Instance,
         int WindowWidth = WindowRect.right - WindowRect.left;
         int WindowHeight = WindowRect.bottom - WindowRect.top;
 
-        HWND Window =
+        Window =
             CreateWindowExA(
                 0, // WS_EX_TOPMOST|WS_EX_LAYERED,
                 WindowClass.lpszClassName,
@@ -1286,7 +1346,7 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
             GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
             GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
-
+            GameMemory.DEBUGPlatformGetFilepathFromDialog = DEBUGPlatformGetFilepathFromDialog;
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token
@@ -1339,6 +1399,7 @@ WinMain(HINSTANCE Instance,
                 game_input *NewInput = &Input[0];
                 game_input *OldInput = &Input[1];
     
+                // this is now a global because we need to reset it in case a dialog was open this frame
                 u64 LastCounter = ReadCpuTimer();
 
                 win32_game_code Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
@@ -1389,17 +1450,23 @@ WinMain(HINSTANCE Instance,
                     NewMouse->X = MouseP.x - WIN32_BACKBUFFER_OFFSET_X;
                     NewMouse->Y = MouseP.y - WIN32_BACKBUFFER_OFFSET_Y;
 
-                    function_keys *OldFunctionKeys = &OldInput->FunctionKeys;
-                    function_keys *NewFunctionKeys = &NewInput->FunctionKeys;
-                    *NewFunctionKeys = {};
+                    special_keys *OldSpecialKeys = &OldInput->SpecialKeys;
+                    special_keys *NewSpecialKeys = &NewInput->SpecialKeys;
+                    *NewSpecialKeys = {};
                     for(int FnKeyIdx = 0;
-                        FnKeyIdx < ArrayCount(NewFunctionKeys->Keys);
+                        FnKeyIdx < ArrayCount(NewSpecialKeys->Keys);
                         ++FnKeyIdx)
                     {
-                        NewFunctionKeys->Keys[FnKeyIdx].EndedDown = OldFunctionKeys->Keys[FnKeyIdx].EndedDown;
+                        NewSpecialKeys->Keys[FnKeyIdx].EndedDown = OldSpecialKeys->Keys[FnKeyIdx].EndedDown;
                     }
 
-                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewFunctionKeys, NewMouse);
+                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewSpecialKeys, NewMouse);
+
+                    // NOTE(Aaron): We hoist these to globals so that we can clean them up
+                    //      in the case that a file dialog ran this frame
+                    GlobalKeyboardController = NewKeyboardController;
+                    GlobalSpecialKeys = NewSpecialKeys;
+                    GlobalMouse = NewMouse;
 
                     if(!GlobalPause)
                     {
@@ -1542,6 +1609,20 @@ WinMain(HINSTANCE Instance,
                             //      when initializing the game (AS, 9/4/26)
                             NewInput->CpuTimerReading = ReadCpuTimer();
                             Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
+                            if(GlobalDialogWasOpen)
+                            {
+                                // Cleanup in the case that the save/load dialog was open.
+                                //      We need to reset LastCounter since the game is 
+                                //      locked on the frame in which the save/load dialog
+                                //      was opened, and when we try to compute a FPS value based on 
+                                //      the LastCounter value corresponding to that frame, we'll 
+                                //      get a misleading reading suggesting that one frame took multiple seconds to
+                                //      run.
+                                //
+                                //      AS, 9.26.26
+                                GlobalDialogWasOpen = false;
+                                LastCounter = ReadCpuTimer();
+                            }
                         }
 
                         u32 Padding;
@@ -1606,6 +1687,7 @@ WinMain(HINSTANCE Instance,
                         u64 EndCounter = ReadCpuTimer();
                         OldInput->Fps = (f32)GlobalCpuFreq / (EndCounter - LastCounter);
                         LastCounter = EndCounter;
+                        
 
                         win32_window_dimension Dimension = Win32GetWindowDimension(Window);
                         HDC DeviceContext = GetDC(Window);

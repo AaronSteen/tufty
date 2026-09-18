@@ -141,6 +141,10 @@ typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_c
 #define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
 typedef DEBUG_PLATFORM_READ_FILE_INTO(debug_platform_read_file_into);
 
+// IsSave is true if the user is saving; if they are loading, set it to false
+#define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, mem_idx DestSize, b32 IsSave)
+typedef DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(debug_platform_get_file_path_from_dialog);
+
 #endif
 
 // *** SERVICES THE GAME PROVIDES TO THE PLATFORM ***
@@ -217,13 +221,13 @@ typedef struct game_mouse_input
     };
 } game_mouse_input;
 
-typedef struct function_keys
+typedef struct special_keys
 {
-    // struct to store state of the function keys, which we use for dev tool purposes.
+    // struct to store state of the function keys and the control key, which we use for dev tool purposes.
     // Note(Aaron): We do not use F11 or F12 because those are not on my special keyboard :)
     union
     {
-        game_button_state Keys[10];
+        game_button_state Keys[11];
         struct
         {
             game_button_state F1;
@@ -236,9 +240,10 @@ typedef struct function_keys
             game_button_state F8;
             game_button_state F9;
             game_button_state F10;
+            game_button_state Ctrl;
         };
     };
-} function_keys;
+} special_keys;
 
 typedef struct game_input
 {
@@ -249,7 +254,7 @@ typedef struct game_input
     u64 CpuTimerReading;
 
     game_controller_input Controllers[5];
-    function_keys FunctionKeys;
+    special_keys SpecialKeys;
 } game_input;
 
 game_controller_input *
@@ -280,6 +285,7 @@ typedef struct game_memory
     debug_platform_get_file_write_time *DEBUGPlatformGetFileWriteTime;
     debug_platform_get_dir_write_time *DEBUGPlatformGetDirWriteTime;
     debug_platform_get_list_of_dir_contents *DEBUGPlatformGetListOfDirContents;
+    debug_platform_get_file_path_from_dialog *DEBUGPlatformGetFilepathFromDialog;
 } game_memory;
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
