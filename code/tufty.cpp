@@ -135,18 +135,18 @@ LoadBitmap(arena *Arena, tile_type *TileType, game_memory *Memory)
 }
 
 void
-LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSeries,
-                scratch_header *ScratchHeader, game_memory *Memory)
+LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSeries,
+                    scratch_header *ScratchHeader, game_memory *Memory)
 {
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
 
     // Clear bitmap structs in tile types array
-    for(int ID = 1;
-        ID < TILE_ARRAY_LEN;
-        ++ID)
+    for(int TypeIdx = 0;
+        TypeIdx < TILE_ARRAY_LEN;
+        ++TypeIdx)
     {
-        TileTypes[ID].Bitmap = {};
+        TileTypes[TypeIdx].Bitmap = {};
     }
 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
@@ -231,10 +231,10 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
         //      These are tile bitmaps that were removed from the game. We want to reclaim
         //      the ID.
         //
-        //      Also note which IDs were used so we can do the random tile thing.
+        //  Don't think we want the randomizer anymore but leaving the code in for now commented out (AS, 9.18.26)
 
-    int UsedTileSlots[MAX_TILE_TYPES] = {0};
-    int LastUsedSlot = 0;
+    // int UsedTileSlots[MAX_TILE_TYPES] = {0};
+    // int LastUsedSlot = 0;
     for(int Slot = 1;
         Slot < TILE_ARRAY_LEN;
         ++Slot)
@@ -252,21 +252,21 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
                     TileType->Filepath[LetterIdx] = 0; // zero the filepath so we can reuse it
                 }
             }
-            else // If the ID has a filepath and an active pointer, include it in the randomizer
-            {
-                UsedTileSlots[LastUsedSlot++] = Slot;
-            }
+            // else // If the ID has a filepath and an active pointer, include it in the randomizer
+            // {
+            //     UsedTileSlots[LastUsedSlot++] = Slot;
+            // }
         }
     }
 
     // Rerandomize the tile values based on new tile bitmap state
-    for(int TileIdx = 0;
-        TileIdx < TileMap->NumTilesInWorld;
-        ++TileIdx)
-    {
-        s32 Random = RandomS32InRange(RandomSeries, 0, TileMap->NumTileTypes-1);
-        TileMap->TileValues[TileIdx] = UsedTileSlots[Random];
-    }
+    // for(int TileIdx = 0;
+    //     TileIdx < TileMap->NumTilesInWorld;
+    //     ++TileIdx)
+    // {
+    //     s32 Random = RandomS32InRange(RandomSeries, 0, TileMap->NumTileTypes-1);
+    //     TileMap->TileValues[TileIdx] = UsedTileSlots[Random];
+    // }
 
     FreeScratchArena(Scratch);
 }
@@ -443,6 +443,11 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTex
 #undef FPS_SNAPS
 }
 
+void
+DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena)
+{
+    for(
+}
 
 static void
 GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
@@ -680,9 +685,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
 }
 
 static b32
-SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, 
-                 debug_platform_get_file_path_from_dialog *GetFilepath,
-                 debug_platform_write_entire_file *WriteFile)
+SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, game_memory *Memory)
 {
     b32 Success = false;
     if(TileMap->NumTileTypes == 0)
@@ -726,19 +729,22 @@ SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader,
         BytesToWrite += FilepathBytesNeeded;
     }
     
-    mem_idx TileValuesArraySize = ToWrite->NumRows * ToWrite->NumCols * sizeof(s32);
-    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileValuesArraySize);
-    memcpy(WriteTileValuesHere, TileMap->TileValues, TileValuesArraySize);
-
-    BytesToWrite += TileValuesArraySize;
+    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileMap->NumTilesInWorld);
+    for(int ValueIdx = 0;
+        ValueIdx < TileMap->NumTilesInWorld;
+        ++ValueIdx)
+    {
+        WriteTileValuesHere[ValueIdx] = TileMap->TileValues[ValueIdx];
+        ++BytesToWrite;
+    }
 
     mem_idx MaxPath = 260;
     char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = GetFilepath(Filepath, MaxPath, true);
+    int GetFilepathResult = Memory->DEBUGPlatformGetFilepathFromDialog(Filepath, MaxPath, true);
     
     if(GetFilepathResult)
     {
-        Success = WriteFile(Filepath, BytesToWrite, Scratch->Arena.Data);
+        Success = Memory->DEBUGPlatformWriteEntireFile(Filepath, BytesToWrite, Scratch->Arena.Data);
     }
 
     FreeScratchArena(Scratch);
@@ -746,31 +752,28 @@ SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader,
 }
 
 static b32
-LoadTileMap(tile_map *TileMap, 
-             scratch_header *ScratchHeader, 
-             debug_platform_get_file_path_from_dialog *GetFilepath,
-             debug_platform_get_file_size *GetFileSize, 
-             debug_platform_read_file_into *ReadFileInto)
+LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
+                     scratch_header *ScratchHeader, 
+                     game_memory *Memory)
 {
-    // TODO: check for failure to get scratch in every function 
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
 
     b32 Result = false;
 
     serialized_tile_map *Header = 0;
     char *TileTypeFilepaths = 0;
-    s32 *TileValues = 0;
+    s32 *LoadedTileValues = 0;
 
     mem_idx MaxPath = 260;
     char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = GetFilepath(Filepath, MaxPath, false);
+    int GetFilepathResult = Memory->DEBUGPlatformGetFilepathFromDialog(Filepath, MaxPath, false);
     if(GetFilepathResult)
     {
-        u32 Size = GetFileSize(Filepath);
+        u32 Size = Memory->DEBUGPlatformGetFileSize(Filepath);
         u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
         // We don't worry about dest buffer being too small here because if it's too small
         //      PushArray call above will fail
-        if(ReadFileInto(Filepath, Size, LoadedTileMap))
+        if(Memory->DEBUGPlatformReadFileInto(Filepath, Size, LoadedTileMap))
         {
             Header = (serialized_tile_map *)LoadedTileMap;
             char *CompareMagicNumber = "TILE";
@@ -781,12 +784,44 @@ LoadTileMap(tile_map *TileMap,
                 Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
             }
             Assert(Header->NumRows);
+            TileMap->NumRows = Header->NumRows;
             Assert(Header->NumCols);
+            TileMap->NumCols = Header->NumCols;
             Assert(Header->NumTileTypes);
+            TileMap->NumTileTypes = Header->NumTileTypes;
+            TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
             TileTypeFilepaths = (char *)LoadedTileMap + Header->TileTypeFilepathsOffset;
-            TileValues = (s32 *)LoadedTileMap + Header->TileValuesOffset;
+            LoadedTileValues = (s32 *)LoadedTileMap + Header->TileValuesOffset;
         }
     }
+
+    ResetArena(TilesArena);
+    tile_type *TileTypes = TileMap->TileTypes;
+    for(int TypeIdx = 0;
+        TypeIdx < TILE_ARRAY_LEN;
+        ++TypeIdx)
+    {
+        memset(TileTypes[TypeIdx].Filepath, 0, STRING_LEN);
+        TileTypes[TypeIdx].Bitmap = {};
+    }
+
+    char *FilepathCursor = TileTypeFilepaths;
+    for(int NthType = 1;
+        NthType <= Header->NumTileTypes;
+        ++NthType)
+    {
+        tile_type *ThisType = TileTypes + NthType;
+        mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
+
+        // Since strnlen for some reason does not include the null terminator
+        FilepathLen += 1;
+        strncpy_s(ThisType->Filepath, FilepathLen, FilepathCursor, FilepathLen);
+        FilepathCursor += FilepathLen;
+
+        LoadBitmap(TilesArena, ThisType, Memory);
+    }
+
+    memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
 
     FreeScratchArena(Scratch);
 
@@ -875,7 +910,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         //     PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
         // }
 
-        LoadTileBitmaps(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
+        LoadTileBitmapsDir(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
         DebugState->LastTileDirUpdate = Memory->DEBUGPlatformGetDirWriteTime("tiles");
         DebugState->ReadyToReload = false;
 
@@ -901,7 +936,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(DebugState->ReadyToReload == true)
     {
         DebugState->ReadyToReload = false;
-        LoadTileBitmaps(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
+        LoadTileBitmapsDir(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
     }
     else
     {
@@ -1042,20 +1077,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
+    DEBUGPrintRowsCols(Buffer, &DebugState->DebugTextArena);
 
     // MoveDown is the "S" key
     if(Input->Controllers[0].MoveDown.EndedDown && Input->DevKeys.Ctrl.EndedDown)
     {
-        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader, 
-                                      Memory->DEBUGPlatformGetFilepathFromDialog, Memory->DEBUGPlatformWriteEntireFile);
+        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader, Memory);
     }
 
     // ActionRight is the "L" key
     if(Input->Controllers[0].ActionRight.EndedDown && Input->DevKeys.Ctrl.EndedDown)
     {
-        b32 LoadResult = LoadTileMap(TileMap, ScratchHeader, 
-                                     Memory->DEBUGPlatformGetFilepathFromDialog, Memory->DEBUGPlatformGetFileSize, 
-                                     Memory->DEBUGPlatformReadFileInto);
+        b32 LoadResult = LoadTileMapFromFile(TileMap, &GameState->TilesArena, ScratchHeader, Memory);
     }
 }
 
