@@ -116,7 +116,7 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
-#define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
+#define DEBUG_PLATFORM_GET_FILE_SIZE(name) mem_idx name(char *Filename)
 typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
 
 #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
@@ -125,7 +125,7 @@ typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *Filename)
 typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
 
-#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, u32 MemorySize, void *Memory)
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, mem_idx MemorySize, void *Memory)
 typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 
 #define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
@@ -138,10 +138,10 @@ typedef DEBUG_PLATFORM_GET_DIR_WRITE_TIME(debug_platform_get_dir_write_time);
 typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 // this returns either the number of bytes read, or 0 if the file was missing, too big, or locked
-#define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
+#define DEBUG_PLATFORM_READ_FILE_INTO(name) mem_idx name(char *Filename, u32 DestSize, void *Dest)
 typedef DEBUG_PLATFORM_READ_FILE_INTO(debug_platform_read_file_into);
 
-// IsSave is true if the user is saving; if they are loading, set it to false
+// IsSave is true if the user is saving; if they are loading, set it to false. Return value is bool for success/fail
 #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, mem_idx DestSize, b32 IsSave)
 typedef DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(debug_platform_get_file_path_from_dialog);
 
@@ -221,10 +221,11 @@ typedef struct game_mouse_input
     };
 } game_mouse_input;
 
-typedef struct special_keys
+typedef struct dev_keys
 {
-    // struct to store state of the function keys and the control key, which we use for dev tool purposes.
+    // struct to store state of keys we use for dev tool purposes.
     // Note(Aaron): We do not use F11 or F12 because those are not on my special keyboard :)
+    //
     union
     {
         game_button_state Keys[11];
@@ -243,7 +244,7 @@ typedef struct special_keys
             game_button_state Ctrl;
         };
     };
-} special_keys;
+} dev_keys;
 
 typedef struct game_input
 {
@@ -254,7 +255,7 @@ typedef struct game_input
     u64 CpuTimerReading;
 
     game_controller_input Controllers[5];
-    special_keys SpecialKeys;
+    dev_keys DevKeys;
 } game_input;
 
 game_controller_input *

@@ -1,10 +1,50 @@
-TILEMAP FILE SPEC (#pragma pack)
+TILEMAP FILE SPEC (.tilemap)
+This is intended to be a simple spec which allows us to edit a tilemap using the in-game editor, save it, and reload it.
+
+Below, "tile type" means, e.g., a grass tile, a water tile, a right-angled path tile, a straight path tile, etc. Each of
+these tile types has its own filepath. Therefore, this file contains an array of N zero-terminated strings; the Nth string
+contains the filepath for the Nth tile type. Note that while the the entries in the tile type filepath array are zero-indexed,
+when we load them into the game, the 0th filepath in the array must be loaded into the TileTypes array at index 1, because
+in the game, a TileValue of 0 indicates an empty tile. 
+
+Speaking of tile values: Following the array of strings containing the tile type filepaths is an array of M s32 values, where
+M = NumRows * NumCols = the number of tiles in the tile map represented by this file. Basically, the game has a notion of a "tile"; 
+we want to iterate over every tile in the map and read a value and know what picture to draw for it. Each s32 is a value in the range of
+0 to (number of tile types). In the game, 0 corresponds to an empty tile; it means we draw nothing for that tile
+and the player just sees whatever flat color is the background. A tile value of 1 corresponds to the first tile type, represented by the first
+filepath string encountered in the tile type filepath array (noting that this array is actually zero-indexed as described above...
+man this shit is hard to define). A value of 2 corresponds to the second filepath in the tile type filepath array, etc.
+
+Contents:
+    Magic number                    :                                       "TILE"
+    NumRows                         :                                       Number of rows of tiles in the tilemap
+    NumCols                         :                                       Number of columns of tiles in the tilemap
+    NumTileTypes                    :                                       How many tile types the file contains. This
+                                                                                tells us how many strings will be in the
+                                                                                TileTypeFilepaths array.
+    TileTypeFilepathsOffset         :                                       How many bytes to jump from the start of the file to
+                                                                                get to the first byte of the TileTypeFilepaths array
+    TileValuesOffset                :                                       How many bytes to jump from the start of the file to                                       
+                                                                                get to the first byte of the TileValues array
+                                                                                    
+Definition of the struct that serves as the header of the file.
+(#pragma pack)
+struct serialized_tile_map
+{
+    char MagicNumber[4];
+    int NumRows;
+    int NumCols;
+    int NumTileTypes;
+    int TileTypeFilepathsOffset;
+    int TileValuesOffset;
+};
+
 TYPE                        BYTES                                                           CONTENTS
-char                        0-3                                                             Magic number e.g. TILE
+char                        0-3                                                             Magic number "TILE"
 int                         4-7                                                             NumRows
 int                         8-11                                                            NumCols
-int                         12-15                                                           Tile type filepath offset (20)
-int                         16-19                                                           Tile value array offset (8052)
-tile_type                   Comprises 201 * STRING_LEN = 201 * 40 = 8040 bytes.             Tile type filepaths
-                            12-8051 
-tile_value                  Comprises (NumRows * NumCols) * 4 bytes per s32                 enum tile_value
+int                         12-15                                                           NumTileTypes
+int                         16-19                                                           Offset to array of zero-terminated strings containing the filepaths for the tile types. Since this string array directly follows the serialized_tile_map struct, the offset is equal to the size of the struct itself.
+int                         20-23                                                           Offset to array of s32 TileValues
+tile_type[]                 24+                                                             Array of zero-terminated strings containing the filepaths for the tile types
+tile_value[]                Unknown; depends on the size of the tile type string array      Array of (NumRows * NumCols) s32 values.

@@ -141,7 +141,7 @@ LoadTileBitmaps(arena *TilesArena, tile_map *TileMap, random_series *RandomSerie
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
 
-    // Clear bitmap structs in tiles array
+    // Clear bitmap structs in tile types array
     for(int ID = 1;
         ID < TILE_ARRAY_LEN;
         ++ID)
@@ -680,7 +680,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
 }
 
 static b32
-SerializeTileMap(tile_map *TileMap, scratch_header *ScratchHeader, 
+SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, 
                  debug_platform_get_file_path_from_dialog *GetFilepath,
                  debug_platform_write_entire_file *WriteFile)
 {
@@ -745,24 +745,54 @@ SerializeTileMap(tile_map *TileMap, scratch_header *ScratchHeader,
     return(Success);
 }
 
-// static b32
-// LoadSavedTileMap(char *Filepath, tile_map *TileMap, 
-//                  scratch_header *ScratchHeader, 
-//                  debug_platform_get_file_size *GetFileSize, 
-//                  debug_platform_read_file_into *ReadFileInto)
-// {
-//     // TODO: check for failure to get scratch in every function 
-//     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-//     u32 Filesize = GetFileSize(Filepath);
-//
-//     ReadFileInto(Filepath, (Scratch->Arena.Size - Scratch->Arena.Cursor), Scratch->Arena.Data);
-//     char *MagicNumber = Scratch->Arena->Data;
-//
-//     FreeScratchArena(Scratch);
-//
-//     return(true);
-// }
-//
+static b32
+LoadTileMap(tile_map *TileMap, 
+             scratch_header *ScratchHeader, 
+             debug_platform_get_file_path_from_dialog *GetFilepath,
+             debug_platform_get_file_size *GetFileSize, 
+             debug_platform_read_file_into *ReadFileInto)
+{
+    // TODO: check for failure to get scratch in every function 
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+
+    b32 Result = false;
+
+    serialized_tile_map *Header = 0;
+    char *TileTypeFilepaths = 0;
+    s32 *TileValues = 0;
+
+    mem_idx MaxPath = 260;
+    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
+    int GetFilepathResult = GetFilepath(Filepath, MaxPath, false);
+    if(GetFilepathResult)
+    {
+        u32 Size = GetFileSize(Filepath);
+        u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
+        // We don't worry about dest buffer being too small here because if it's too small
+        //      PushArray call above will fail
+        if(ReadFileInto(Filepath, Size, LoadedTileMap))
+        {
+            Header = (serialized_tile_map *)LoadedTileMap;
+            char *CompareMagicNumber = "TILE";
+            for(int LetterIdx = 0;
+                LetterIdx < 4;
+                ++LetterIdx)
+            {
+                Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
+            }
+            Assert(Header->NumRows);
+            Assert(Header->NumCols);
+            Assert(Header->NumTileTypes);
+            TileTypeFilepaths = (char *)LoadedTileMap + Header->TileTypeFilepathsOffset;
+            TileValues = (s32 *)LoadedTileMap + Header->TileValuesOffset;
+        }
+    }
+
+    FreeScratchArena(Scratch);
+
+    return(true);
+}
+
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
@@ -934,7 +964,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 dPlayer.X -= 1.0f;
                 GameState->PlayerFacing = WEST;
             }
-            if(Controller->MoveDown.EndedDown && !Input->SpecialKeys.Ctrl.EndedDown)
+            if(Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown)
             {
                 // NOTE(AARON): The above check for the ctrl key may be incorrect but
                 //      we won't know until we implement player movement again
@@ -956,7 +986,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    if(Input->SpecialKeys.F1.EndedDown && Input->SpecialKeys.F1.HalfTransitionCount == 1)
+    if(Input->DevKeys.F1.EndedDown && Input->DevKeys.F1.HalfTransitionCount == 1)
     {
         GameState->EditMode = !GameState->EditMode;
     }
@@ -1013,9 +1043,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
 
-    if(Input->Controllers[0].MoveDown.EndedDown && Input->SpecialKeys.Ctrl.EndedDown)
+    // MoveDown is the "S" key
+    if(Input->Controllers[0].MoveDown.EndedDown && Input->DevKeys.Ctrl.EndedDown)
     {
-        b32 WriteResult = SerializeTileMap(TileMap, ScratchHeader, Memory->DEBUGPlatformGetFilepathFromDialog, Memory->DEBUGPlatformWriteEntireFile);
+        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader, 
+                                      Memory->DEBUGPlatformGetFilepathFromDialog, Memory->DEBUGPlatformWriteEntireFile);
+    }
+
+    // ActionRight is the "L" key
+    if(Input->Controllers[0].ActionRight.EndedDown && Input->DevKeys.Ctrl.EndedDown)
+    {
+        b32 LoadResult = LoadTileMap(TileMap, ScratchHeader, 
+                                     Memory->DEBUGPlatformGetFilepathFromDialog, Memory->DEBUGPlatformGetFileSize, 
+                                     Memory->DEBUGPlatformReadFileInto);
     }
 }
 

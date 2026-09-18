@@ -65,7 +65,7 @@ static HWND Window;
 static b32 GlobalDialogWasOpen;
 static win32_state *GlobalWin32State;
 static game_controller_input *GlobalKeyboardController;
-static special_keys *GlobalSpecialKeys;
+static dev_keys *GlobalDevKeys;
 static game_mouse_input *GlobalMouse;
 
 // NOTE(casey): XInputGetState
@@ -149,7 +149,7 @@ DebugOutput(const char *Format, ...)
 
 DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
 {
-    u64 Result = 0;
+    mem_idx Result = 0;
     struct __stat64 Stat;
     if(_stat64(Filename, &Stat) == -1)
     {
@@ -178,6 +178,9 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
         LARGE_INTEGER FileSize;
         if(GetFileSizeEx(FileHandle, &FileSize))
         {
+            // NOTE(AARON): I don't know if it's actually necessary to worry about 32-bit file sizes; 
+            //      think this may be artifact of early days of HMH when Casey wanted to ship on
+            //      32-bit machines
             u32 FileSize32 = SafeTruncateU64ToU32(FileSize.QuadPart);
             Result.Contents = VirtualAlloc(0, FileSize32, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             if(Result.Contents)
@@ -385,7 +388,7 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 
 // Need forward declaration to call this here
 static void
-Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, special_keys *SpecialKeys, game_mouse_input *Mouse);
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, dev_keys *DevKeys, game_mouse_input *Mouse);
 
 // #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
 DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
@@ -412,7 +415,7 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
     Filename.Flags = OFN_OVERWRITEPROMPT|OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
 
     int Result = 0;
-    Win32ProcessPendingMessages(GlobalWin32State, GlobalKeyboardController, GlobalSpecialKeys, GlobalMouse);
+    Win32ProcessPendingMessages(GlobalWin32State, GlobalKeyboardController, GlobalDevKeys, GlobalMouse);
     if(IsSave)
     {
         Result = GetSaveFileNameA(&Filename);
@@ -425,7 +428,7 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
     // It might be the case that a key got stuck in an EndedDown state in the process of
     //      pushing e.g. Ctrl+S to open the save dialog, so we zero all input here
     *GlobalKeyboardController = {};
-    *GlobalSpecialKeys = {};
+    *GlobalDevKeys = {};
     *GlobalMouse = {};
     
     return(Result);
@@ -907,7 +910,7 @@ Win32PlayBackInput(win32_state *State, game_input *NewInput)
 }
 
 static void
-Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, special_keys *SpecialKeys, game_mouse_input *Mouse)
+Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, dev_keys *DevKeys, game_mouse_input *Mouse)
 {
     MSG Message;
     while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -989,28 +992,28 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                             GlobalPause = !GlobalPause;
                         }
                     }
-                    else if(VKCode == 'L')
-                    {
-                        if(IsDown)
-                        {
-                            if(State->InputPlayingIndex == 0)
-                            {
-                                if(State->InputRecordingIndex == 0)
-                                {
-                                    Win32BeginRecordingInput(State, 1);
-                                }
-                                else
-                                {
-                                    Win32EndRecordingInput(State);
-                                    Win32BeginInputPlayBack(State, 1);
-                                }
-                            }
-                            else
-                            {
-                                Win32EndInputPlayBack(State);
-                            }
-                        }
-                    }
+                    // else if(VKCode == 'L')
+                    // {
+                    //     if(IsDown)
+                    //     {
+                    //         if(State->InputPlayingIndex == 0)
+                    //         {
+                    //             if(State->InputRecordingIndex == 0)
+                    //             {
+                    //                 Win32BeginRecordingInput(State, 1);
+                    //             }
+                    //             else
+                    //             {
+                    //                 Win32EndRecordingInput(State);
+                    //                 Win32BeginInputPlayBack(State, 1);
+                    //             }
+                    //         }
+                    //         else
+                    //         {
+                    //             Win32EndInputPlayBack(State);
+                    //         }
+                    //     }
+                    // }
                     //     VK_F2 	0x71 	F2 key
                     //     VK_F3 	0x72 	F3 key
                     //     VK_F4 	0x73 	F4 key
@@ -1020,50 +1023,50 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                     //     VK_F8 	0x77 	F8 key
                     //     VK_F9 	0x78 	F9 key
                     //     VK_F10 	0x79 	F10 key
-                // Special keys
+                // Dev keys
                     else if(VKCode == VK_F1)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F1, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F1, IsDown);
                     }
                     else if(VKCode == VK_F2)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F2, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F2, IsDown);
                     }
                     else if(VKCode == VK_F3)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F3, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F3, IsDown);
                     }
                     else if(VKCode == VK_F4)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F4, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F4, IsDown);
                     }
                     else if(VKCode == VK_F5)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F5, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F5, IsDown);
                     }
                     else if(VKCode == VK_F6)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F6, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F6, IsDown);
                     }
                     else if(VKCode == VK_F7)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F7, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F7, IsDown);
                     }
                     else if(VKCode == VK_F8)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F8, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F8, IsDown);
                     }
                     else if(VKCode == VK_F9)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F9, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F9, IsDown);
                     }
                     else if(VKCode == VK_F10)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->F10, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->F10, IsDown);
                     }
                     else if(VKCode == VK_CONTROL)
                     {
-                        Win32ProcessKeyboardAndMouseMessage(&SpecialKeys->Ctrl, IsDown);
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->Ctrl, IsDown);
                     }
 #endif
                 }
@@ -1450,22 +1453,22 @@ WinMain(HINSTANCE Instance,
                     NewMouse->X = MouseP.x - WIN32_BACKBUFFER_OFFSET_X;
                     NewMouse->Y = MouseP.y - WIN32_BACKBUFFER_OFFSET_Y;
 
-                    special_keys *OldSpecialKeys = &OldInput->SpecialKeys;
-                    special_keys *NewSpecialKeys = &NewInput->SpecialKeys;
-                    *NewSpecialKeys = {};
+                    dev_keys *OldDevKeys = &OldInput->DevKeys;
+                    dev_keys *NewDevKeys = &NewInput->DevKeys;
+                    *NewDevKeys = {};
                     for(int FnKeyIdx = 0;
-                        FnKeyIdx < ArrayCount(NewSpecialKeys->Keys);
+                        FnKeyIdx < ArrayCount(NewDevKeys->Keys);
                         ++FnKeyIdx)
                     {
-                        NewSpecialKeys->Keys[FnKeyIdx].EndedDown = OldSpecialKeys->Keys[FnKeyIdx].EndedDown;
+                        NewDevKeys->Keys[FnKeyIdx].EndedDown = OldDevKeys->Keys[FnKeyIdx].EndedDown;
                     }
 
-                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewSpecialKeys, NewMouse);
+                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewDevKeys, NewMouse);
 
                     // NOTE(Aaron): We hoist these to globals so that we can clean them up
                     //      in the case that a file dialog ran this frame
                     GlobalKeyboardController = NewKeyboardController;
-                    GlobalSpecialKeys = NewSpecialKeys;
+                    GlobalDevKeys = NewDevKeys;
                     GlobalMouse = NewMouse;
 
                     if(!GlobalPause)
