@@ -180,6 +180,7 @@ struct game_state
 struct editor_state
 {
     tile_type *HeldTileType;
+    b32 PrintRowsCols;
 };
 
 struct debug_state

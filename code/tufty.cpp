@@ -65,8 +65,7 @@ GetScratchArena(scratch_header *ScratchHeader)
         if(It->IsFree)
         {
             It->IsFree = false;
-            ZeroArena(&It->Arena);
-            It->Arena.Cursor = 0;
+            ResetArena(&It->Arena);
         }
         return(It);
     }
@@ -444,9 +443,34 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTex
 }
 
 void
-DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena)
+DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
 {
-    for(
+    int OffsetFromGridX = 15;
+    int OffsetFromGridY = 15;
+    // 0, 0
+    DEBUGDrawText(Backbuf, OffsetFromGridX, OffsetFromGridY, "0", DebugTextArena, 0.9f, 0.2f, 0.5f);
+
+    // Cols
+    for(int Col = 1;
+        Col < TileMap->NumCols;
+        ++Col)
+    {
+        int PrintX = Col * TileMap->TileSideInPixels + OffsetFromGridX; 
+        char Temp[3];
+        snprintf(Temp, 3, "%d", Col);
+        DEBUGDrawText(Backbuf, PrintX, OffsetFromGridY, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
+    }
+
+    // Rows
+    for(int Row = 1;
+        Row < TileMap->NumRows;
+        ++Row)
+    {
+        int PrintY = Row * TileMap->TileSideInPixels + OffsetFromGridY; 
+        char Temp[3];
+        snprintf(Temp, 3, "%d", Row);
+        DEBUGDrawText(Backbuf, OffsetFromGridX, PrintY, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
+    }
 }
 
 static void
@@ -712,6 +736,10 @@ SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, game_memory *Memor
     ToWrite->NumCols = TileMap->NumCols;
     ToWrite->NumTileTypes = TileMap->NumTileTypes;
     ToWrite->TileTypeFilepathsOffset = sizeof(serialized_tile_map);
+    
+    // We initially set this to the same as TileTypeFilepathsOffset but continually increment it as
+    //      we write more filepaths to the file
+    ToWrite->TileValuesOffset = sizeof(serialized_tile_map);
 
     for(int TypeIdx = 1;
         TypeIdx <= ToWrite->NumTileTypes;
@@ -735,7 +763,7 @@ SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, game_memory *Memor
         ++ValueIdx)
     {
         WriteTileValuesHere[ValueIdx] = TileMap->TileValues[ValueIdx];
-        ++BytesToWrite;
+        BytesToWrite += sizeof(s32);
     }
 
     mem_idx MaxPath = 260;
@@ -790,8 +818,8 @@ LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
             Assert(Header->NumTileTypes);
             TileMap->NumTileTypes = Header->NumTileTypes;
             TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-            TileTypeFilepaths = (char *)LoadedTileMap + Header->TileTypeFilepathsOffset;
-            LoadedTileValues = (s32 *)LoadedTileMap + Header->TileValuesOffset;
+            TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
+            LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
         }
     }
 
@@ -821,7 +849,13 @@ LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
         LoadBitmap(TilesArena, ThisType, Memory);
     }
 
-    memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
+    for(int ValueIdx = 0;
+        ValueIdx < TileMap->NumTilesInWorld;
+        ++ValueIdx)
+    {
+        TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
+    }
+    // memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
 
     FreeScratchArena(Scratch);
 
@@ -857,6 +891,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         // Debug
         DebugState->ReadyToReload = true;
+        DebugState->EditorState.PrintRowsCols = false;
         InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
 
         // Tiles
@@ -1077,9 +1112,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
-    DEBUGPrintRowsCols(Buffer, &DebugState->DebugTextArena);
 
     // MoveDown is the "S" key
+    // I think we don't need to check half transition count with these because subsequent EndedDown
+    //      messages are routed to the message loop for the save/load dialog, not our usual
+    //      message loop in the platform layer, and we have code in the platform layer to
+    //      ensure that these are ignored
     if(Input->Controllers[0].MoveDown.EndedDown && Input->DevKeys.Ctrl.EndedDown)
     {
         b32 WriteResult = SaveTileMap(TileMap, ScratchHeader, Memory);
@@ -1089,6 +1127,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(Input->Controllers[0].ActionRight.EndedDown && Input->DevKeys.Ctrl.EndedDown)
     {
         b32 LoadResult = LoadTileMapFromFile(TileMap, &GameState->TilesArena, ScratchHeader, Memory);
+    }
+
+    if(Input->DevKeys.F2.EndedDown && Input->DevKeys.F2.HalfTransitionCount == 1)
+    {
+        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
+    }
+    
+    if(DebugState->EditorState.PrintRowsCols)
+    {
+        DEBUGPrintRowsCols(Buffer, &DebugState->DebugTextArena, TileMap);
     }
 }
 
