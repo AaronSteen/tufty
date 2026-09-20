@@ -280,7 +280,7 @@ DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
 DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
 {
     u32 Result = 0;
-    HANDLE FileHandle = CreateFileA(Filename, // lpFileName
+    HANDLE FileHandle = CreateFileA(Filepath, // lpFileName
                                     GENERIC_READ, // dwDesiredAccess
                                     FILE_SHARE_READ, // dwShareMode
                                     0, // lpSecurityAttributes, optional
@@ -344,7 +344,7 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
     char SearchTerm[MAX_PATH];
     char SearchTermSuffix[MAX_PATH];
     char *Extension = ".bmp";
-    char *WildcardInSearchTerm = "\\*";
+    char *WildcardInSearchTerm = "/*";
 
     int ExtensionLength = StringLength(Extension);
     int WildcardLength = StringLength(WildcardInSearchTerm);

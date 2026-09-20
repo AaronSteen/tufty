@@ -19,6 +19,9 @@
 //
 // IsSave = true if saving, false if loading
 // #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
+//
+
+tile_type Bagel;
 
 enum
 {
@@ -66,8 +69,8 @@ GetScratchArena(scratch_header *ScratchHeader)
         {
             It->IsFree = false;
             ResetArena(&It->Arena);
+            return(It);
         }
-        return(It);
     }
 
     // If we got here there were no free scratches and we need to make more
@@ -106,7 +109,6 @@ DEBUGReloadBitmapIfChanged(tile_type *TileType, game_memory *Memory)
         mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
         if(BytesRead == Bitmap->Buffer.Size)
         {
-            Bitmap->Buffer.Size = BytesRead;
             ParseBitmapHeader(Bitmap);
             Bitmap->LastWriteTime = Memory->DEBUGPlatformGetFileWriteTime(Filepath);
         }
@@ -128,6 +130,10 @@ LoadBitmap(arena *Arena, tile_type *TileType, game_memory *Memory)
     bitmap *Bitmap = &TileType->Bitmap;
     char *Filepath = TileType->Filepath;
     Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
+    if(Bitmap->Buffer.Size == 0)
+    {
+        return;
+    }
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
     Bitmap->ReadyToRead = true;
     DEBUGReloadBitmapIfChanged(TileType, Memory);
@@ -137,6 +143,9 @@ void
 LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSeries,
                     scratch_header *ScratchHeader, game_memory *Memory)
 {
+    // TODO: Use CPP class constructor destructor setup to always 
+    //      FreeScratchArena whenever any scope containing a 
+    //      GetScratchArena call is exited
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
 
@@ -158,7 +167,15 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
 
     if(TileMap->NumTileTypes == 0)
     {
-        // We have no tiles; set all tile values to zero
+        // We have no tiles. Zero all tile type filepaths
+        for(int TypeIdx = 0;
+            TypeIdx < TILE_ARRAY_LEN;
+            ++TypeIdx)
+        {
+            memset(TileTypes[TypeIdx].Filepath, 0, STRING_LEN);
+        }
+
+        // and zero all tile values.
         memset(TileMap->TileValues, 0, sizeof(s32) * TileMap->NumTilesInWorld);
         FreeScratchArena(Scratch);
         return;
@@ -244,12 +261,8 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
         {
             if(Bitmap->Buffer.Data == 0) // but the bitmap buffer pointer is null
             {
-                for(int LetterIdx = 0;
-                    LetterIdx < STRING_LEN;
-                    ++LetterIdx)
-                {
-                    TileType->Filepath[LetterIdx] = 0; // zero the filepath so we can reuse it
-                }
+                // zero the filepath so we can reuse it
+                memset(TileType->Filepath, 0, STRING_LEN);
             }
             // else // If the ID has a filepath and an active pointer, include it in the randomizer
             // {
@@ -512,7 +525,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
     if(!Bitmap->Pixels)
     {
-        return;
+        Bitmap = &Bagel.Bitmap;
     }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
@@ -585,18 +598,20 @@ GetTileCoordsFromMouseCoords(v2 MouseCoords, f32 TileSideInPixels)
 }
 
 static void
-DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap, game_mouse_input *Mouse, editor_state *EditorState)
+DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena *DebugTextArena, tile_map *TileMap, game_mouse_input *Mouse, editor_state *EditorState)
 {
     v2 MouseCoords = {(f32)Mouse->X, (f32)Mouse->Y};
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
     b32 AlreadyClickedSecondary = false;
-
-    // Panel
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
-
-    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", DebugTextArena, 1, 1, 1, 1, 3.5);
-
+    struct menu_tile
+    {
+        v2 TileMin;
+        v2 TileMax;
+        tile_type *TileType;
+    };
+    scratch_arena *Scratch = 0;
+    menu_tile *MenuTiles = 0;
     f32 Y = 160;
     f32 InnerPadding = 40;
     f32 OuterPadding = 56;
@@ -604,37 +619,36 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     f32 X = StartX;
     int TilesDrawnInThisRow = 0;
 
+    // Panel
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+
+    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", DebugTextArena, 1, 1, 1, 1, 3.5);
+
     // Draw tiles in menu unless there are no tiles
-    if(TileMap->TileTypes[1].Bitmap.Pixels)
+    if(TileMap->NumTileTypes > 0)
     {
-        for(int NthTile = 0;
-            NthTile < TileMap->NumTileTypes;
-            ++NthTile)
+        Scratch = GetScratchArena(ScratchHeader);
+        MenuTiles = PushArray(&Scratch->Arena, menu_tile, TileMap->NumTileTypes);
+        tile_type *NextTileType = TileMap->TileTypes + 1;
+
+        for(int NthTileType = 0;
+            NthTileType < TileMap->NumTileTypes;
+            ++NthTileType)
         {
-            v2 TileMin = {X, Y};
-            v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels}; 
-            tile_type *NthTileType = TileMap->TileTypes + NthTile + 1;
-            ScaleAndBlitBitmap(Backbuf, TileMin, TileMax, &NthTileType->Bitmap);
-            v2 OutlineMin = {TileMin.X-1, TileMin.Y-1};
-            v2 OutlineMax = {TileMax.X+1, TileMax.Y+1};
+            // scan for the next tile type that does not have an empty filepath
+            while(NextTileType->Filepath[0] == 0)
+            {
+                ++NextTileType;
+            }
+            tile_type *ThisTileType = NextTileType;
+            NextTileType += 1;
 
-            if(MouseCoords.X >= TileMin.X &&
-               MouseCoords.Y >= TileMin.Y &&
-               MouseCoords.X <= TileMax.X &&
-               MouseCoords.Y <= TileMax.Y)
-            {
-                if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
-                {
-                    EditorState->HeldTileType = NthTileType;
-                }
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
-            }
-            else
-            {
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
-            }
+            menu_tile *ThisMenuTile = MenuTiles + NthTileType;
+            ThisMenuTile->TileMin = {X, Y};
+            ThisMenuTile->TileMax = ThisMenuTile->TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
+            ThisMenuTile->TileType = ThisTileType;
+
             ++TilesDrawnInThisRow;
-
             if(TilesDrawnInThisRow == 3)
             {
                 TilesDrawnInThisRow = 0;
@@ -646,8 +660,38 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
                 X += TileMap->TileSideInPixels + InnerPadding;
             }
         }
-    }
 
+        for(int NthMenuTile = 0;
+            NthMenuTile < TileMap->NumTileTypes;
+            ++NthMenuTile)
+        {
+            menu_tile *ThisMenuTile = MenuTiles + NthMenuTile;
+            ScaleAndBlitBitmap(Backbuf, ThisMenuTile->TileMin, ThisMenuTile->TileMax, &ThisMenuTile->TileType->Bitmap);
+
+            v2 OutlineMin = {ThisMenuTile->TileMin.X-1, ThisMenuTile->TileMin.Y-1};
+            v2 OutlineMax = {ThisMenuTile->TileMax.X+1, ThisMenuTile->TileMax.Y+1};
+
+            if(MouseCoords.X >= ThisMenuTile->TileMin.X &&
+               MouseCoords.Y >= ThisMenuTile->TileMin.Y &&
+               MouseCoords.X <= ThisMenuTile->TileMax.X &&
+               MouseCoords.Y <= ThisMenuTile->TileMax.Y)
+            {
+                if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
+                {
+                    EditorState->HeldTileType = ThisMenuTile->TileType;
+                }
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
+            }
+            else
+            {
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+            }
+        }
+        if(Scratch)
+        {
+            FreeScratchArena(Scratch);
+        }
+    }
     // If there are no tiles, set HeldTileType to nullptr so we don't try to draw it and crash
     else
     {
@@ -658,7 +702,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *Tile
     //      AlreadyClickedSecondary prevents the following situation:
     //          - The user is holding a tile and secondary clicks with the pointer over a tile in the game
     //          - HeldTileType changes to nullptr (this is good)
-    //          - But the tile in the game under the pointer is set to TILE_INVALID (this is not good)
+    //          - But the tile in the game under the pointer is set to TILE_INVALID at the same time (this is not good)
     //      We want the interaction flow to be: 
     //          - if user is hovering over a tile and they are holding a tile type and they secondary click, 
     //                  stop holding that tile type and do nothing else
@@ -888,6 +932,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(!Memory->IsInitialized)
     {
+
         // Random
         GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
@@ -924,6 +969,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                             SCRATCH_SIZE);
         }
 
+
 // Tiles        
         tile_map *TileMap = &GameState->TileMap;
         // TileMap dimensions
@@ -959,7 +1005,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerP.Y = Buffer->Height / 2;
         GameState->PlayerFacing = EAST;
 
-
+// Bagel
+        char *BagelFilepath = "bagel1.bmp";
+        snprintf(Bagel.Filepath, sizeof(Bagel.Filepath), "%s", BagelFilepath);
+        LoadBitmap(&GameState->TilesArena, &Bagel, Memory);
+        // Bagel = PushStruct(&GameState->TilesArena, );
+        // Bagel->Filepath = "bagel1.bmp";
+        // Bagel->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Bagel->Filepath);
+        // Bagel->Buffer.Data = PushArray(&GameState->TilesArena, u8, Bagel->Buffer.Size);
+        // Bagel->ReadyToRead = true;
+        // mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Bagel->Filepath, (u32)Bagel->Buffer.Size, Bagel->Buffer.Data);
+        // if(BytesRead == Bagel->Buffer.Size)
+        // {
+        //     ParseBitmapHeader(Bagel);
+        //     Bagel->LastWriteTime = Memory->DEBUGPlatformGetFileWriteTime(Bagel->Filepath);
+        // }
+        //
         Memory->IsInitialized = true;
     }
     
@@ -1099,7 +1160,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(GameState->EditMode)
     {
-        DrawEditor(Buffer, &DebugState->DebugTextArena, TileMap, &Input->Mouse, &DebugState->EditorState);
+        DrawEditor(Buffer, ScratchHeader, &DebugState->DebugTextArena, TileMap, &Input->Mouse, &DebugState->EditorState);
     }
 
     // else

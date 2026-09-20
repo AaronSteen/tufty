@@ -121,10 +121,12 @@ struct bitmap
 {
     // This is the entire bitmap file, including the header
     buffer Buffer;
+
     b32 ReadyToRead;
     u64 LastWriteTime;
 
-    // Where the pixels actually live
+    // Where the pixels actually live. Just a pointer into
+    //      the buffer Buffer above where the pixels start.
     u8 *Pixels;
     int Height, Width, BytesPerPixel, Pitch;
 };
