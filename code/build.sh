@@ -18,7 +18,8 @@ if [ "$(uname -s)" = "Darwin" ]; then
     dsymutil "$BUILD/tufty.dylib" || exit $?
     echo "tufty.dylib: OK"
 
-    clang++ $CommonCompilerFlags -framework Cocoa -framework AudioToolbox \
+
+    clang++ $CommonCompilerFlags -framework Cocoa -framework AudioToolbox -framework UniformTypeIdentifiers \
         "$SCRIPT_DIR/osx_tufty.mm" -o "$BUILD/tufty" || exit $?
     echo "tufty: OK"
     exit 0

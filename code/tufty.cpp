@@ -71,7 +71,7 @@ GetScratchArena(scratch_header *ScratchHeader)
     }
 
     // If we got here there were no free scratches and we need to make more
-    __debugbreak();
+    Assert(!"Out of scratch arenas");
     return((scratch_arena *)0);
 }
 
@@ -180,7 +180,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
         //      If we don't find a bitmap with this filepath, we assign it to the first
         //          sequentially available tile_id in the array.
         char FilepathToLoad[STRING_LEN];
-        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles\\%s", ThisFilename);
+        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles/%s", ThisFilename);
 
         int FirstAvailable = 0;
         b32 ExistingTileType = false;
@@ -215,7 +215,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
         {
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
             tile_type *SlotForNewBitmap = TileTypes + FirstAvailable;
-            strncpy_s(SlotForNewBitmap->Filepath, STRING_LEN, FilepathToLoad, STRING_LEN);
+            snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
             LoadBitmap(TilesArena, SlotForNewBitmap, Memory);
         }
 
@@ -752,7 +752,7 @@ SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, game_memory *Memor
         FilepathBytesNeeded += 1;
 
         char *WriteFilepathHere = PushArray(&Scratch->Arena, char, FilepathBytesNeeded);
-        strncpy_s(WriteFilepathHere, FilepathBytesNeeded, FilepathToWrite, FilepathBytesNeeded);
+        snprintf(WriteFilepathHere, FilepathBytesNeeded, "%s", FilepathToWrite);
         ToWrite->TileValuesOffset += FilepathBytesNeeded;
         BytesToWrite += FilepathBytesNeeded;
     }
@@ -843,7 +843,7 @@ LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
 
         // Since strnlen for some reason does not include the null terminator
         FilepathLen += 1;
-        strncpy_s(ThisType->Filepath, FilepathLen, FilepathCursor, FilepathLen);
+        snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
         FilepathCursor += FilepathLen;
 
         LoadBitmap(TilesArena, ThisType, Memory);

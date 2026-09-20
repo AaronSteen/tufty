@@ -11,6 +11,9 @@
 #include <dlfcn.h>
 #include <limits.h>
 #include <AudioToolbox/AudioToolbox.h>
+#include <dirent.h>
+#include <strings.h>
+#include <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "tufty_platform.h"
 
@@ -59,8 +62,9 @@ static char GlobalEXEPath[PATH_MAX];
 static u32 GlobalTempDylibCounter;
 static game_controller_input *GlobalKeyboardController;
 static game_mouse_input *GlobalMouse;
-static function_keys *GlobalFunctionKeys;
+static dev_keys *GlobalDevKeys;
 static osx_audio GlobalAudio;
+static b32 GlobalDialogWasOpen;
 
 static void
 OSXResizeBackbuffer(osx_offscreen_buffer *Buffer, int Width, int Height)
@@ -108,10 +112,10 @@ OSXProcessButtonMessage(game_button_state *NewState, b32 IsDown)
     }
 }
 
+/* #define DEBUG_PLATFORM_GET_FILE_SIZE(name) mem_idx name(char *Filename) */
 DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
 {
-    u32 Result = 0;
-
+    mem_idx Result = 0;
     struct stat FileStat;
     if(stat(Filename, &FileStat) == 0)
     {
@@ -121,6 +125,7 @@ DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
     return(Result);
 }
 
+/* #define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename) */
 DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
 {
     u64 Result = 0;
@@ -135,6 +140,7 @@ DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
     return(Result);
 }
 
+// #define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
 DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
 {
     u32 Result = 0;
@@ -162,6 +168,7 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
     return(Result);
 }
 
+/* #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory) */
 DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
 {
     if(Memory)
@@ -170,6 +177,7 @@ DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
     }
 }
 
+/* #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *Filename) */
 DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
 {
     debug_read_file_result Result = {};
@@ -203,6 +211,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
     return(Result);
 }
 
+/* #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, mem_idx MemorySize, void *Memory) */
 DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 {
     b32 Result = false;
@@ -214,6 +223,117 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
         Result = (BytesWritten == (ssize_t)MemorySize);
         close(FileHandle);
     }
+
+    return(Result);
+}
+
+
+/* #define DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *Dirname) */
+DEBUG_PLATFORM_GET_DIR_WRITE_TIME(DEBUGPlatformGetDirWriteTime)
+{
+    // POSIX treats dirs as files so we can just call GetFileWriteTime
+    u64 Result = DEBUGPlatformGetFileWriteTime(Dirname);
+    return(Result);
+    
+}
+
+/* #define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer *GamePackedFilenames, char *DirName, int *NumFilesFound) */
+DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
+{
+    *NumFilesFound = 0;
+
+    DIR *Dir = opendir(DirName);
+    if(!Dir)
+    {
+        return;
+    }
+
+    char *Extension = ".bmp";
+    int ExtensionLength = 4;
+    u8 *GameCursor = GamePackedFilenames->Data;
+    u8 *GameEnd = GamePackedFilenames->Data + GamePackedFilenames->Size;
+
+    struct dirent *Entry;
+    while((Entry = readdir(Dir)) != 0)
+    {
+        char *Name = Entry->d_name;
+        int NameLength = (int)strlen(Name);
+
+        // Skip ".", "..", ".DS_Store" etc.
+        b32 IsHidden = (Name[0] == '.');
+
+        b32 IsBmp = ( (NameLength > ExtensionLength) &&
+                        (strcasecmp(Name + NameLength - ExtensionLength, Extension) == 0) );
+
+        if(!IsHidden && IsBmp)
+        {
+            // If copying this filename into the buffer passed in by the game would overflow it
+            if(GameCursor + NameLength + 1 > GameEnd)
+            {
+                *NumFilesFound = 0;
+                break;
+            }
+
+            for(int CharIdx = 0;
+                CharIdx < NameLength;
+                ++CharIdx)
+            {
+                *GameCursor ++ = Name[CharIdx];
+            }
+            *GameCursor++ = 0;
+            *NumFilesFound += 1;
+        }
+    }
+
+    closedir(Dir);
+}
+
+/* #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, mem_idx DestSize, b32 IsSave) */
+DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
+{
+    GlobalDialogWasOpen = true;
+    int Result = 0;
+
+    @autoreleasepool
+    {
+        NSSavePanel *Panel = 0;
+        if(IsSave)
+        {
+            Panel = [NSSavePanel savePanel];
+        }
+        else
+        {
+            NSOpenPanel *OpenPanel = [NSOpenPanel openPanel];
+            [OpenPanel setCanChooseFiles:YES];
+            [OpenPanel setCanChooseDirectories:NO];
+            [OpenPanel setAllowsMultipleSelection:NO];
+            Panel = OpenPanel;
+        }
+
+        UTType *TileMapType = [UTType typeWithFilenameExtension:@"tilemap"];
+        if(TileMapType)
+        {
+            [Panel setAllowedContentTypes:@[TileMapType]];
+        }
+
+        if([Panel runModal] == NSModalResponseOK)
+        {
+            const char *Path = [[Panel URL] fileSystemRepresentation];
+            mem_idx PathLength = strlen(Path);
+            if(PathLength < DestSize)
+            {
+                memcpy(Dest, Path, PathLength + 1);
+                Result = 1;
+            }
+        }
+    }
+
+    // Ctrl and S/L keys were released while the panel was open, so the key up message
+    //      was never sent to the game; we therefore clear keyboard input to zero below,
+    //      and mouse for good measure
+    *GlobalKeyboardController = {};
+    *GlobalDevKeys = {};
+    *GlobalMouse = {};
 
     return(Result);
 }
@@ -417,25 +537,26 @@ OSXProcessPendingEvents(NSApplication *App)
                         } break;
 #endif
 
+
                         default: break;
                     }
                 }
 
-                function_keys *FunctionKeys = GlobalFunctionKeys;
-                if(FunctionKeys)
+                dev_keys *DevKeys = GlobalDevKeys;
+                if(DevKeys)
                 {
                     switch(KeyCode)
                     {
-                        case OSX_VK_F1: OSXProcessButtonMessage(&FunctionKeys->F1, IsDown); break;
-                        case OSX_VK_F2: OSXProcessButtonMessage(&FunctionKeys->F2, IsDown); break;
-                        case OSX_VK_F3: OSXProcessButtonMessage(&FunctionKeys->F3, IsDown); break;
-                        case OSX_VK_F4: OSXProcessButtonMessage(&FunctionKeys->F4, IsDown); break;
-                        case OSX_VK_F5: OSXProcessButtonMessage(&FunctionKeys->F5, IsDown); break;
-                        case OSX_VK_F6: OSXProcessButtonMessage(&FunctionKeys->F6, IsDown); break;
-                        case OSX_VK_F7: OSXProcessButtonMessage(&FunctionKeys->F7, IsDown); break;
-                        case OSX_VK_F8: OSXProcessButtonMessage(&FunctionKeys->F8, IsDown); break;
-                        case OSX_VK_F9: OSXProcessButtonMessage(&FunctionKeys->F9, IsDown); break;
-                        case OSX_VK_F10: OSXProcessButtonMessage(&FunctionKeys->F10, IsDown); break;
+                        case OSX_VK_F1: OSXProcessButtonMessage(&DevKeys->F1, IsDown); break;
+                        case OSX_VK_F2: OSXProcessButtonMessage(&DevKeys->F2, IsDown); break;
+                        case OSX_VK_F3: OSXProcessButtonMessage(&DevKeys->F3, IsDown); break;
+                        case OSX_VK_F4: OSXProcessButtonMessage(&DevKeys->F4, IsDown); break;
+                        case OSX_VK_F5: OSXProcessButtonMessage(&DevKeys->F5, IsDown); break;
+                        case OSX_VK_F6: OSXProcessButtonMessage(&DevKeys->F6, IsDown); break;
+                        case OSX_VK_F7: OSXProcessButtonMessage(&DevKeys->F7, IsDown); break;
+                        case OSX_VK_F8: OSXProcessButtonMessage(&DevKeys->F8, IsDown); break;
+                        case OSX_VK_F9: OSXProcessButtonMessage(&DevKeys->F9, IsDown); break;
+                        case OSX_VK_F10: OSXProcessButtonMessage(&DevKeys->F10, IsDown); break;
                     }
                 }
 
@@ -472,6 +593,17 @@ OSXProcessPendingEvents(NSApplication *App)
                 [App sendEvent:Event];
             } break;
 
+            case NSEventTypeFlagsChanged:
+            {
+                // On Mac we use Command key instead of Control key as on Windows
+                b32 CmdIsDown = (([Event modifierFlags] & NSEventModifierFlagCommand) != 0);
+                if(GlobalDevKeys)
+                {
+                    OSXProcessButtonMessage(&GlobalDevKeys->Ctrl, CmdIsDown);
+                }
+                [App sendEvent:Event];
+            } break;
+             
             default:
             {
                 [App sendEvent:Event];
@@ -757,6 +889,10 @@ main(int ArgC, char **ArgVector)
         GameMemory.DEBUGPlatformGetFileSize = DEBUGPlatformGetFileSize;
         GameMemory.DEBUGPlatformReadFileInto = DEBUGPlatformReadFileInto;
         GameMemory.DEBUGPlatformGetFileWriteTime = DEBUGPlatformGetFileWriteTime;
+        GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
+        GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
+        GameMemory.DEBUGPlatformGetFilepathFromDialog = DEBUGPlatformGetFilepathFromDialog;
+
 
         u64 TotalSize = GameMemory.PermanentStorageSize + GameMemory.TransientStorageSize;
 
@@ -803,14 +939,14 @@ main(int ArgC, char **ArgVector)
                         OldKeyboardController->Buttons[ButtonIdx].EndedDown;
                 }
 
-                function_keys *OldFunctionKeys = &OldInput->FunctionKeys;
-                function_keys *NewFunctionKeys = &NewInput->FunctionKeys;
-                *NewFunctionKeys = {};
+                dev_keys *OldDevKeys = &OldInput->DevKeys;
+                dev_keys *NewDevKeys = &NewInput->DevKeys;
+                *NewDevKeys = {};
                 for(int FnKeyIdx = 0;
-                    FnKeyIdx < ArrayCount(NewFunctionKeys->Keys);
+                    FnKeyIdx < ArrayCount(NewDevKeys->Keys);
                     ++FnKeyIdx)
                 {
-                    NewFunctionKeys->Keys[FnKeyIdx].EndedDown = OldFunctionKeys->Keys[FnKeyIdx].EndedDown;
+                    NewDevKeys->Keys[FnKeyIdx].EndedDown = OldDevKeys->Keys[FnKeyIdx].EndedDown;
                 }
 
                 game_mouse_input *OldMouse = &OldInput->Mouse;
@@ -836,7 +972,7 @@ main(int ArgC, char **ArgVector)
                 
                 GlobalKeyboardController = NewKeyboardController;
                 GlobalMouse = NewMouse;
-                GlobalFunctionKeys = NewFunctionKeys;
+                GlobalDevKeys = NewDevKeys;
 
                 OSXProcessPendingEvents(App);
 
@@ -860,7 +996,13 @@ main(int ArgC, char **ArgVector)
 
                     if(Game.UpdateAndRender)
                     {
+                        NewInput->CpuTimerReading = ReadCpuTimer();
                         Game.UpdateAndRender(&GameMemory, NewInput, &Buffer);
+                        if(GlobalDialogWasOpen)
+                        {
+                            GlobalDialogWasOpen = false;
+                            LastCounter = ReadCpuTimer();
+                        }
                     }
 
                     u32 NumSamplesToWrite = OSXGetNumSamplesToWrite(&GlobalAudio);
