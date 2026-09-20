@@ -510,6 +510,10 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 static void
 ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
+    if(!Bitmap->Pixels)
+    {
+        return;
+    }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);

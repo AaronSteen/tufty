@@ -340,11 +340,19 @@ DEBUG_PLATFORM_GET_DIR_WRITE_TIME(DEBUGPlatformGetDirWriteTime)
 // #define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
 DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 {
-#define SEARCH_TERM_MAX_LEN 256
     WIN32_FIND_DATAA FindData = {};
-    char SearchTerm[SEARCH_TERM_MAX_LEN];
-    char *SearchTermSuffix = "\\*.bmp";
-    if(StringLength(DirName) + StringLength(SearchTermSuffix) > SEARCH_TERM_MAX_LEN)
+    char SearchTerm[MAX_PATH];
+    char SearchTermSuffix[MAX_PATH];
+    char *Extension = ".bmp";
+    char *WildcardInSearchTerm = "\\*";
+
+    int ExtensionLength = StringLength(Extension);
+    int WildcardLength = StringLength(WildcardInSearchTerm);
+    CatStrings(WildcardLength, WildcardInSearchTerm, 
+               ExtensionLength, Extension,
+               MAX_PATH, SearchTermSuffix);
+
+    if(StringLength(DirName) + StringLength(SearchTermSuffix) > MAX_PATH)
     {
         *NumFilesFound = 0;
         return;
@@ -352,7 +360,7 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 
     CatStrings(StringLength(DirName), DirName, 
                StringLength(SearchTermSuffix), SearchTermSuffix, 
-               SEARCH_TERM_MAX_LEN, SearchTerm);
+               MAX_PATH, SearchTerm);
 
     HANDLE SearchHandle = FindFirstFileA((LPCSTR)SearchTerm, &FindData);
     if(SearchHandle == INVALID_HANDLE_VALUE)
@@ -366,24 +374,33 @@ DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
     while(KeepSearching)
     {
         char *Win32Cursor = (char *)FindData.cFileName;
-        while(*Win32Cursor)
+
+        int NameLength = StringLength(Win32Cursor);
+
+        b32 IsBmp = ( (NameLength > ExtensionLength) &&
+                      (_stricmp(Win32Cursor + NameLength - ExtensionLength, Extension) == 0) );
+        if(IsBmp)
         {
-            if(GameCursor+1 < GamePackedFilenames->Data + GamePackedFilenames->Size)
+            while(*Win32Cursor)
             {
-                *GameCursor++ = *Win32Cursor++;
+                if(GameCursor+1 < GamePackedFilenames->Data + GamePackedFilenames->Size)
+                {
+                    *GameCursor++ = *Win32Cursor++;
+                }
+                else
+                {
+                    // This means we were about to overrun GamePackedFilenamesArray
+                    *NumFilesFound = 0;
+                    FindClose(SearchHandle);
+                    return;
+                }
             }
-            else
-            {
-                // This means we were about to overrun GamePackedFilenamesArray
-                *NumFilesFound = 0;
-                return;
-            }
+            *GameCursor++ = '\0';
+            *NumFilesFound += 1;
+            KeepSearching = FindNextFileA(SearchHandle, &FindData);
         }
-        *GameCursor++ = '\0';
-        *NumFilesFound += 1;
-        KeepSearching = FindNextFileA(SearchHandle, &FindData);
     }
-#undef SEARCH_TERM_MAX_LEN 
+    FindClose(SearchHandle);
 }
 
 // Need forward declaration to call this here
