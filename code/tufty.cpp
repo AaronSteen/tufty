@@ -663,6 +663,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
                             }
                         }
                         EditorState->HeldTileType = nullptr;
+                        --TileMap->NumTileTypes;
                     }
                     else
                     {
