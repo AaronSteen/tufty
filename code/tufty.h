@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 
-#define STRING_LEN 40
+#define STRING_LEN 250
 #define MAX_TILE_TYPES 200
 #define TILE_ARRAY_LEN (MAX_TILE_TYPES + 1)
 
@@ -175,23 +175,29 @@ struct game_state
     v2 PlayerP;
     facing PlayerFacing;
     bitmap PlayerBitmaps[4];
+};
 
-    b32 EditMode;
+enum which_editor
+{
+    NO_EDITOR = 0,
+    TILE,
+    PLAYER
 };
 
 struct editor_state
 {
+    which_editor WhichEditor;
     tile_type *HeldTileType;
     b32 PrintRowsCols;
+    b32 TilesReadyToReload;
+    u64 LastTileDirUpdate;
 };
 
 struct debug_state
 {
     arena DebugTextArena;
     arena FailBitmapsArena;
-    u64 LastTileDirUpdate;
     editor_state EditorState;
-    b32 ReadyToReload;
 };
 
 #pragma pack(push, 1)
