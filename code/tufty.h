@@ -188,6 +188,7 @@ struct editor_state
 struct debug_state
 {
     arena DebugTextArena;
+    arena FailBitmapsArena;
     u64 LastTileDirUpdate;
     editor_state EditorState;
     b32 ReadyToReload;

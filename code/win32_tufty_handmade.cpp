@@ -151,7 +151,7 @@ DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
 {
     mem_idx Result = 0;
     struct __stat64 Stat;
-    if(_stat64(Filename, &Stat) == -1)
+    if(_stat64(Filepath, &Stat) == -1)
     {
         return(Result);
     }
@@ -276,7 +276,7 @@ DEBUG_PLATFORM_GET_FILE_WRITE_TIME(DEBUGPlatformGetFileWriteTime)
     return(Result);
 }
 
-// #define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filename, u32 DestSize, void *Dest)
+// #define DEBUG_PLATFORM_READ_FILE_INTO(name) mem_idx name(char *Filepath, u32 DestSize, void *Dest)
 DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
 {
     u32 Result = 0;
@@ -293,6 +293,10 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
         LARGE_INTEGER FileSize;
         if(GetFileSizeEx(FileHandle, &FileSize))
         {
+            // NOTE(Aaron): Becuase we're using the basic ReadFile function, which takes a 32-bit DWORD for the third argument
+            //      indicating the number of bytes to read, the file we're reading can't be larger than (2^32) - 1 = 4,294,967,295 bytes,
+            //      so we use a u32 for the DestSize argument to DEBUGPlatformReadFileInto, and also a u32 for the return argument
+            //      that tells the caller how many bytes were actually read.
             u32 FileSize32 = SafeTruncateU64ToU32(FileSize.QuadPart);
             if(FileSize32 <= DestSize)
             {

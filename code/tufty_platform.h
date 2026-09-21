@@ -116,7 +116,7 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
-#define DEBUG_PLATFORM_GET_FILE_SIZE(name) mem_idx name(char *Filename)
+#define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filepath)
 typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
 
 #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
@@ -138,7 +138,7 @@ typedef DEBUG_PLATFORM_GET_DIR_WRITE_TIME(debug_platform_get_dir_write_time);
 typedef DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(debug_platform_get_list_of_dir_contents);
 
 // this returns either the number of bytes read, or 0 if the file was missing, too big, or locked
-#define DEBUG_PLATFORM_READ_FILE_INTO(name) mem_idx name(char *Filepath, u32 DestSize, void *Dest)
+#define DEBUG_PLATFORM_READ_FILE_INTO(name) u32 name(char *Filepath, u32 DestSize, void *Dest)
 typedef DEBUG_PLATFORM_READ_FILE_INTO(debug_platform_read_file_into);
 
 // IsSave is true if the user is saving; if they are loading, set it to false. Return value is bool for success/fail

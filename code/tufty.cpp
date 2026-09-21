@@ -21,7 +21,7 @@
 // #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
 //
 
-tile_type Bagel;
+static tile_type *Bagel;
 
 enum
 {
@@ -129,6 +129,8 @@ LoadBitmap(arena *Arena, tile_type *TileType, game_memory *Memory)
 {
     bitmap *Bitmap = &TileType->Bitmap;
     char *Filepath = TileType->Filepath;
+    // If we can't get the file size, then we can't load the file, 
+    //      so we want the file size in the bitmap to be 0.
     Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
     if(Bitmap->Buffer.Size == 0)
     {
@@ -525,7 +527,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
     if(!Bitmap->Pixels)
     {
-        Bitmap = &Bagel.Bitmap;
+        Bitmap = &Bagel->Bitmap;
     }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
@@ -889,7 +891,6 @@ LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
         tile_type *ThisType = TileTypes + NthType;
         mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
 
-        // Since strnlen for some reason does not include the null terminator
         FilepathLen += 1;
         snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
         FilepathCursor += FilepathLen;
@@ -942,6 +943,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DebugState->ReadyToReload = true;
         DebugState->EditorState.PrintRowsCols = false;
         InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
+        InitializeArena(&DebugState->FailBitmapsArena, (DebugRegion.Data + sizeof(debug_state) + DebugState->DebugTextArena.Size), Megabytes(1));
 
         // Tiles
         InitializeArena(&GameState->TilesArena, (GameRegion.Data + sizeof(game_state)), Megabytes(4) );
@@ -1006,9 +1008,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerFacing = EAST;
 
 // Bagel
+        Bagel = PushStruct(&DebugState->FailBitmapsArena, tile_type);
         char *BagelFilepath = "bagel1.bmp";
-        snprintf(Bagel.Filepath, sizeof(Bagel.Filepath), "%s", BagelFilepath);
-        LoadBitmap(&GameState->TilesArena, &Bagel, Memory);
+        snprintf(Bagel->Filepath, sizeof(Bagel->Filepath), "%s", BagelFilepath);
+        LoadBitmap(&DebugState->FailBitmapsArena, Bagel, Memory);
         // Bagel = PushStruct(&GameState->TilesArena, );
         // Bagel->Filepath = "bagel1.bmp";
         // Bagel->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Bagel->Filepath);
@@ -1129,7 +1132,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Underlayer
     v2 ScreenMin = {0, 0};
     v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
-    DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.1f, 0.5f, 0.45f);
+    DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
 
     // Tiles
     for(int Row = 0; 
