@@ -265,7 +265,6 @@ LoadTileBitmapsDir(tile_map *TileMap, random_series *RandomSeries,
     FreeScratchArena(Scratch);
 }
 
-
 void
 DrawSimpleRect(game_offscreen_buffer *Buf,
                v2 Min, v2 Max,
@@ -657,10 +656,12 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
 
     b32 Result = false;
 
+    // Pointers to the data in the loaded file
     serialized_tile_map *Header = 0;
     char *TileTypeFilepaths = 0;
     s32 *LoadedTileValues = 0;
 
+    // TODO(Aaron): Fix how we handle strings to be uniform. Currently we are all over the place!!!!
     mem_idx MaxPath = 260;
     char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
     int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, false);
@@ -674,6 +675,8 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
     // We don't worry about dest buffer being too small here because if it's too small
     //      PushArray call above will fail
+
+    // Validate and set data pointers
     if(ReadFileInto(Filepath, Size, LoadedTileMap))
     {
         Header = (serialized_tile_map *)LoadedTileMap;
@@ -695,15 +698,11 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
         LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
     }
 
+    // If the file is valid go ahead and clear the tile data structures to prepare for loading 
+    //      the new data from the file
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
-    for(int TypeIdx = 0;
-        TypeIdx < TILE_ARRAY_LEN;
-        ++TypeIdx)
-    {
-        memset(TileTypes[TypeIdx].Filepath, 0, STRING_LEN);
-        TileTypes[TypeIdx].Bitmap = {};
-    }
+    TileTypes = {};
 
     char *FilepathCursor = TileTypeFilepaths;
     for(int NthType = 1;
