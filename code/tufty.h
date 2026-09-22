@@ -10,6 +10,8 @@
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
 #define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
+#define MAX_FACING_BITMAPS 10
+#define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -163,11 +165,18 @@ struct tile_map
     s32 *TileValues;
 };
 
+struct menu_tile
+{
+    v2 TileMin;
+    v2 TileMax;
+    bitmap_metadata *TileType;
+};
+
 struct facing_player_bitmaps
 {
     int NumBitmaps;
     arena Arena;
-    bitmap_metadata *BitmapMetadata;
+    bitmap_metadata BitmapMetadata[FACING_BITMAPS_ARRAY_LEN];
 };
 
 union all_player_bitmaps

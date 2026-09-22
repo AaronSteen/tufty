@@ -144,7 +144,79 @@ LoadBitmap(arena *Arena, bitmap_metadata *TileType)
     DEBUGReloadBitmapIfChanged(TileType);
 }
 
-void
+static void
+LoadPlayerBitmapsDir(arena *FacingArena, player *Player, facing_player_bitmap *FacingBitmaps, scratch_header *ScratchHeader)
+{
+    ResetArena(FacingArena);
+    scratch_header *Scratch = GetScratchArena(ScratchHeader);
+    
+    // Clear bitmap structs in the player bitmaps array
+    for(int NthBitmap = 0;
+        NthBitmap < FacingBitmaps->NumBitmaps;
+        ++NthBitmap)
+    {
+        FacingBitmaps->BitmapMetadata[NthBitmap].Bitmap = {};
+    }
+
+    buffer FoundFilenames;
+    FoundFilenames.Size = MAX_FACING_BITMAPS * STRING_LEN;
+    FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
+    int NumFilesFound = 0;
+    facing WhichFacing = FacingBitmaps - Player->AllBitmaps;
+    char *DirName = nullptr;
+    switch(WhichFacing)
+    {
+        case EAST:
+        {
+            DirName = "east";
+        } break;
+
+        case NORTH:
+        {
+            DirName = "north";
+        } break;
+
+        case WEST:
+        {
+            DirName = "west";
+        } break;
+
+        case SOUTH:
+        {
+            DirName = "south";
+        } break;
+    }
+    GetListOfDirContents(&FoundFilenames, DirName, &NumFilesFound);
+
+    if(NumFilesFound > MAX_FACING)
+    {
+        // Too many bitmaps, don't load any
+        if(Scratch)
+        {
+            FreeScratchArena(Scratch);
+        }
+        return(-1);
+    }
+
+    char *ThisFilename;
+    for(int NthBitmapToLoad = 0;
+        NthBitmapToLoad < NumFilesFound;
+        ++NthBitmapToLoad)
+    {
+        char FilepathToLoad[STRING_LEN];
+
+        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "player/%s/%s", DirName, ThisFilename);
+
+
+
+
+
+
+    
+    FreeScratchArena(Scratch);
+}
+
+static void
 LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
 {
     // TODO: Use CPP class constructor destructor setup to always 
@@ -725,16 +797,23 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     return(true);
 }
 
+static void
+DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState)
+{
+    v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
+    v2 BrowserMin = {0, 0};
+    v2 BrowserMax = {(f32)Backbuf->Width, ((f32)Backbuf->Height * 0.2f)};
+    scratch_arena *Scratch = nullptr;
+    menu_tile *MenuTiles = nullptr;
+
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+
+
+}
 
 static void
-DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, tile_map *TileMap)
+DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, tile_map *TileMap)
 {
-    struct menu_tile
-    {
-        v2 TileMin;
-        v2 TileMax;
-        bitmap_metadata *TileType;
-    };
     v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
@@ -1046,6 +1125,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 // Player
         player *Player = &GameState->Player;
+        LoadPlayerBitmapsDir(Player, ScratchHeader);
         Player->Position.X = Buffer->Width / 2;
         Player->Position.Y = Buffer->Height / 2;
         Player->Facing = EAST;
@@ -1218,7 +1298,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(DebugState->EditorState.WhichEditor == TILE)
     {
-        DrawEditor(Buffer, ScratchHeader, DebugState, TileMap);
+        DrawTileEditor(Buffer, ScratchHeader, DebugState, TileMap);
+    }
+    else if(DebugState->EditorState.WhichEditor == PLAYER)
+    {
+        DrawPlayerEditor(Buffer, ScratchHeader, DebugState);
     }
 
     // else
