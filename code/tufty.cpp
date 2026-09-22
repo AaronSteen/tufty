@@ -18,7 +18,23 @@
 // #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
 //
 
-static tile_type *Bagel;
+// GLOBALS
+    // variables
+    static tile_type *GlobalBagel;
+    static game_controller_input *GlobalKeyboardController;
+    static dev_keys *GlobalDevKeys;
+    static game_mouse_input *GlobalMouse;
+
+    // Platform services
+    static debug_platform_get_file_size *GetFileSize;
+    static debug_platform_free_file_memory *FreeFileMemory;
+    static debug_platform_read_entire_file *ReadEntireFile;
+    static debug_platform_write_entire_file *WriteEntireFile;
+    static debug_platform_get_file_write_time *GetFileWriteTime;
+    static debug_platform_get_dir_write_time *GetDirWriteTime;
+    static debug_platform_get_list_of_dir_contents *GetListOfDirContents;
+    static debug_platform_read_file_into *ReadFileInto;
+    static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
 
 enum
 {
@@ -94,7 +110,7 @@ ParseBitmapHeader(bitmap *Bitmap)
 }
 
 static void
-DEBUGReloadBitmapIfChanged(tile_type *TileType, game_memory *Memory)
+DEBUGReloadBitmapIfChanged(tile_type *TileType)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
@@ -103,16 +119,16 @@ DEBUGReloadBitmapIfChanged(tile_type *TileType, game_memory *Memory)
     if(Bitmap->ReadyToRead == true)
     {
         Bitmap->ReadyToRead = false;
-        mem_idx BytesRead = Memory->DEBUGPlatformReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
+        mem_idx BytesRead = ReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
         if(BytesRead == Bitmap->Buffer.Size)
         {
             ParseBitmapHeader(Bitmap);
-            Bitmap->LastWriteTime = Memory->DEBUGPlatformGetFileWriteTime(Filepath);
+            Bitmap->LastWriteTime = GetFileWriteTime(Filepath);
         }
     }
     else
     {
-        u64 WriteTime = Memory->DEBUGPlatformGetFileWriteTime(Filepath);
+        u64 WriteTime = GetFileWriteTime(Filepath);
         if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
         {
             Bitmap->ReadyToRead = true;
@@ -122,29 +138,30 @@ DEBUGReloadBitmapIfChanged(tile_type *TileType, game_memory *Memory)
 }
 
 static void
-LoadBitmap(arena *Arena, tile_type *TileType, game_memory *Memory)
+LoadBitmap(arena *Arena, tile_type *TileType)
 {
     bitmap *Bitmap = &TileType->Bitmap;
     char *Filepath = TileType->Filepath;
     // If we can't get the file size, then we can't load the file, 
     //      so we want the file size in the bitmap to be 0.
-    Bitmap->Buffer.Size = Memory->DEBUGPlatformGetFileSize(Filepath);
+    Bitmap->Buffer.Size = GetFileSize(Filepath);
     if(Bitmap->Buffer.Size == 0)
     {
         return;
     }
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
     Bitmap->ReadyToRead = true;
-    DEBUGReloadBitmapIfChanged(TileType, Memory);
+    DEBUGReloadBitmapIfChanged(TileType);
 }
 
 void
-LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSeries,
-                    scratch_header *ScratchHeader, game_memory *Memory)
+LoadTileBitmapsDir(tile_map *TileMap, random_series *RandomSeries,
+                    scratch_header *ScratchHeader)
 {
     // TODO: Use CPP class constructor destructor setup to always 
     //      FreeScratchArena whenever any scope containing a 
     //      GetScratchArena call is exited
+    arena *TilesArena = &TileMap->TilesArena;
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
@@ -161,7 +178,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
     FoundFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
     FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
     int NumFilesFound = 0;
-    Memory->DEBUGPlatformGetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
+    GetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
     if(NumFilesFound > MAX_TILE_TYPES)
     {
         Assert(!"Tiles dir contains more than 200 tile types. 200 is the max.");
@@ -198,7 +215,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
             {
                 if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
                 {
-                    LoadBitmap(TilesArena, TileType, Memory);
+                    LoadBitmap(TilesArena, TileType);
                     ExistingTileType = true;
                     break;
                 }
@@ -212,7 +229,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
             tile_type *SlotForNewBitmap = TileTypes + FirstAvailable;
             snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
-            LoadBitmap(TilesArena, SlotForNewBitmap, Memory);
+            LoadBitmap(TilesArena, SlotForNewBitmap);
         }
 
         while(*ThisFilename)
@@ -240,7 +257,7 @@ LoadTileBitmapsDir(arena *TilesArena, tile_map *TileMap, random_series *RandomSe
             if(Bitmap->Buffer.Data == 0) // if bitmap buffer pointer is null
             {
                 // Set the bitmap to bagel
-                *Bitmap = Bagel->Bitmap;
+                *Bitmap = GlobalBagel->Bitmap;
             }
         }
     }
@@ -484,13 +501,12 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
-
 static void
 ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
     if(!Bitmap->Pixels)
     {
-        Bitmap = &Bagel->Bitmap;
+        Bitmap = &GlobalBagel->Bitmap;
     }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
@@ -554,16 +570,172 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 }
 
 static v2
-GetTileCoordsFromMouseCoords(v2 MouseCoords, f32 TileSideInPixels)
+GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
 {
     v2 Result = {};
-    Result.X = FloorF32ToS32(MouseCoords.X / (s32)TileSideInPixels);
-    Result.Y = FloorF32ToS32(MouseCoords.Y / (s32)TileSideInPixels);
+    Result.X = FloorF32ToS32(GlobalMouse->X / (s32)TileSideInPixels);
+    Result.Y = FloorF32ToS32(GlobalMouse->Y / (s32)TileSideInPixels);
     return(Result);
 }
 
+static b32
+SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader)
+{
+    b32 Success = false;
+    if(TileMap->NumTileTypes == 0)
+    {
+        return(Success);
+    }
+
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    serialized_tile_map *ToWrite = PushStruct(&Scratch->Arena, serialized_tile_map);
+
+    mem_idx BytesToWrite = sizeof(serialized_tile_map);
+    char *MagicNumber = "TILE";
+    mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
+    Assert(MagicNumberSize == 4);
+
+    for(int NthLetter = 0;
+        NthLetter < MagicNumberSize;
+        ++NthLetter)
+    {
+        ToWrite->MagicNumber[NthLetter] = MagicNumber[NthLetter];
+    }
+
+    ToWrite->NumRows = TileMap->NumRows;
+    ToWrite->NumCols = TileMap->NumCols;
+    ToWrite->NumTileTypes = TileMap->NumTileTypes;
+    ToWrite->TileTypeFilepathsOffset = sizeof(serialized_tile_map);
+
+    // We initially set this to the same as TileTypeFilepathsOffset but continually increment it as
+    //      we write more filepaths to the file
+    ToWrite->TileValuesOffset = sizeof(serialized_tile_map);
+
+    for(int TypeIdx = 1;
+        TypeIdx <= ToWrite->NumTileTypes;
+        ++TypeIdx)
+    {
+        char *FilepathToWrite = TileMap->TileTypes[TypeIdx].Filepath;
+        mem_idx FilepathBytesNeeded = strnlen(FilepathToWrite, STRING_LEN);
+
+        // For null terminator
+        FilepathBytesNeeded += 1;
+
+        char *WriteFilepathHere = PushArray(&Scratch->Arena, char, FilepathBytesNeeded);
+        snprintf(WriteFilepathHere, FilepathBytesNeeded, "%s", FilepathToWrite);
+        ToWrite->TileValuesOffset += FilepathBytesNeeded;
+        BytesToWrite += FilepathBytesNeeded;
+    }
+
+    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileMap->NumTilesInWorld);
+    for(int ValueIdx = 0;
+        ValueIdx < TileMap->NumTilesInWorld;
+        ++ValueIdx)
+    {
+        WriteTileValuesHere[ValueIdx] = TileMap->TileValues[ValueIdx];
+        BytesToWrite += sizeof(s32);
+    }
+
+    mem_idx MaxPath = 260;
+    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
+    int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, true);
+
+    if(GetFilepathResult)
+    {
+        Success = WriteEntireFile(Filepath, BytesToWrite, Scratch->Arena.Data);
+    }
+
+    FreeScratchArena(Scratch);
+    return(Success);
+}
+
+static b32
+LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
+{
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    arena *TilesArena = &TileMap->TilesArena;
+
+    b32 Result = false;
+
+    serialized_tile_map *Header = 0;
+    char *TileTypeFilepaths = 0;
+    s32 *LoadedTileValues = 0;
+
+    mem_idx MaxPath = 260;
+    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
+    int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, false);
+    if(GetFilepathResult == 0)
+    {
+        FreeScratchArena(Scratch);
+        return(Result);
+    }
+
+    u32 Size = GetFileSize(Filepath);
+    u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
+    // We don't worry about dest buffer being too small here because if it's too small
+    //      PushArray call above will fail
+    if(ReadFileInto(Filepath, Size, LoadedTileMap))
+    {
+        Header = (serialized_tile_map *)LoadedTileMap;
+        char *CompareMagicNumber = "TILE";
+        for(int LetterIdx = 0;
+            LetterIdx < 4;
+            ++LetterIdx)
+        {
+            Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
+        }
+        Assert(Header->NumRows);
+        TileMap->NumRows = Header->NumRows;
+        Assert(Header->NumCols);
+        TileMap->NumCols = Header->NumCols;
+        Assert(Header->NumTileTypes);
+        TileMap->NumTileTypes = Header->NumTileTypes;
+        TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
+        TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
+        LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
+    }
+
+    ResetArena(TilesArena);
+    tile_type *TileTypes = TileMap->TileTypes;
+    for(int TypeIdx = 0;
+        TypeIdx < TILE_ARRAY_LEN;
+        ++TypeIdx)
+    {
+        memset(TileTypes[TypeIdx].Filepath, 0, STRING_LEN);
+        TileTypes[TypeIdx].Bitmap = {};
+    }
+
+    char *FilepathCursor = TileTypeFilepaths;
+    for(int NthType = 1;
+        NthType <= Header->NumTileTypes;
+        ++NthType)
+    {
+        tile_type *ThisType = TileTypes + NthType;
+        mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
+
+        FilepathLen += 1;
+        snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
+        FilepathCursor += FilepathLen;
+
+        LoadBitmap(TilesArena, ThisType);
+    }
+
+    for(int ValueIdx = 0;
+        ValueIdx < TileMap->NumTilesInWorld;
+        ++ValueIdx)
+    {
+        TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
+    }
+    // memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
+
+    FreeScratchArena(Scratch);
+
+    return(true);
+}
+
+
 static void
-DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena *DebugTextArena, tile_map *TileMap, game_mouse_input *Mouse, editor_state *EditorState)
+DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, tile_map *TileMap)
 {
     struct menu_tile
     {
@@ -571,7 +743,7 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
         v2 TileMax;
         tile_type *TileType;
     };
-    v2 MouseCoords = {(f32)Mouse->X, (f32)Mouse->Y};
+    v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
     b32 AlreadyClickedSecondary = false;
@@ -583,11 +755,12 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
     f32 StartX = BrowserMin.X + OuterPadding;
     f32 X = StartX;
     int TilesDrawnInThisRow = 0;
+    editor_state *EditorState = &DebugState->EditorState;
 
     // Panel
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
 
-    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", DebugTextArena, 1, 1, 1, 1, 3.5);
+    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.5);
 
     // Draw tiles in menu unless there are no tiles
     if(TileMap->NumTileTypes > 0)
@@ -641,10 +814,10 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
                MouseCoords.X <= ThisMenuTile->TileMax.X &&
                MouseCoords.Y <= ThisMenuTile->TileMax.Y)
             {
-                if(Mouse->Primary.EndedDown && Mouse->Primary.HalfTransitionCount == 1)
+                if(GlobalMouse->Primary.EndedDown && GlobalMouse->Primary.HalfTransitionCount == 1)
                 {
                     if(EditorState->HeldTileType && 
-                        (ThisMenuTile->TileType->Bitmap.Pixels == Bagel->Bitmap.Pixels))
+                        (ThisMenuTile->TileType->Bitmap.Pixels == GlobalBagel->Bitmap.Pixels))
                     {
                         tile_type *TileTypeToReplace = ThisMenuTile->TileType;
                         mem_idx TileTypeToReplaceIdx = (ThisMenuTile->TileType - TileMap->TileTypes);
@@ -697,8 +870,8 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
     //          - if user is hovering over a tile and they are holding a tile type and they secondary click, 
     //                  stop holding that tile type and do nothing else
     //          - then, if they secondary click again, set the tile value for tile under their cursor to be TILE_EMPTY
-    if((Mouse->Secondary.EndedDown) && 
-       (Mouse->Secondary.HalfTransitionCount == 1) &&
+    if((GlobalMouse->Secondary.EndedDown) && 
+       (GlobalMouse->Secondary.HalfTransitionCount == 1) &&
        (EditorState->HeldTileType))
     {
         EditorState->HeldTileType = nullptr;
@@ -723,181 +896,54 @@ DrawEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, arena 
     //              0 (TILE_EMPTY), in which case we draw nothing
     if(MouseCoords.X < BrowserMin.X)
     {
-        v2 TileAsV2 = GetTileCoordsFromMouseCoords(MouseCoords, TileMap->TileSideInPixels);
+        v2 TileAsV2 = GetTileCoordsFromMouseCoords(TileMap->TileSideInPixels);
         v2 OutlineMin = {TileAsV2.X * TileMap->TileSideInPixels, TileAsV2.Y * TileMap->TileSideInPixels};
         v2 OutlineMax = OutlineMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
         DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
         s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
 
-        if((Mouse->Secondary.EndedDown) &&
-           (Mouse->Secondary.HalfTransitionCount == 1) &&
+        if((GlobalMouse->Secondary.EndedDown) &&
+           (GlobalMouse->Secondary.HalfTransitionCount == 1) &&
            (EditorState->HeldTileType == nullptr) &&
            (AlreadyClickedSecondary == false))
         {
             *(TileMap->TileValues + OneDimensionalTileIndex) = TILE_EMPTY;
         }
 
-        else if((Mouse->Primary.EndedDown) && 
-           (Mouse->Primary.HalfTransitionCount == 1) && 
+        else if((GlobalMouse->Primary.EndedDown) && 
+           (GlobalMouse->Primary.HalfTransitionCount == 1) && 
            (EditorState->HeldTileType != nullptr))
         {
             mem_idx NthTileValue = EditorState->HeldTileType - TileMap->TileTypes;
             *(TileMap->TileValues + OneDimensionalTileIndex) = NthTileValue;
         }
     }
-}
 
-static b32
-SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader, game_memory *Memory)
-{
-    b32 Success = false;
-    if(TileMap->NumTileTypes == 0)
+    // MoveDown is the "S" key
+    // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
+    //      messages are routed to the message loop for the save/load dialog, not our usual
+    //      message loop in the platform layer, and we have code in the platform layer to
+    //      ensure that these are ignored (AS, 9/22)
+    if(GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        return(Success);
+        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader);
     }
 
-    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-    serialized_tile_map *ToWrite = PushStruct(&Scratch->Arena, serialized_tile_map);
-
-    mem_idx BytesToWrite = sizeof(serialized_tile_map);
-    char *MagicNumber = "TILE";
-    mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
-    Assert(MagicNumberSize == 4);
-
-    for(int NthLetter = 0;
-        NthLetter < MagicNumberSize;
-        ++NthLetter)
+    // ActionRight is the "L" key
+    if(GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        ToWrite->MagicNumber[NthLetter] = MagicNumber[NthLetter];
+        b32 LoadResult = LoadTileMapFromFile(TileMap, ScratchHeader);
     }
 
-    ToWrite->NumRows = TileMap->NumRows;
-    ToWrite->NumCols = TileMap->NumCols;
-    ToWrite->NumTileTypes = TileMap->NumTileTypes;
-    ToWrite->TileTypeFilepathsOffset = sizeof(serialized_tile_map);
-    
-    // We initially set this to the same as TileTypeFilepathsOffset but continually increment it as
-    //      we write more filepaths to the file
-    ToWrite->TileValuesOffset = sizeof(serialized_tile_map);
-
-    for(int TypeIdx = 1;
-        TypeIdx <= ToWrite->NumTileTypes;
-        ++TypeIdx)
+    if(GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1)
     {
-        char *FilepathToWrite = TileMap->TileTypes[TypeIdx].Filepath;
-        mem_idx FilepathBytesNeeded = strnlen(FilepathToWrite, STRING_LEN);
-
-        // For null terminator
-        FilepathBytesNeeded += 1;
-
-        char *WriteFilepathHere = PushArray(&Scratch->Arena, char, FilepathBytesNeeded);
-        snprintf(WriteFilepathHere, FilepathBytesNeeded, "%s", FilepathToWrite);
-        ToWrite->TileValuesOffset += FilepathBytesNeeded;
-        BytesToWrite += FilepathBytesNeeded;
-    }
-    
-    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileMap->NumTilesInWorld);
-    for(int ValueIdx = 0;
-        ValueIdx < TileMap->NumTilesInWorld;
-        ++ValueIdx)
-    {
-        WriteTileValuesHere[ValueIdx] = TileMap->TileValues[ValueIdx];
-        BytesToWrite += sizeof(s32);
+        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
     }
 
-    mem_idx MaxPath = 260;
-    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = Memory->DEBUGPlatformGetFilepathFromDialog(Filepath, MaxPath, true);
-    
-    if(GetFilepathResult)
+    if(DebugState->EditorState.PrintRowsCols)
     {
-        Success = Memory->DEBUGPlatformWriteEntireFile(Filepath, BytesToWrite, Scratch->Arena.Data);
+        DEBUGPrintRowsCols(Backbuf, &DebugState->DebugTextArena, TileMap);
     }
-
-    FreeScratchArena(Scratch);
-    return(Success);
-}
-
-static b32
-LoadTileMapFromFile(tile_map *TileMap, arena *TilesArena,
-                     scratch_header *ScratchHeader, 
-                     game_memory *Memory)
-{
-    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-
-    b32 Result = false;
-
-    serialized_tile_map *Header = 0;
-    char *TileTypeFilepaths = 0;
-    s32 *LoadedTileValues = 0;
-
-    mem_idx MaxPath = 260;
-    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = Memory->DEBUGPlatformGetFilepathFromDialog(Filepath, MaxPath, false);
-    if(GetFilepathResult)
-    {
-        u32 Size = Memory->DEBUGPlatformGetFileSize(Filepath);
-        u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
-        // We don't worry about dest buffer being too small here because if it's too small
-        //      PushArray call above will fail
-        if(Memory->DEBUGPlatformReadFileInto(Filepath, Size, LoadedTileMap))
-        {
-            Header = (serialized_tile_map *)LoadedTileMap;
-            char *CompareMagicNumber = "TILE";
-            for(int LetterIdx = 0;
-                LetterIdx < 4;
-                ++LetterIdx)
-            {
-                Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
-            }
-            Assert(Header->NumRows);
-            TileMap->NumRows = Header->NumRows;
-            Assert(Header->NumCols);
-            TileMap->NumCols = Header->NumCols;
-            Assert(Header->NumTileTypes);
-            TileMap->NumTileTypes = Header->NumTileTypes;
-            TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-            TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
-            LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
-        }
-    }
-
-    ResetArena(TilesArena);
-    tile_type *TileTypes = TileMap->TileTypes;
-    for(int TypeIdx = 0;
-        TypeIdx < TILE_ARRAY_LEN;
-        ++TypeIdx)
-    {
-        memset(TileTypes[TypeIdx].Filepath, 0, STRING_LEN);
-        TileTypes[TypeIdx].Bitmap = {};
-    }
-
-    char *FilepathCursor = TileTypeFilepaths;
-    for(int NthType = 1;
-        NthType <= Header->NumTileTypes;
-        ++NthType)
-    {
-        tile_type *ThisType = TileTypes + NthType;
-        mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
-
-        FilepathLen += 1;
-        snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
-        FilepathCursor += FilepathLen;
-
-        LoadBitmap(TilesArena, ThisType, Memory);
-    }
-
-    for(int ValueIdx = 0;
-        ValueIdx < TileMap->NumTilesInWorld;
-        ++ValueIdx)
-    {
-        TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
-    }
-    // memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
-
-    FreeScratchArena(Scratch);
-
-    return(true);
 }
 
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
@@ -920,9 +966,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     game_state *GameState = (game_state *)GameRegion.Data;
     scratch_header *ScratchHeader = (scratch_header *)TransientRegion.Data;
 
+    // Convenience pointers
+    tile_map *TileMap = &GameState->TileMap;
+
+    GetFileSize = Memory->DEBUGPlatformGetFileSize;
+    FreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
+    ReadEntireFile = Memory->DEBUGPlatformReadEntireFile;
+    WriteEntireFile = Memory->DEBUGPlatformWriteEntireFile;
+    GetFileWriteTime = Memory->DEBUGPlatformGetFileWriteTime;
+    GetDirWriteTime = Memory->DEBUGPlatformGetDirWriteTime;
+    GetListOfDirContents = Memory->DEBUGPlatformGetListOfDirContents;
+    ReadFileInto = Memory->DEBUGPlatformReadFileInto;
+    GetFilepathFromDialog = Memory->DEBUGPlatformGetFilepathFromDialog;
+
+    // Global input pointers
+    GlobalKeyboardController = GetController(Input, 0);
+    GlobalDevKeys = &Input->DevKeys;
+    GlobalMouse = &Input->Mouse;
+
     if(!Memory->IsInitialized)
     {
-
         // Random
         GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
@@ -933,14 +996,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DebugState->EditorState.TilesReadyToReload = true;
 
         // Tiles
-        InitializeArena(&GameState->TilesArena, (GameRegion.Data + sizeof(game_state)), Megabytes(4) );
+        InitializeArena(&GameState->TileMap.TilesArena, (GameRegion.Data + sizeof(game_state)), Megabytes(4) );
 
         // World
         InitializeArena(&GameState->WorldArena, 
-                        (GameRegion.Data + sizeof(game_state) + GameState->TilesArena.Size),
-                        (GameRegion.Size - sizeof(game_state) - GameState->TilesArena.Size) );
+                        (GameRegion.Data + sizeof(game_state) + GameState->TileMap.TilesArena.Size),
+                        (GameRegion.Size - sizeof(game_state) - GameState->TileMap.TilesArena.Size) );
 
-        Assert(GameRegion.Size == sizeof(game_state) + GameState->TilesArena.Size + GameState->WorldArena.Size);
+        Assert(GameRegion.Size == sizeof(game_state) + GameState->TileMap.TilesArena.Size + GameState->WorldArena.Size);
 
         arena *WorldArena = &GameState->WorldArena;
 
@@ -960,7 +1023,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 
 // Tiles        
-        tile_map *TileMap = &GameState->TileMap;
         // TileMap dimensions
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
@@ -982,11 +1044,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         //     bitmap *It = &GameState->PlayerBitmaps[PlayerBitmapIdx];
         //     It->ReadyToRead = true;
         //     // Per tufty.h enum order is East = 0, North = 1, West = 2, South = 3
-        //     PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It, Memory);
+        //     PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It);
         // }
 
-        LoadTileBitmapsDir(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
-        DebugState->EditorState.LastTileDirUpdate = Memory->DEBUGPlatformGetDirWriteTime("tiles");
+        LoadTileBitmapsDir(TileMap, &GameState->RandomSeries, ScratchHeader);
+        DebugState->EditorState.LastTileDirUpdate = GetDirWriteTime("tiles");
         DebugState->EditorState.TilesReadyToReload = false;
 
 
@@ -996,10 +1058,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->PlayerFacing = EAST;
 
 // Bagel
-        Bagel = PushStruct(&DebugState->FailBitmapsArena, tile_type);
+        GlobalBagel = PushStruct(&DebugState->FailBitmapsArena, tile_type);
         char *BagelFilepath = "bagel1.bmp";
-        snprintf(Bagel->Filepath, sizeof(Bagel->Filepath), "%s", BagelFilepath);
-        LoadBitmap(&DebugState->FailBitmapsArena, Bagel, Memory);
+        snprintf(GlobalBagel->Filepath, sizeof(GlobalBagel->Filepath), "%s", BagelFilepath);
+        LoadBitmap(&DebugState->FailBitmapsArena, GlobalBagel);
         
         Memory->IsInitialized = true;
     }
@@ -1007,8 +1069,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     ///////////////////////////////////////// INIT END, MAIN LOOP START ////////////////////////////////////////////
 
     DebugState->DebugTextArena.Cursor = 0;
-    // Convenience pointer to TileMap
-    tile_map *TileMap = &GameState->TileMap;
 
     // Check if new tile bitmaps added; if so unload and reload all bitmaps.
     // Wait one frame after bitmap change detected so we don't try to load it
@@ -1016,11 +1076,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(DebugState->EditorState.TilesReadyToReload == true)
     {
         DebugState->EditorState.TilesReadyToReload = false;
-        LoadTileBitmapsDir(&GameState->TilesArena, TileMap, &GameState->RandomSeries, ScratchHeader, Memory);
+        LoadTileBitmapsDir(TileMap, &GameState->RandomSeries, ScratchHeader);
     }
     else
     {
-        u64 CheckUpdateTime = Memory->DEBUGPlatformGetDirWriteTime("tiles");
+        u64 CheckUpdateTime = GetDirWriteTime("tiles");
         if(DebugState->EditorState.LastTileDirUpdate != CheckUpdateTime)
         {
             DebugState->EditorState.LastTileDirUpdate = CheckUpdateTime;
@@ -1039,7 +1099,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             tile_type *TileType = TileMap->TileTypes + TileIdx;
             if(TileType->Filepath[0])
             {
-                DEBUGReloadBitmapIfChanged(TileType, Memory);
+                DEBUGReloadBitmapIfChanged(TileType);
             }
         }
     }
@@ -1049,9 +1109,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //     PlayerBitmapIdx < 4;
     //     ++PlayerBitmapIdx)
     // {
-    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx], Memory);
+    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx]);
     // }
     //
+
 
     // Controller
     for(int ControllerIdx = 0;
@@ -1102,7 +1163,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    if(Input->DevKeys.F1.EndedDown && Input->DevKeys.F1.HalfTransitionCount == 1)
+    if(GlobalDevKeys->F1.EndedDown && GlobalDevKeys->F1.HalfTransitionCount == 1)
     {
         if(DebugState->EditorState.WhichEditor == TILE)
         {
@@ -1113,7 +1174,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             DebugState->EditorState.WhichEditor = TILE;
         }
     }
-    if(Input->DevKeys.F6.EndedDown && Input->DevKeys.F6.HalfTransitionCount == 1)
+    if(GlobalDevKeys->F6.EndedDown && GlobalDevKeys->F6.HalfTransitionCount == 1)
     {
         if(DebugState->EditorState.WhichEditor == PLAYER)
         {
@@ -1161,7 +1222,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if(DebugState->EditorState.WhichEditor == TILE)
     {
-        DrawEditor(Buffer, ScratchHeader, &DebugState->DebugTextArena, TileMap, &Input->Mouse, &DebugState->EditorState);
+        DrawEditor(Buffer, ScratchHeader, DebugState, TileMap);
     }
 
     // else
@@ -1179,31 +1240,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
 
-    // MoveDown is the "S" key
-    // I think we don't need to check half transition count with these because subsequent EndedDown
-    //      messages are routed to the message loop for the save/load dialog, not our usual
-    //      message loop in the platform layer, and we have code in the platform layer to
-    //      ensure that these are ignored
-    if(Input->Controllers[0].MoveDown.EndedDown && Input->DevKeys.Ctrl.EndedDown)
-    {
-        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader, Memory);
-    }
-
-    // ActionRight is the "L" key
-    if(Input->Controllers[0].ActionRight.EndedDown && Input->DevKeys.Ctrl.EndedDown)
-    {
-        b32 LoadResult = LoadTileMapFromFile(TileMap, &GameState->TilesArena, ScratchHeader, Memory);
-    }
-
-    if(Input->DevKeys.F2.EndedDown && Input->DevKeys.F2.HalfTransitionCount == 1)
-    {
-        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
-    }
-    
-    if(DebugState->EditorState.PrintRowsCols)
-    {
-        DEBUGPrintRowsCols(Buffer, &DebugState->DebugTextArena, TileMap);
-    }
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

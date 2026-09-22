@@ -153,6 +153,7 @@ struct tile_type
 
 struct tile_map
 {
+    arena TilesArena;
     int NumRows;
     int NumCols;
     int NumTileTypes;
@@ -168,8 +169,6 @@ struct game_state
     arena WorldArena;
 
     tile_map TileMap;
-    arena TilesArena;
-
     random_series RandomSeries;
 
     v2 PlayerP;
