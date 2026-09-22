@@ -145,7 +145,7 @@ struct mem_region
     u8 *Data;
 };
 
-struct tile_type
+struct bitmap_metadata
 {
     char Filepath[STRING_LEN];
     bitmap Bitmap;
@@ -157,12 +157,37 @@ struct tile_map
     int NumRows;
     int NumCols;
     int NumTileTypes;
-    tile_type TileTypes[TILE_TYPES_ARRAY_LEN];
+    bitmap_metadata TileTypes[TILE_TYPES_ARRAY_LEN];
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
 };
 
+struct facing_player_bitmaps
+{
+    int NumBitmaps;
+    arena Arena;
+    bitmap_metadata *BitmapMetadata;
+};
+
+union all_player_bitmaps
+{
+    facing_player_bitmaps Array[4];
+    struct
+    {
+        facing_player_bitmaps East;
+        facing_player_bitmaps North;
+        facing_player_bitmaps West;
+        facing_player_bitmaps South;
+    };
+};
+
+struct player
+{
+    v2 Position;
+    facing Facing;
+    all_player_bitmaps AllBitmaps;
+};
 
 struct game_state
 {
@@ -171,9 +196,7 @@ struct game_state
     tile_map TileMap;
     random_series RandomSeries;
 
-    v2 PlayerP;
-    facing PlayerFacing;
-    bitmap PlayerBitmaps[4];
+    player Player;
 };
 
 enum which_editor
@@ -186,7 +209,7 @@ enum which_editor
 struct editor_state
 {
     which_editor WhichEditor;
-    tile_type *HeldTileType;
+    bitmap_metadata *HeldTileType;
     b32 PrintRowsCols;
     b32 TilesReadyToReload;
     u64 LastTileDirUpdate;
