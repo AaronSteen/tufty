@@ -1082,7 +1082,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
 
     // Hot reload tile bitmaps but only do so if ReadyToReload is false; i.e., 
-    //      if we're going to reload all of the tiles on the next frame
+    //      if we're not going to reload all of the tiles on the next frame
     if(DebugState->EditorState.TilesReadyToReload == false)
     {
         for(int TileIdx = 1;
