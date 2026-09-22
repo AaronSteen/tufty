@@ -155,8 +155,7 @@ LoadBitmap(arena *Arena, tile_type *TileType)
 }
 
 void
-LoadTileBitmapsDir(tile_map *TileMap, random_series *RandomSeries,
-                    scratch_header *ScratchHeader)
+LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
 {
     // TODO: Use CPP class constructor destructor setup to always 
     //      FreeScratchArena whenever any scope containing a 
@@ -168,7 +167,7 @@ LoadTileBitmapsDir(tile_map *TileMap, random_series *RandomSeries,
     
     // Clear bitmap structs in tile types array
     for(int TypeIdx = 0;
-        TypeIdx < TILE_ARRAY_LEN;
+        TypeIdx < TILE_TYPES_ARRAY_LEN;
         ++TypeIdx)
     {
         TileTypes[TypeIdx].Bitmap = {};
@@ -245,7 +244,7 @@ LoadTileBitmapsDir(tile_map *TileMap, random_series *RandomSeries,
 
     TileMap->NumTileTypes = 0;
     for(int Slot = 1;
-        Slot < TILE_ARRAY_LEN;
+        Slot < TILE_TYPES_ARRAY_LEN;
         ++Slot)
     {
         tile_type *TileType = TileTypes + Slot;
@@ -702,11 +701,16 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     //      the new data from the file
     ResetArena(TilesArena);
     tile_type *TileTypes = TileMap->TileTypes;
-    TileTypes = {};
+    for(int TypeIdx = 0;
+        TypeIdx < TILE_TYPES_ARRAY_LEN;
+        ++TypeIdx)
+    {
+        TileTypes[TypeIdx] = {};
+    }
 
     char *FilepathCursor = TileTypeFilepaths;
     for(int NthType = 1;
-        NthType <= Header->NumTileTypes;
+        NthType <= TileMap->NumTileTypes;
         ++NthType)
     {
         tile_type *ThisType = TileTypes + NthType;
@@ -715,9 +719,9 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
         FilepathLen += 1;
         snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
         FilepathCursor += FilepathLen;
-
-        LoadBitmap(TilesArena, ThisType);
     }
+
+    LoadTileBitmapsDir(TileMap, ScratchHeader);
 
     for(int ValueIdx = 0;
         ValueIdx < TileMap->NumTilesInWorld;
@@ -725,7 +729,6 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     {
         TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
     }
-    // memcpy(TileMap->TileValues, LoadedTileValues, sizeof(s32) * TileMap->NumTilesInWorld);
 
     FreeScratchArena(Scratch);
 
@@ -1026,7 +1029,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
-        mem_idx TileArraySize = sizeof(tile_type) * TILE_ARRAY_LEN;
+        mem_idx TileArraySize = sizeof(tile_type) * TILE_TYPES_ARRAY_LEN;
         memset(TileMap->TileTypes, 0, TileArraySize);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
@@ -1046,7 +1049,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         //     PushBitmapToArena(WorldArena, TempPlayerBitmapFilepaths[PlayerBitmapIdx], It);
         // }
 
-        LoadTileBitmapsDir(TileMap, &GameState->RandomSeries, ScratchHeader);
+        LoadTileBitmapsDir(TileMap, ScratchHeader);
         DebugState->EditorState.LastTileDirUpdate = GetDirWriteTime("tiles");
         DebugState->EditorState.TilesReadyToReload = false;
 
@@ -1075,7 +1078,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(DebugState->EditorState.TilesReadyToReload == true)
     {
         DebugState->EditorState.TilesReadyToReload = false;
-        LoadTileBitmapsDir(TileMap, &GameState->RandomSeries, ScratchHeader);
+        LoadTileBitmapsDir(TileMap, ScratchHeader);
     }
     else
     {
@@ -1092,7 +1095,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(DebugState->EditorState.TilesReadyToReload == false)
     {
         for(int TileIdx = 1;
-            TileIdx < TILE_ARRAY_LEN;
+            TileIdx < TILE_TYPES_ARRAY_LEN;
             ++TileIdx)
         {
             tile_type *TileType = TileMap->TileTypes + TileIdx;

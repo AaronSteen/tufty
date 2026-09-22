@@ -9,7 +9,7 @@
 
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
-#define TILE_ARRAY_LEN (MAX_TILE_TYPES + 1)
+#define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -157,7 +157,7 @@ struct tile_map
     int NumRows;
     int NumCols;
     int NumTileTypes;
-    tile_type TileTypes[TILE_ARRAY_LEN];
+    tile_type TileTypes[TILE_TYPES_ARRAY_LEN];
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
