@@ -20,7 +20,7 @@
 
 // GLOBALS
     // variables
-    static bitmap_metadata *GlobalBagel;
+    static meta_bitmap *GlobalBagel;
     static game_controller_input *GlobalKeyboardController;
     static dev_keys *GlobalDevKeys;
     static game_mouse_input *GlobalMouse;
@@ -100,7 +100,7 @@ ParseBitmapHeader(bitmap *Bitmap)
 }
 
 static void
-DEBUGReloadBitmapIfChanged(bitmap_metadata *TileType)
+DEBUGReloadBitmapIfChanged(meta_bitmap *TileType)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
@@ -128,7 +128,7 @@ DEBUGReloadBitmapIfChanged(bitmap_metadata *TileType)
 }
 
 static void
-LoadBitmap(arena *Arena, bitmap_metadata *TileType)
+LoadBitmap(arena *Arena, meta_bitmap *TileType)
 {
     bitmap *Bitmap = &TileType->Bitmap;
     char *Filepath = TileType->Filepath;
@@ -149,17 +149,19 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
 {
     // Figure out which set of facing bitmaps we're looking at (E, N, W, S)
     mem_idx WhichFacing = FacingBitmaps - Player->AllBitmaps.Array;
+    int *NumBitmaps = &FacingBitmaps->NumBitmaps;
+    arena *FacingArena = &FacingBitmaps->Arena;
+    meta_bitmap *MetaBitmaps = FacingBitmaps->MetaBitmaps;
 
-    ResetArena(&FacingBitmaps->Arena);
+    ResetArena(FacingArena);
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-    bitmap_metadata *BitmapMetadata = FacingBitmaps->BitmapMetadata;
     
     // Clear bitmap structs in the player bitmaps array
     for(int NthBitmap = 0;
         NthBitmap < FACING_BITMAPS_ARRAY_LEN;
         ++NthBitmap)
     {
-        BitmapMetadata[NthBitmap].Bitmap = {};
+        MetaBitmaps[NthBitmap].Bitmap = {};
     }
 
     buffer FoundFilenames;
@@ -222,8 +224,8 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
             NthSlot < FACING_BITMAPS_ARRAY_LEN;
             ++NthSlot)
         {
-            bitmap_metadata *ThisBitmapSlot = FacingBitmaps->BitmapMetadata + NthSlot;
-            if(ThisBitmapSlot->Filepath[0] == 0)
+            meta_bitmap *Slot = MetaBitmaps + NthSlot;
+            if(Slot->Filepath[0] == 0)
             {
                 if(FirstAvailable == 0)
                 {
@@ -233,9 +235,9 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
             else
             {
                 // If a bitmap with this filepath is already in memory, just reload the bitmap
-                if(strncmp(FilepathToLoad, ThisBitmapSlot->Filepath, STRING_LEN) == 0)
+                if(strncmp(FilepathToLoad, Slot->Filepath, STRING_LEN) == 0)
                 {
-                    LoadBitmap(&FacingBitmaps->Arena, ThisBitmapSlot);
+                    LoadBitmap(FacingArena, Slot);
                     AlreadyExists = true;
                     break;
                 }
@@ -246,9 +248,9 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
         if(AlreadyExists == false)
         {
             Assert(strlen(FilepathToLoad) < STRING_LEN);
-            bitmap_metadata *SlotForNewBitmap = BitmapMetadata + FirstAvailable;
-            snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
-            LoadBitmap(&FacingBitmaps->Arena, SlotForNewBitmap);
+            meta_bitmap *Slot = MetaBitmaps + FirstAvailable;
+            snprintf(Slot->Filepath, STRING_LEN, "%s", FilepathToLoad);
+            LoadBitmap(FacingArena, Slot);
         }
 
         while(*ThisFilename)
@@ -262,24 +264,23 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
     //      These are tile bitmaps that were removed from the game. We want them to be
     //      drawn as a bagel instead
 
-    FacingBitmaps->NumBitmaps = 0;
     for(int NthSlot = 1;
         NthSlot < FACING_BITMAPS_ARRAY_LEN;
         ++NthSlot)
     {
-        bitmap_metadata *ThisBitmapMetadata = FacingBitmaps[WhichFacing].BitmapMetadata;
-        bitmap *ThisBitmap = &ThisBitmapMetadata->Bitmap;
-        if(ThisBitmapMetadata->Filepath[0]) // If the bitmap has a filepath
+        meta_bitmap *NthMetaBitmap = MetaBitmaps + NthSlot;
+        if(NthMetaBitmap->Filepath[0]) // If the bitmap has a filepath
         {
-            ++FacingBitmaps->NumBitmaps;
-            if(ThisBitmap->Buffer.Data == 0)
+            *NumBitmaps += 1;
+            bitmap *Bitmap = &NthMetaBitmap->Bitmap;
+            if(Bitmap->Buffer.Data == 0)
             {
-                *ThisBitmap = GlobalBagel->Bitmap;
+                *Bitmap = GlobalBagel->Bitmap;
             }
         }
     }
     
-    return(FacingBitmaps->NumBitmaps);
+    return(*NumBitmaps);
     FreeScratchArena(Scratch);
 }
 
@@ -291,7 +292,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
     //      GetScratchArena call is exited
     arena *TilesArena = &TileMap->TilesArena;
     ResetArena(TilesArena);
-    bitmap_metadata *TileTypes = TileMap->TileTypes;
+    meta_bitmap *TileTypes = TileMap->TileTypes;
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     
     // Clear bitmap structs in tile types array
@@ -330,7 +331,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
             NthSlot < MAX_TILE_TYPES + 1;
             ++NthSlot)
         {
-            bitmap_metadata *TileType = TileTypes + NthSlot;
+            meta_bitmap *TileType = TileTypes + NthSlot;
             if(TileType->Filepath[0] == 0)
             {
                 if(!FirstAvailable)
@@ -354,7 +355,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
         if(ExistingTileType == false)
         {
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
-            bitmap_metadata *SlotForNewBitmap = TileTypes + FirstAvailable;
+            meta_bitmap *SlotForNewBitmap = TileTypes + FirstAvailable;
             snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
            LoadBitmap(TilesArena, SlotForNewBitmap);
         }
@@ -375,7 +376,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
         Slot < TILE_TYPES_ARRAY_LEN;
         ++Slot)
     {
-        bitmap_metadata *TileType = TileTypes + Slot;
+        meta_bitmap *TileType = TileTypes + Slot;
         bitmap *Bitmap = &TileType->Bitmap;
         if(TileType->Filepath[0]) // If the TileType has a filepath
         {
@@ -828,7 +829,7 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     // If the file is valid go ahead and clear the tile data structures to prepare for loading 
     //      the new data from the file
     ResetArena(TilesArena);
-    bitmap_metadata *TileTypes = TileMap->TileTypes;
+    meta_bitmap *TileTypes = TileMap->TileTypes;
     for(int TypeIdx = 0;
         TypeIdx < TILE_TYPES_ARRAY_LEN;
         ++TypeIdx)
@@ -841,7 +842,7 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
         NthType <= TileMap->NumTileTypes;
         ++NthType)
     {
-        bitmap_metadata *ThisType = TileTypes + NthType;
+        meta_bitmap *ThisType = TileTypes + NthType;
         mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
 
         FilepathLen += 1;
@@ -871,62 +872,84 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     v2 BrowserMax = {(f32)Backbuf->Width, ((f32)Backbuf->Height * 0.2f)};
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
 
-    menu_tiles *MenuTiles = Scratch->Arena.Data;
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+    DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
+    char *Dirs[] = {"East", "North", "West", "South"};
+
     int NumTilesNeeded = 0;
-    // Figure out how many menu tiles we need.
+    v2 CoordsStart = {40, 70};
     for(int NthFacing = 0;
         NthFacing < 4;
         ++NthFacing)
     {
-        facing_player_bitmaps *ThisFacing = &Player->AllBitmaps.Array[NthFacing];
-        PushArray(Scratch, menu_tile, ThisFacing->NumBitmaps);
-        NumTilesNeeded += ThisFacing->NumBitmaps;
-    }
+        facing_player_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
+        char Temp[STRING_LEN];
+        snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFacing]);
+        DEBUGDrawText(Backbuf, CoordsStart.X, CoordsStart.Y, Temp, &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
 
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
-
-    
-
-
-
-    
-
-
-    
-
-    // Layout.
-    //      Draw text headings
-    DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
-    v2 FacingTextOffset = {40, 70};
-    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing East", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    FacingTextOffset += v2{460, 0};
-    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing North", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    FacingTextOffset += v2{460, 0};
-    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing West", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    FacingTextOffset += v2{460, 0};
-    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing South", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-
-    //      Draw bitmaps
-    v2 FacingBitmapsOffsetStart = {40, 110};
-    for(int NthHeading = 0;
-        NthHeading < 4;
-        ++NthHeading)
-    {
-        facing_player_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
-        v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
-        for(int NthBitmap = 1;
-            NthBitmap < FacingBitmaps;
+        menu_tile *MenuTilesCursor = PushArray(&Scratch->Arena, menu_tile, Facing->NumBitmaps);
+        v2 CoordsCursor = CoordsStart + v2{0, 40};
+        for(int NthBitmap = 0;
+            NthBitmap < Facing->NumBitmaps;
             ++NthBitmap)
         {
-            DrawSpecialRect(Backbuf, 
-                            FacingBitmapsOffsetMovable, 
-                            FacingBitmapsOffsetMovable + v2{64, 64},
-                            1, 1, 1, true, 0);
-            FacingBitmapsOffsetMovable += v2{70, 0};
+            MenuTilesCursor->TileMin = CoordsCursor;
+            MenuTilesCursor->TileMax = MenuTilesCursor->TileMin + v2{64.0f, 64.0f};
+            MenuTilesCursor->MetaBitmap = Facing->MetaBitmaps + NthBitmap + 1;
+
+            CoordsCursor += v2{70, 0};
+            ++MenuTilesCursor;
+            ++NumTilesNeeded;
         }
-        FacingBitmapsOffsetStart += v2{460, 0};
+        CoordsStart += v2{460, 0};
     }
 
+
+    
+
+
+    
+
+
+
+    
+
+
+    
+
+    // // Layout.
+    // //      Draw text headings
+    // DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
+    // v2 FacingTextOffset = {40, 70};
+    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing East", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    // FacingTextOffset += v2{460, 0};
+    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing North", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    // FacingTextOffset += v2{460, 0};
+    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing West", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    // FacingTextOffset += v2{460, 0};
+    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing South", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    //
+    // //      Draw bitmaps
+    // v2 FacingBitmapsOffsetStart = {40, 110};
+    // for(int NthHeading = 0;
+    //     NthHeading < 4;
+    //     ++NthHeading)
+    // {
+    //     facing_player_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
+    //     v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
+    //     for(int NthBitmap = 1;
+    //         NthBitmap < FacingBitmaps;
+    //         ++NthBitmap)
+    //     {
+    //         DrawSpecialRect(Backbuf, 
+    //                         FacingBitmapsOffsetMovable, 
+    //                         FacingBitmapsOffsetMovable + v2{64, 64},
+    //                         1, 1, 1, true, 0);
+    //         FacingBitmapsOffsetMovable += v2{70, 0};
+    //     }
+    //     FacingBitmapsOffsetStart += v2{460, 0};
+    // }
+    //
 
     // Subregion
 
@@ -971,7 +994,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     //             {
     //                 int NumBitmaps;
     //                 arena Arena;
-    //                 bitmap_metadata BitmapMetadata[FACING_BITMAPS_ARRAY_LEN];
+    //                 meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
     //             };
     //             facing_player_bitmaps North;
     //             facing_player_bitmaps West;
@@ -990,7 +1013,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     {
         Scratch = GetScratchArena(ScratchHeader);
         MenuTiles = PushArray(&Scratch->Arena, menu_tile, TileMap->NumTileTypes);
-        bitmap_metadata *NextTileType = TileMap->TileTypes + 1;
+        meta_bitmap *NextTileType = TileMap->TileTypes + 1;
 
         for(int NthTileType = 0;
             NthTileType < TileMap->NumTileTypes;
@@ -1001,13 +1024,13 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
             {
                 ++NextTileType;
             }
-            bitmap_metadata *ThisTileType = NextTileType;
+            meta_bitmap *ThisTileType = NextTileType;
             NextTileType += 1;
 
             menu_tile *ThisMenuTile = MenuTiles + NthTileType;
             ThisMenuTile->TileMin = {X, Y};
             ThisMenuTile->TileMax = ThisMenuTile->TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
-            ThisMenuTile->TileType = ThisTileType;
+            ThisMenuTile->MetaBitmap = ThisTileType;
 
             ++TilesDrawnInThisRow;
             if(TilesDrawnInThisRow == 3)
@@ -1027,7 +1050,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
             ++NthMenuTile)
         {
             menu_tile *ThisMenuTile = MenuTiles + NthMenuTile;
-            ScaleAndBlitBitmap(Backbuf, ThisMenuTile->TileMin, ThisMenuTile->TileMax, &ThisMenuTile->TileType->Bitmap);
+            ScaleAndBlitBitmap(Backbuf, ThisMenuTile->TileMin, ThisMenuTile->TileMax, &ThisMenuTile->MetaBitmap->Bitmap);
 
             v2 OutlineMin = {ThisMenuTile->TileMin.X-1, ThisMenuTile->TileMin.Y-1};
             v2 OutlineMax = {ThisMenuTile->TileMax.X+1, ThisMenuTile->TileMax.Y+1};
@@ -1040,10 +1063,10 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
                 if(GlobalMouse->Primary.EndedDown && GlobalMouse->Primary.HalfTransitionCount == 1)
                 {
                     if(EditorState->HeldTileType && 
-                        (ThisMenuTile->TileType->Bitmap.Pixels == GlobalBagel->Bitmap.Pixels))
+                        (ThisMenuTile->MetaBitmap->Bitmap.Pixels == GlobalBagel->Bitmap.Pixels))
                     {
-                        bitmap_metadata *TileTypeToReplace = ThisMenuTile->TileType;
-                        mem_idx TileTypeToReplaceIdx = (ThisMenuTile->TileType - TileMap->TileTypes);
+                        meta_bitmap *TileTypeToReplace = ThisMenuTile->MetaBitmap;
+                        mem_idx TileTypeToReplaceIdx = (ThisMenuTile->MetaBitmap - TileMap->TileTypes);
                         mem_idx OldTileIdx = (EditorState->HeldTileType - TileMap->TileTypes);
                         TileMap->TileTypes[TileTypeToReplaceIdx] = TileMap->TileTypes[OldTileIdx]; 
                         TileMap->TileTypes[OldTileIdx] = {};
@@ -1063,7 +1086,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
                     }
                     else
                     {
-                        EditorState->HeldTileType = ThisMenuTile->TileType;
+                        EditorState->HeldTileType = ThisMenuTile->MetaBitmap;
                     }
                 }
                 DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
@@ -1287,7 +1310,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         Player->Facing = EAST;
 
 // Bagel
-        GlobalBagel = PushStruct(&DebugState->FailBitmapsArena, bitmap_metadata);
+        GlobalBagel = PushStruct(&DebugState->FailBitmapsArena, meta_bitmap);
         char *BagelFilepath = "bagel1.bmp";
         snprintf(GlobalBagel->Filepath, sizeof(GlobalBagel->Filepath), "%s", BagelFilepath);
         LoadBitmap(&DebugState->FailBitmapsArena, GlobalBagel);
@@ -1325,7 +1348,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             TileIdx < TILE_TYPES_ARRAY_LEN;
             ++TileIdx)
         {
-            bitmap_metadata *TileType = TileMap->TileTypes + TileIdx;
+            meta_bitmap *TileType = TileMap->TileTypes + TileIdx;
             if(TileType->Filepath[0])
             {
                 DEBUGReloadBitmapIfChanged(TileType);
@@ -1441,7 +1464,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
             if(TileValue > 0)
             {
-                bitmap_metadata *TileType = TileMap->TileTypes + TileValue;
+                meta_bitmap *TileType = TileMap->TileTypes + TileValue;
                 bitmap *TileBitmap = &TileMap->TileTypes[TileValue].Bitmap;
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
             }
