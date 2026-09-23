@@ -869,10 +869,29 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
     v2 BrowserMin = {0, 0};
     v2 BrowserMax = {(f32)Backbuf->Width, ((f32)Backbuf->Height * 0.2f)};
-    scratch_arena *Scratch = nullptr;
-    menu_tile *MenuTiles = nullptr;
+    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+
+    menu_tiles *MenuTiles = Scratch->Arena.Data;
+    int NumTilesNeeded = 0;
+    // Figure out how many menu tiles we need.
+    for(int NthFacing = 0;
+        NthFacing < 4;
+        ++NthFacing)
+    {
+        facing_player_bitmaps *ThisFacing = &Player->AllBitmaps.Array[NthFacing];
+        PushArray(Scratch, menu_tile, ThisFacing->NumBitmaps);
+        NumTilesNeeded += ThisFacing->NumBitmaps;
+    }
 
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+
+    
+
+
+
+    
+
+
     
 
     // Layout.
@@ -887,15 +906,16 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     FacingTextOffset += v2{460, 0};
     DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing South", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
 
-    v2 FacingBitmapsOffsetStart = {40, 110};
     //      Draw bitmaps
+    v2 FacingBitmapsOffsetStart = {40, 110};
     for(int NthHeading = 0;
         NthHeading < 4;
         ++NthHeading)
     {
+        facing_player_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
         v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
-        for(int NthBitmap = 0;
-            NthBitmap < 5;
+        for(int NthBitmap = 1;
+            NthBitmap < FacingBitmaps;
             ++NthBitmap)
         {
             DrawSpecialRect(Backbuf, 
