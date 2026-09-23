@@ -110,11 +110,17 @@ operator+(v2 A, v2 B)
     return(Result);
 }
 
+v2
+operator+=(v2 &A, v2 B)
+{
+    A = A + B;
+    return(A);
+}
+
 b32
 operator==(v2 A, v2 B)
 {
     b32 Result = ((A.X == B.X) && (A.Y == B.Y));
-
     return(Result);
 }
 

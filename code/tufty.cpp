@@ -156,7 +156,7 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
     
     // Clear bitmap structs in the player bitmaps array
     for(int NthBitmap = 0;
-        NthBitmap < FacingBitmaps->NumBitmaps;
+        NthBitmap < FACING_BITMAPS_ARRAY_LEN;
         ++NthBitmap)
     {
         BitmapMetadata[NthBitmap].Bitmap = {};
@@ -219,7 +219,7 @@ LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scrat
 
         // Always leave slot 0 empty
         for(int NthSlot = 1;
-            NthSlot <= FACING_BITMAPS_ARRAY_LEN;
+            NthSlot < FACING_BITMAPS_ARRAY_LEN;
             ++NthSlot)
         {
             bitmap_metadata *ThisBitmapSlot = FacingBitmaps->BitmapMetadata + NthSlot;
@@ -356,7 +356,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
             bitmap_metadata *SlotForNewBitmap = TileTypes + FirstAvailable;
             snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
-            LoadBitmap(TilesArena, SlotForNewBitmap);
+           LoadBitmap(TilesArena, SlotForNewBitmap);
         }
 
         while(*ThisFilename)
@@ -864,7 +864,7 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
 }
 
 static void
-DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState)
+DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, player *Player)
 {
     v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
     v2 BrowserMin = {0, 0};
@@ -873,6 +873,50 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     menu_tile *MenuTiles = nullptr;
 
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+    
+
+    // Layout.
+    //      Draw text headings
+    DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
+    v2 FacingTextOffset = {40, 70};
+    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing East", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    FacingTextOffset += v2{460, 0};
+    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing North", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    FacingTextOffset += v2{460, 0};
+    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing West", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+    FacingTextOffset += v2{460, 0};
+    DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing South", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+
+    v2 FacingBitmapsOffsetStart = {40, 110};
+    //      Draw bitmaps
+    for(int NthHeading = 0;
+        NthHeading < 4;
+        ++NthHeading)
+    {
+        v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
+        for(int NthBitmap = 0;
+            NthBitmap < 5;
+            ++NthBitmap)
+        {
+            DrawSpecialRect(Backbuf, 
+                            FacingBitmapsOffsetMovable, 
+                            FacingBitmapsOffsetMovable + v2{64, 64},
+                            1, 1, 1, true, 0);
+            FacingBitmapsOffsetMovable += v2{70, 0};
+        }
+        FacingBitmapsOffsetStart += v2{460, 0};
+    }
+
+
+    // Subregion
+
+
+
+
+
+
+        
+
 
 
 }
@@ -894,6 +938,28 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     int TilesDrawnInThisRow = 0;
     editor_state *EditorState = &DebugState->EditorState;
 
+    // struct player
+    // {
+    //     v2 Positon;
+    //     facing Facing;
+    //     union all_player_bitmaps AllBitmaps
+    //     {
+    //         facing_player_bitmaps Array[4];
+    //         struct
+    //         {
+    //             facing_player_bitmaps East
+    //             {
+    //                 int NumBitmaps;
+    //                 arena Arena;
+    //                 bitmap_metadata BitmapMetadata[FACING_BITMAPS_ARRAY_LEN];
+    //             };
+    //             facing_player_bitmaps North;
+    //             facing_player_bitmaps West;
+    //             facing_player_bitmaps South;
+    //         };
+    //     };
+    // };
+    //
     // Panel
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
 
@@ -1131,7 +1197,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Debug
         InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
         InitializeArena(&DebugState->FailBitmapsArena, (DebugRegion.Data + sizeof(debug_state) + DebugState->DebugTextArena.Size), Megabytes(1));
-        DebugState->EditorState.TilesReadyToReload = true;
 
         mem_idx GameRegionOffset = sizeof(game_state);
 
@@ -1176,11 +1241,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 // Tiles        
         // TileMap dimensions
+
+        // TODO(Aaron): Move TileTypes array into memory?
         TileMap->TileSideInPixels = 64.0f;
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
-        mem_idx TileArraySize = sizeof(bitmap_metadata) * TILE_TYPES_ARRAY_LEN;
-        memset(TileMap->TileTypes, 0, TileArraySize);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
 
@@ -1191,7 +1256,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 // Player
         player *Player = &GameState->Player;
-        LoadPlayerBitmapsDir(Player, &Player->AllBitmaps.Array[EAST], ScratchHeader);
+        for(int Facing = 0;
+            Facing < 4;
+            ++Facing)
+        {
+            LoadPlayerBitmapsDir(Player, &Player->AllBitmaps.Array[Facing], ScratchHeader);
+        }
         Player->Position.X = Buffer->Width / 2;
         Player->Position.Y = Buffer->Height / 2;
         Player->Facing = EAST;
@@ -1368,7 +1438,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     else if(DebugState->EditorState.WhichEditor == PLAYER)
     {
-        DrawPlayerEditor(Buffer, ScratchHeader, DebugState);
+        DrawPlayerEditor(Buffer, ScratchHeader, DebugState, &GameState->Player);
     }
 
     // else
