@@ -111,6 +111,17 @@ operator+(v2 A, v2 B)
 }
 
 v2
+operator-(v2 A, v2 B)
+{
+    v2 Result;
+
+    Result.X = A.X - B.X;
+    Result.Y = A.Y - B.Y;
+
+    return(Result);
+}
+
+v2
 operator+=(v2 &A, v2 B)
 {
     A = A + B;

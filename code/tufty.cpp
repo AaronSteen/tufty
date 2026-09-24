@@ -868,16 +868,19 @@ static void
 DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, player *Player)
 {
     v2 MouseCoords = {(f32)GlobalMouse->X, (f32)GlobalMouse->Y};
-    v2 BrowserMin = {0, 0};
-    v2 BrowserMax = {(f32)Backbuf->Width, ((f32)Backbuf->Height * 0.2f)};
+    v2 BrowserMin = {(f32)(Backbuf->Width * 0.5f), 0};
+    v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
 
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
-    DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
-    char *Dirs[] = {"East", "North", "West", "South"};
 
+    DEBUGDrawText(Backbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.5);
+
+    char *Dirs[] = {"East", "North", "West", "South"};
     int NumTilesNeeded = 0;
-    v2 CoordsStart = {40, 70};
+    f32 VerticalSpaceBetweenSections = 220;
+    v2 HeaderTextStart = {BrowserMin.X + 30, 120};
+    f32 CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
     for(int NthFacing = 0;
         NthFacing < 4;
         ++NthFacing)
@@ -885,31 +888,35 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         facing_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFacing]);
-        DEBUGDrawText(Backbuf, CoordsStart.X, CoordsStart.Y, Temp, &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+        DEBUGDrawText(Backbuf, HeaderTextStart.X, HeaderTextStart.Y, Temp, &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
 
         menu_tile *MenuTilesCursor = PushArray(&Scratch->Arena, menu_tile, Facing->NumBitmaps);
-        v2 CoordsCursor = CoordsStart + v2{0, 40};
-        for(int NthBitmap = 0;
-            NthBitmap < Facing->NumBitmaps;
+        f32 XDrawCoord = HeaderTextStart.X;
+        for(int NthBitmap = 1;
+            NthBitmap <= Facing->NumBitmaps;
             ++NthBitmap)
         {
-            MenuTilesCursor->TileMin = CoordsCursor;
-            MenuTilesCursor->TileMax = MenuTilesCursor->TileMin + v2{64.0f, 64.0f};
-            MenuTilesCursor->MetaBitmap = Facing->MetaBitmaps + NthBitmap + 1;
+            bitmap *ThisBitmap = &Facing->MetaBitmaps[NthBitmap].Bitmap;
+            f32 Width = ThisBitmap->Width;
+            f32 Height = ThisBitmap->Height;
 
-            CoordsCursor += v2{70, 0};
+            MenuTilesCursor->TileMin = v2{(f32)XDrawCoord, CenterAroundThisVerticalLine - Height * 0.5f};
+            MenuTilesCursor->TileMax = MenuTilesCursor->TileMin + v2{Width, Height};
+            MenuTilesCursor->MetaBitmap = Facing->MetaBitmaps + NthBitmap;
+
+            XDrawCoord = MenuTilesCursor->TileMax.X + 30.0f;
             ++MenuTilesCursor;
             ++NumTilesNeeded;
         }
-        CoordsStart += v2{460, 0};
+        HeaderTextStart += v2{0, VerticalSpaceBetweenSections};
+        CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
     }
-
+    
     menu_tile *MenuTile = (menu_tile *)Scratch->Arena.Data;
     for(int NthMenuTile = 0;
         NthMenuTile < NumTilesNeeded;
         ++NthMenuTile)
     {
-        // If the bitmaps are smaller than 64x64 we want to draw the
         ScaleAndBlitBitmap(Backbuf, MenuTile->TileMin, MenuTile->TileMax, &MenuTile->MetaBitmap->Bitmap);
         v2 OutlineMin = MenuTile->TileMin + v2{-1.0f, -1.0f};
         v2 OutlineMax = MenuTile->TileMax + v2{1.0f, 1.0f};
@@ -927,15 +934,17 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
     if(CurrentFacing->NumBitmaps > 0)
     {
-        // Draw player at the center of the screen if the player editor is active
+        // Draw player to left of browser if player editor is active
         f32 PlayerWidth = CurrentFacing->DrawThis->Width;
         f32 PlayerHeight = CurrentFacing->DrawThis->Height;
 
-        v2 PlayerMin = v2{(f32)Backbuf->Width * 0.5f - PlayerWidth * 0.5f, 
+        v2 PlayerMin = v2{(f32)Backbuf->Width * 0.25f - PlayerWidth * 0.5f, 
                             (f32)Backbuf->Height * 0.5f - PlayerHeight * 0.5f};
         v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
         ScaleAndBlitBitmap(Backbuf, PlayerMin, PlayerMax, CurrentFacing->DrawThis);
     }
+
+
 
     if(Scratch)
     {
@@ -1019,28 +1028,6 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     int TilesDrawnInThisRow = 0;
     editor_state *EditorState = &DebugState->EditorState;
 
-    // struct player
-    // {
-    //     v2 Positon;
-    //     facing Facing;
-    //     union all_player_bitmaps AllBitmaps
-    //     {
-    //         facing_bitmaps Array[4];
-    //         struct
-    //         {
-    //             facing_bitmaps East
-    //             {
-    //                 int NumBitmaps;
-    //                 arena Arena;
-    //                 meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
-    //             };
-    //             facing_bitmaps North;
-    //             facing_bitmaps West;
-    //             facing_bitmaps South;
-    //         };
-    //     };
-    // };
-    //
     // Panel
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
 
