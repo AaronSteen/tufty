@@ -145,7 +145,7 @@ LoadBitmap(arena *Arena, meta_bitmap *TileType)
 }
 
 static int
-LoadPlayerBitmapsDir(player *Player, facing_player_bitmaps *FacingBitmaps, scratch_header *ScratchHeader)
+LoadPlayerBitmapsDir(player *Player, facing_bitmaps *FacingBitmaps, scratch_header *ScratchHeader)
 {
     // Figure out which set of facing bitmaps we're looking at (E, N, W, S)
     mem_idx WhichFacing = FacingBitmaps - Player->AllBitmaps.Array;
@@ -444,7 +444,7 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
 void
 DrawSpecialRect(game_offscreen_buffer *Buf,
                 v2 Min, v2 Max,
-                f32 R, f32 G, f32 B, b32 Outline = false, f32 Alpha = 0.5f)
+                f32 R, f32 G, f32 B, f32 Opacity, b32 Outline)
 {
     s32 MinX = RoundF32ToS32(Min.X);
     s32 MinY = RoundF32ToS32(Min.Y);
@@ -492,13 +492,13 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
             else
             {
                 // Blue
-                Pixel[0] = LerpS32(Pixel[0], Blue, Alpha);
+                Pixel[0] = LerpS32(Pixel[0], Blue, Opacity);
 
                 // Green
-                Pixel[1] = LerpS32(Pixel[1], Green, Alpha);
+                Pixel[1] = LerpS32(Pixel[1], Green, Opacity);
                 
                 // Red
-                Pixel[2] = LerpS32(Pixel[2], Red, Alpha);
+                Pixel[2] = LerpS32(Pixel[2], Red, Opacity);
 
             }
             Pixel += sizeof(u32);
@@ -532,7 +532,7 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
         }
         else
         {
-            DrawSpecialRect(Backbuf, Min, Max, R, G, B, false, Alpha);
+            DrawSpecialRect(Backbuf, Min, Max, R, G, B, Alpha, false);
         }
     }
 }
@@ -633,7 +633,7 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
 {
     if(!Bitmap->Pixels)
     {
-        Bitmap = &GlobalBagel->Bitmap;
+        return;
     }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
     f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
@@ -872,7 +872,7 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     v2 BrowserMax = {(f32)Backbuf->Width, ((f32)Backbuf->Height * 0.2f)};
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
 
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
     DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
     char *Dirs[] = {"East", "North", "West", "South"};
 
@@ -882,7 +882,7 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         NthFacing < 4;
         ++NthFacing)
     {
-        facing_player_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
+        facing_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFacing]);
         DEBUGDrawText(Backbuf, CoordsStart.X, CoordsStart.Y, Temp, &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
@@ -902,6 +902,44 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
             ++NumTilesNeeded;
         }
         CoordsStart += v2{460, 0};
+    }
+
+    menu_tile *MenuTile = (menu_tile *)Scratch->Arena.Data;
+    for(int NthMenuTile = 0;
+        NthMenuTile < NumTilesNeeded;
+        ++NthMenuTile)
+    {
+        // If the bitmaps are smaller than 64x64 we want to draw the
+        ScaleAndBlitBitmap(Backbuf, MenuTile->TileMin, MenuTile->TileMax, &MenuTile->MetaBitmap->Bitmap);
+        v2 OutlineMin = MenuTile->TileMin + v2{-1.0f, -1.0f};
+        v2 OutlineMax = MenuTile->TileMax + v2{1.0f, 1.0f};
+        if(MouseCoords.X >= MenuTile->TileMin.X &&
+            MouseCoords.Y >= MenuTile->TileMin.Y &&
+            MouseCoords.X < MenuTile->TileMax.X &&
+            MouseCoords.Y < MenuTile->TileMax.Y)
+        {
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 1, 1, 1, 0.5f, true);
+        }
+        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 1, 1, 1, 0, true);
+        ++MenuTile;
+    }
+
+    facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
+    if(CurrentFacing->NumBitmaps > 0)
+    {
+        // Draw player at the center of the screen if the player editor is active
+        f32 PlayerWidth = CurrentFacing->DrawThis->Width;
+        f32 PlayerHeight = CurrentFacing->DrawThis->Height;
+
+        v2 PlayerMin = v2{(f32)Backbuf->Width * 0.5f - PlayerWidth * 0.5f, 
+                            (f32)Backbuf->Height * 0.5f - PlayerHeight * 0.5f};
+        v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+        ScaleAndBlitBitmap(Backbuf, PlayerMin, PlayerMax, CurrentFacing->DrawThis);
+    }
+
+    if(Scratch)
+    {
+        FreeScratchArena(Scratch);
     }
 
 
@@ -935,7 +973,7 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     //     NthHeading < 4;
     //     ++NthHeading)
     // {
-    //     facing_player_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
+    //     facing_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
     //     v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
     //     for(int NthBitmap = 1;
     //         NthBitmap < FacingBitmaps;
@@ -987,24 +1025,24 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     //     facing Facing;
     //     union all_player_bitmaps AllBitmaps
     //     {
-    //         facing_player_bitmaps Array[4];
+    //         facing_bitmaps Array[4];
     //         struct
     //         {
-    //             facing_player_bitmaps East
+    //             facing_bitmaps East
     //             {
     //                 int NumBitmaps;
     //                 arena Arena;
     //                 meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
     //             };
-    //             facing_player_bitmaps North;
-    //             facing_player_bitmaps West;
-    //             facing_player_bitmaps South;
+    //             facing_bitmaps North;
+    //             facing_bitmaps West;
+    //             facing_bitmaps South;
     //         };
     //     };
     // };
     //
     // Panel
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, true, 0.85f);
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
 
     DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.5);
 
@@ -1089,11 +1127,11 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
                         EditorState->HeldTileType = ThisMenuTile->MetaBitmap;
                     }
                 }
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, 0.5f, true);
             }
             else
             {
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, true, 0);
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, 0, true);
             }
         }
         if(Scratch)
@@ -1130,7 +1168,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
         v2 TinyTileMin = MouseCoords + (v2){20.0f, 20.0f};
         v2 TinyTileMax = TinyTileMin + (v2){(f32)(TileMap->TileSideInPixels * 0.5), (f32)(TileMap->TileSideInPixels * 0.5)};
         ScaleAndBlitBitmap(Backbuf, TinyTileMin, TinyTileMax, &EditorState->HeldTileType->Bitmap);
-        DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, true, 0);
+        DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, 0, true);
     }
 
 
@@ -1145,7 +1183,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(TileMap->TileSideInPixels);
         v2 OutlineMin = {TileAsV2.X * TileMap->TileSideInPixels, TileAsV2.Y * TileMap->TileSideInPixels};
         v2 OutlineMax = OutlineMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
-        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, true);
+        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, 0, true);
         s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
 
         if((GlobalMouse->Secondary.EndedDown) &&
@@ -1214,6 +1252,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Convenience pointers
     tile_map *TileMap = &GameState->TileMap;
+    player *Player = &GameState->Player;
 
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
     FreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
@@ -1252,8 +1291,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Facing < 4;
             ++Facing)
         {
-            InitializeArena(&GameState->Player.AllBitmaps.Array[Facing].Arena, GameRegion.Data + GameRegionOffset, Megabytes(1));
-            GameRegionOffset += GameState->Player.AllBitmaps.Array[Facing].Arena.Size;
+            arena *Arena = &Player->AllBitmaps.Array[Facing].Arena;
+            InitializeArena(Arena, GameRegion.Data + GameRegionOffset, Megabytes(1));
+            GameRegionOffset += Arena->Size;
         }
 
         // World
@@ -1261,7 +1301,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         mem_idx GameRegionMemoryUsed = sizeof(game_state) + 
                                         GameState->TileMap.TilesArena.Size + 
-                                        (GameState->Player.AllBitmaps.East.Arena.Size * 4) + 
+                                        (Player->AllBitmaps.East.Arena.Size * 4) + 
                                         GameState->WorldArena.Size;
         Assert(GameRegion.Size == GameRegionMemoryUsed);
 
@@ -1298,18 +1338,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 
 // Player
-        player *Player = &GameState->Player;
         for(int Facing = 0;
             Facing < 4;
             ++Facing)
         {
-            LoadPlayerBitmapsDir(Player, &Player->AllBitmaps.Array[Facing], ScratchHeader);
+            facing_bitmaps *ThisFacing = &Player->AllBitmaps.Array[Facing];
+            int NumLoaded = LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
+            if(NumLoaded == -1)
+            {
+                // This should already be zero anyway since we initialize all memory to zero but let's be explicit about
+                ThisFacing->NumBitmaps = 0;
+                ThisFacing->DrawThis = &ThisFacing->MetaBitmaps[0].Bitmap;
+            }
+            if(ThisFacing->NumBitmaps >= 1)
+            {
+                ThisFacing->DrawThis = &ThisFacing->MetaBitmaps[1].Bitmap;
+            }
         }
+        
         Player->Position.X = Buffer->Width / 2;
         Player->Position.Y = Buffer->Height / 2;
         Player->Facing = EAST;
 
 // Bagel
+        // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
+        //      so we know when we called it with nullptr
         GlobalBagel = PushStruct(&DebugState->FailBitmapsArena, meta_bitmap);
         char *BagelFilepath = "bagel1.bmp";
         snprintf(GlobalBagel->Filepath, sizeof(GlobalBagel->Filepath), "%s", BagelFilepath);
@@ -1365,14 +1418,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // }
     //
 
-
     // Controller
     for(int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
         ++ControllerIdx)
     {
         game_controller_input *Controller = GetController(Input, ControllerIdx);
-        player *Player = &GameState->Player;
         if(Controller->IsAnalog)
         {
         }
@@ -1470,7 +1521,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             if(DebugState->EditorState.WhichEditor == TILE)
             {
-                DrawSpecialRect(Buffer, TileMin, TileMax, 0, 0, 0, true, 0);
+                DrawSpecialRect(Buffer, TileMin, TileMax, 0, 0, 0, 0, true);
             }
         }
     }
@@ -1482,20 +1533,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else if(DebugState->EditorState.WhichEditor == PLAYER)
     {
         DrawPlayerEditor(Buffer, ScratchHeader, DebugState, &GameState->Player);
+
+
     }
 
-    // else
-    // {
-    //     // Player
-    //     v2 PlayerMin = {GameState->PlayerP.X - (PLAYER_WIDTH * 0.5f), 
-    //         GameState->PlayerP.Y - PLAYER_HEIGHT};
-    //     v2 PlayerMax = {GameState->PlayerP.X + (PLAYER_WIDTH * 0.5f), 
-    //         GameState->PlayerP.Y};
-    //
-    //     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-    //     //      in the game when moving character around. test this.
-    //     ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &GameState->PlayerBitmaps[Player->Facing]);
-    // }
+    else
+    {
+        // Player
+        bitmap *ToDraw = Player->AllBitmaps.Array[Player->Facing].DrawThis;
+        f32 PlayerWidth = ToDraw->Width;
+        f32 PlayerHeight = ToDraw->Height;
+        v2 PlayerMin = {Player->Position.X - PlayerWidth * 0.5f, 
+                        Player->Position.Y - PlayerHeight};
+        v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+
+        // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+        //      in the game when moving character around. test this.
+        ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, ToDraw);
+    }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
 

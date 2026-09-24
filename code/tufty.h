@@ -178,22 +178,23 @@ struct menu_tile
     meta_bitmap *MetaBitmap;
 };
 
-struct facing_player_bitmaps
+struct facing_bitmaps
 {
     int NumBitmaps;
     arena Arena;
+    bitmap *DrawThis;
     meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
 };
 
 union all_player_bitmaps
 {
-    facing_player_bitmaps Array[4];
+    facing_bitmaps Array[4];
     struct
     {
-        facing_player_bitmaps East;
-        facing_player_bitmaps North;
-        facing_player_bitmaps West;
-        facing_player_bitmaps South;
+        facing_bitmaps East;
+        facing_bitmaps North;
+        facing_bitmaps West;
+        facing_bitmaps South;
     };
 };
 
