@@ -84,7 +84,10 @@ GetScratchArena(scratch_header *ScratchHeader)
 void
 FreeScratchArena(scratch_arena *Scratch)
 {
-    Scratch->IsFree = true;
+    if(Scratch)
+    {
+        Scratch->IsFree = true;
+    }
 }
 
 void
@@ -106,7 +109,7 @@ ParseBitmapHeader(bitmap *Bitmap)
     Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
 }
 
-static void
+static mem_idx
 DEBUGReloadBitmapIfChanged(meta_bitmap *MetaBitmap)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
@@ -116,11 +119,27 @@ DEBUGReloadBitmapIfChanged(meta_bitmap *MetaBitmap)
     if(MetaBitmap->ReadyToReload == true)
     {
         MetaBitmap->ReadyToReload = false;
-        mem_idx BytesRead = ReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
-        if(BytesRead == Bitmap->Buffer.Size)
+        // Load the bitmap and check to see if it has the same dimensions. If so, just replace the pixels.
+        
+        // If not, the bitmap the user reloaded changed size; and we need to reload the entire dir, so return the size of the 
+        // bitmap to load so the caller can decide what to do.
+        // because e.g., if the reloaded bitmap is bigger than the previous version, it might not
+        // fit in the space in the arena we have set aside for it.
+
+        // In the future we could just say that a bitmap has a max size and always allocate that any bytes;
+        //      this would allow us to use the same pointer for any single reloaded bitmap, no matter
+        //      what the reloaded size is, and keep the other bitmaps where they are.
+        mem_idx NewBitmapSize = GetFileSize(Filepath);
+        if(NewBitmapSize == Bitmap->Buffer.Size)
         {
+            mem_idx NumBytesLoaded = ReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
             ParseBitmapHeader(Bitmap);
             MetaBitmap->LastUpdateTime = GetFileWriteTime(Filepath);
+            return(NumBytesLoaded);
+        }
+        else
+        {
+            return(NewBitmapSize);
         }
     }
     else
@@ -129,8 +148,8 @@ DEBUGReloadBitmapIfChanged(meta_bitmap *MetaBitmap)
         if(WriteTime && (WriteTime != MetaBitmap->LastUpdateTime))
         {
             MetaBitmap->ReadyToReload = true;
-            MetaBitmap->LastUpdateTime = WriteTime;
         }
+        return(Bitmap->Buffer.Size);
     }
 }
 
@@ -199,10 +218,7 @@ LoadPlayerBitmapsDir(player *Player, facing_bitmaps *FacingBitmaps, scratch_head
     // If we found no bitmaps or too many, just return
     if((NumFilesFound > MAX_FACING_BITMAPS) || (NumFilesFound == 0))
     {
-        if(Scratch)
-        {
-            FreeScratchArena(Scratch);
-        }
+        FreeScratchArena(Scratch);
         return;
     }
 
@@ -279,10 +295,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
     // If we found no bitmaps or too many, just return
     if((NumFilesFound > MAX_TILE_TYPES) || (NumFilesFound == 0))
     {
-        if(Scratch)
-        {
-            FreeScratchArena(Scratch);
-        }
+        FreeScratchArena(Scratch);
         return;
     }
 
@@ -317,7 +330,6 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
                 if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
                 {
                     LoadBitmap(TilesArena, TileType);
-                    ++TileMap->NumTileTypes;
                     ExistingTileType = true;
                     break;
                 }
@@ -332,7 +344,6 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
             meta_bitmap *SlotForNewBitmap = TileTypes + FirstAvailable;
             snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
             LoadBitmap(TilesArena, SlotForNewBitmap);
-            ++TileMap->NumTileTypes;
         }
 
         while(*ThisFilename)
@@ -351,10 +362,15 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
         ++Slot)
     {
         meta_bitmap *TileType = TileTypes + Slot;
-        if(TileType->Filepath[0] && (TileType->Bitmap.Buffer.Data == 0))// If the TileType has a filepath
+        bitmap *Bitmap = &TileType->Bitmap;
+        if(TileType->Filepath[0]) // If the TileType has a filepath
         {
-            // Set it to bagel
-            TileType->Bitmap = GlobalBagel->Bitmap;
+            ++TileMap->NumTileTypes;
+            if(Bitmap->Buffer.Data == 0) // if bitmap buffer pointer is null
+            {
+                // Set the bitmap to bagel
+                *Bitmap = GlobalBagel->Bitmap;
+            }
         }
     }
 
@@ -947,12 +963,7 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         ScaleAndBlitBitmap(Backbuf, PlayerMin, PlayerMax, ToDraw);
     }
 
-
-
-    if(Scratch)
-    {
-        FreeScratchArena(Scratch);
-    }
+    FreeScratchArena(Scratch);
 
 
     
@@ -1393,7 +1404,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 meta_bitmap *TileType = TileMap->TileTypes + TileIdx;
                 if(TileType->Filepath[0])
                 {
-                    DEBUGReloadBitmapIfChanged(TileType);
+                    // DEBUGReloadBitmap reloads the bitmap if the size of the one to load
+                    //      is the same as the current one, and returns that size. 
+                    //      If the sizes are different, it returns the new size, so the if check
+                    //      below will fail, signaling that we need to reload the entire dir
+                    //      because we might not have room for the new bitmap to load in the arena
+                    mem_idx CurrentBitmapSize = TileType->Bitmap.Buffer.Size;
+                    mem_idx BitmapToLoadSize = DEBUGReloadBitmapIfChanged(TileType);
+                    if(CurrentBitmapSize != BitmapToLoadSize)
+                    {
+                        LoadTileBitmapsDir(TileMap, ScratchHeader);
+                    }
                 }
             }
         }
@@ -1411,7 +1432,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
         else
         {
-            // TODO(AARON): Build dir path function
             char Temp[STRING_LEN];
             WriteFacingBitmapsDirToBuffer(FacingIdx, Temp);
             u64 CheckUpdateTime = GetDirWriteTime(Temp);
@@ -1428,7 +1448,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     meta_bitmap *MetaBitmap = ThisFacing->MetaBitmaps + NthBitmap;
                     if(MetaBitmap->Filepath[0])
                     {
-                        DEBUGReloadBitmapIfChanged(MetaBitmap);
+                        // DEBUGReloadBitmapIfChanged reloads the bitmap if the size of the one to load
+                        //      is the same as the current one, and returns that size. 
+                        //      If the sizes are different, it returns the new size, so the if check
+                        //      below will fail, signaling that we need to reload the entire dir
+                        //      because we might not have room for the new bitmap to load in the arena.
+                        //
+                        //  But another job DEBUGReloadBitmapIfChanged does is check if the update time for
+                        //      the bitmap has changed and set ReadyToReload to true if it does, and
+                        //      we also need to return a value from that control path...for now we
+                        //      just return the bitmap size indicating that no reload of the
+                        //      entire dir is necessary, but this is too messy; FIX
+                        mem_idx CurrentBitmapSize = MetaBitmap->Bitmap.Buffer.Size;
+                        mem_idx BitmapToLoadSize = DEBUGReloadBitmapIfChanged(MetaBitmap);
+                        if(CurrentBitmapSize != BitmapToLoadSize)
+                        {
+                            LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
+                        }
                     }
                 }
             }
@@ -1550,8 +1586,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else if(DebugState->EditorState.WhichEditor == PLAYER)
     {
         DrawPlayerEditor(Buffer, ScratchHeader, DebugState, &GameState->Player);
-
-
     }
 
     else
