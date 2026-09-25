@@ -217,7 +217,7 @@ union all_player_bitmaps
 struct player
 {
     v2 Position;
-    facing Facing;
+    facing IsFacing;
     all_player_bitmaps AllBitmaps;
 };
 

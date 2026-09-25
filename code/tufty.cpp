@@ -880,6 +880,9 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     v2 BrowserMin = {(f32)(Backbuf->Width * 0.5f), 0};
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    
+    // Get an array of menu_tile structs accommodating the maximum number of player bitmaps the game supports
+    menu_tile *MenuTiles = PushArray(&Scratch->Arena, menu_tile, 4 * MAX_FACING_BITMAPS);
 
     DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{0, 0, 0, 0});
 
@@ -894,15 +897,11 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         NthFacing < 4;
         ++NthFacing)
     {
+        menu_tile *MenuTilesCursor = MenuTiles + NthFacing * MAX_FACING_BITMAPS;
         facing_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFacing]);
         DEBUGDrawText(Backbuf, HeaderTextStart.X, HeaderTextStart.Y, Temp, &DebugState->DebugTextArena, color{0.9, 0.9, 0.9, 1}, 2.4);
-
-        menu_tile *MenuTilesCursor = PushArray(&Scratch->Arena, menu_tile, Facing->NumBitmaps);
-        // Note which menu tile is the first one for this set of facing bitmap so we can index off of it
-        //      and set the IsCurrentPlayerBitmap field for this set of facing bitmaps
-        menu_tile *FirstBitmap = MenuTilesCursor;
 
         f32 XDrawCoord = HeaderTextStart.X;
         for(int NthBitmap = 1;
@@ -921,40 +920,52 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
             ++MenuTilesCursor;
             ++NumTilesNeeded;
         }
-
-        // Set IsCurrentPlayerBitmap as described above
-        FirstBitmap[Facing->DrawThis-1].IsCurrentPlayerBitmap = true;
         HeaderTextStart += v2{0, VerticalSpaceBetweenSections};
         CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
     }
     
-    menu_tile *MenuTile = (menu_tile *)Scratch->Arena.Data;
-    for(int NthMenuTile = 0;
-        NthMenuTile < NumTilesNeeded;
-        ++NthMenuTile)
+    for(int FacingIdx = 0;
+        FacingIdx < 4;
+        ++FacingIdx)
     {
-        ScaleAndBlitBitmap(Backbuf, MenuTile->TileMin, MenuTile->TileMax, &MenuTile->MetaBitmap->Bitmap);
-        v2 OutlineMin = MenuTile->TileMin + v2{-1.0f, -1.0f};
-        v2 OutlineMax = MenuTile->TileMax + v2{1.0f, 1.0f};
-        if(MenuTile->IsCurrentPlayerBitmap)
+        facing_bitmaps *NthFacing = &Player->AllBitmaps.Array[FacingIdx];
+        menu_tile *MenuTilesCursor = MenuTiles + FacingIdx * MAX_FACING_BITMAPS;
+
+        for(int NthBitmap = 1;
+            NthBitmap <= NthFacing->NumBitmaps;
+            ++NthBitmap)
         {
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.2, 0.9, 0.3, 1});
+            // TODO(AARON): Think we are doing outlines differently in various places: e.g., here, we make the outline rect
+            //      have dimensions one pixel larger in width and height than the bitmap being outlined; elsewhere
+            //      we outline the outermost dimensions of the bitmap itself. We should do it the same way everywhere.
+            ScaleAndBlitBitmap(Backbuf, MenuTilesCursor->TileMin, MenuTilesCursor->TileMax, &MenuTilesCursor->MetaBitmap->Bitmap);
+            v2 OutlineMin = MenuTilesCursor->TileMin + v2{-1.0f, -1.0f};
+            v2 OutlineMax = MenuTilesCursor->TileMax + v2{1.0f, 1.0f};
+            if(NthBitmap == NthFacing->DrawThis)
+            {
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.7, 0.5, 1});
+            }
+            else
+            {
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0, 0, 1});        
+            }
+            if(MouseCoords.X >= MenuTilesCursor->TileMin.X &&
+                MouseCoords.Y >= MenuTilesCursor->TileMin.Y &&
+                MouseCoords.X < MenuTilesCursor->TileMax.X &&
+                MouseCoords.Y < MenuTilesCursor->TileMax.Y)
+            {
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
+                if(GlobalMouse->Primary.EndedDown && GlobalMouse->Primary.HalfTransitionCount == 1)
+                {
+                    NthFacing->DrawThis = NthBitmap;
+                    Player->IsFacing = (facing)FacingIdx;
+                }
+            }
+            ++MenuTilesCursor;
         }
-        else
-        {
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{1, 1, 1, 1});        
-        }
-        if(MouseCoords.X >= MenuTile->TileMin.X &&
-            MouseCoords.Y >= MenuTile->TileMin.Y &&
-            MouseCoords.X < MenuTile->TileMax.X &&
-            MouseCoords.Y < MenuTile->TileMax.Y)
-        {
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
-        }
-        ++MenuTile;
     }
 
-    facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
+    facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->IsFacing];
     if(CurrentFacing->NumBitmaps > 0)
     {
         bitmap *ToDraw = &CurrentFacing->MetaBitmaps[CurrentFacing->DrawThis].Bitmap;
@@ -1359,7 +1370,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             int NumLoaded = LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
             if(NumLoaded == -1)
             {
-                // This should already be zero anyway since we initialize all memory to zero but let's be explicit about
+                // This should already be zero anyway since we initialize all memory to zero but let's be explicit about it
                 ThisFacing->NumBitmaps = 0;
                 ThisFacing->DrawThis = 0;
             }
@@ -1367,11 +1378,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             {
                 ThisFacing->DrawThis = 1;
             }
+            if(ThisFacing->NumBitmaps >= 2)
+            {
+                ThisFacing->DrawThis = 2;
+            }
         }
         
         Player->Position.X = Buffer->Width / 2;
         Player->Position.Y = Buffer->Height / 2;
-        Player->Facing = EAST;
+        Player->IsFacing = EAST;
 
 // Bagel
         // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
@@ -1446,24 +1461,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if(Controller->MoveRight.EndedDown)
             {
                 dPlayer.X += 1.0f;
-                Player->Facing = EAST;
+                Player->IsFacing = EAST;
             }
             if(Controller->MoveUp.EndedDown)
             {
                 dPlayer.Y -= 1.0f;
-                Player->Facing = NORTH;
+                Player->IsFacing = NORTH;
             }
             if(Controller->MoveLeft.EndedDown)
             {
                 dPlayer.X -= 1.0f;
-                Player->Facing = WEST;
+                Player->IsFacing = WEST;
             }
             if(Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown)
             {
                 // NOTE(AARON): The above check for the ctrl key may be incorrect but
                 //      we won't know until we implement player movement again
                 dPlayer.Y += 1.0f;
-                Player->Facing = SOUTH;
+                Player->IsFacing = SOUTH;
             }
             if((dPlayer.X != 0) && (dPlayer.Y != 0))
             {
@@ -1553,7 +1568,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else
     {
         // Player
-        facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
+        facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->IsFacing];
         bitmap *ToDraw = &CurrentFacing->MetaBitmaps[CurrentFacing->DrawThis].Bitmap;
         f32 PlayerWidth = ToDraw->Width;
         f32 PlayerHeight = ToDraw->Height;
