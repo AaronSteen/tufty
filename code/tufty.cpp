@@ -1512,11 +1512,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             f32 PlayerSpeed = 200.0f;
             
-            v2 NewPlayerP = Player->Position;
-            NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
-            NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;
-
-            Player->Position = NewPlayerP;
+            if(DebugState->EditorState.WhichEditor == NO_EDITOR)
+            {
+                v2 NewPlayerP = Player->Position;
+                NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
+                NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;
+                Player->Position = NewPlayerP;
+            }
         }
     }
 
