@@ -341,7 +341,7 @@ DEBUG_PLATFORM_GET_DIR_WRITE_TIME(DEBUGPlatformGetDirWriteTime)
     return(Result);
 }
 
-// #define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer GamePackedFilenames, char *DirName, u32 *NumFilesFound)
+// #define DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer *GamePackedFilenames, char *DirName, u32 *NumFilesFound)
 DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(DEBUGPlatformGetListOfDirContents)
 {
     WIN32_FIND_DATAA FindData = {};

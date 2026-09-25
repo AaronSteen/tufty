@@ -145,9 +145,6 @@ struct bitmap
     // This is the entire bitmap file, including the header
     buffer Buffer;
 
-    b32 ReadyToRead;
-    u64 LastWriteTime;
-
     // Where the pixels actually live. Just a pointer into
     //      the buffer Buffer above where the pixels start.
     u8 *Pixels;
@@ -171,6 +168,8 @@ struct mem_region
 struct meta_bitmap
 {
     char Filepath[STRING_LEN];
+    b32 ReadyToReload;
+    u64 LastUpdateTime;
     bitmap Bitmap;
 };
 
@@ -178,7 +177,7 @@ struct tile_map
 {
     arena TilesArena;
     b32 ReadyToReload;
-    u64 LastUpdate;
+    u64 LastUpdateTime;
     int NumRows;
     int NumCols;
     int NumTileTypes;
@@ -198,7 +197,7 @@ struct menu_tile
 struct facing_bitmaps
 {
     b32 ReadyToReload;
-    u64 LastUpdate;
+    u64 LastUpdateTime;
     int NumBitmaps;
     arena Arena;
     int DrawThis;

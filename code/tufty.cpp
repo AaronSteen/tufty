@@ -87,6 +87,13 @@ FreeScratchArena(scratch_arena *Scratch)
     Scratch->IsFree = true;
 }
 
+void
+WriteFacingBitmapsDirToBuffer(int FacingIdx, char *Buffer)
+{
+    char *Facings[] = {"east", "north", "west", "south"};
+    snprintf(Buffer, STRING_LEN, "player/%s", Facings[FacingIdx]);
+}
+
 static void
 ParseBitmapHeader(bitmap *Bitmap)
 {
@@ -100,38 +107,38 @@ ParseBitmapHeader(bitmap *Bitmap)
 }
 
 static void
-DEBUGReloadBitmapIfChanged(meta_bitmap *TileType)
+DEBUGReloadBitmapIfChanged(meta_bitmap *MetaBitmap)
 {
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
-    bitmap *Bitmap = &TileType->Bitmap;
-    char *Filepath = TileType->Filepath;
-    if(Bitmap->ReadyToRead == true)
+    bitmap *Bitmap = &MetaBitmap->Bitmap;
+    char *Filepath = MetaBitmap->Filepath;
+    if(MetaBitmap->ReadyToReload == true)
     {
-        Bitmap->ReadyToRead = false;
+        MetaBitmap->ReadyToReload = false;
         mem_idx BytesRead = ReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
         if(BytesRead == Bitmap->Buffer.Size)
         {
             ParseBitmapHeader(Bitmap);
-            Bitmap->LastWriteTime = GetFileWriteTime(Filepath);
+            MetaBitmap->LastUpdateTime = GetFileWriteTime(Filepath);
         }
     }
     else
     {
         u64 WriteTime = GetFileWriteTime(Filepath);
-        if(WriteTime && (WriteTime != Bitmap->LastWriteTime))
+        if(WriteTime && (WriteTime != MetaBitmap->LastUpdateTime))
         {
-            Bitmap->ReadyToRead = true;
-            Bitmap->LastWriteTime = WriteTime;
+            MetaBitmap->ReadyToReload = true;
+            MetaBitmap->LastUpdateTime = WriteTime;
         }
     }
 }
 
 static void
-LoadBitmap(arena *Arena, meta_bitmap *TileType)
+LoadBitmap(arena *Arena, meta_bitmap *MetaBitmap)
 {
-    bitmap *Bitmap = &TileType->Bitmap;
-    char *Filepath = TileType->Filepath;
+    bitmap *Bitmap = &MetaBitmap->Bitmap;
+    char *Filepath = MetaBitmap->Filepath;
     // If we can't get the file size, then we can't load the file, 
     //      so we want the file size in the bitmap to be 0.
     Bitmap->Buffer.Size = GetFileSize(Filepath);
@@ -140,118 +147,77 @@ LoadBitmap(arena *Arena, meta_bitmap *TileType)
         return;
     }
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
-    Bitmap->ReadyToRead = true;
-    DEBUGReloadBitmapIfChanged(TileType);
+    MetaBitmap->ReadyToReload = true;
+    DEBUGReloadBitmapIfChanged(MetaBitmap);
 }
 
-static int
+static void 
 LoadPlayerBitmapsDir(player *Player, facing_bitmaps *FacingBitmaps, scratch_header *ScratchHeader)
 {
     // Figure out which set of facing bitmaps we're looking at (E, N, W, S)
     mem_idx WhichFacing = FacingBitmaps - Player->AllBitmaps.Array;
-    int *NumBitmaps = &FacingBitmaps->NumBitmaps;
     arena *FacingArena = &FacingBitmaps->Arena;
     meta_bitmap *MetaBitmaps = FacingBitmaps->MetaBitmaps;
+    char Dirpath[STRING_LEN];
+    WriteFacingBitmapsDirToBuffer(WhichFacing, Dirpath);
 
     ResetArena(FacingArena);
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
     
-    // Clear bitmap structs in the player bitmaps array
+    // Unlike with tiles, we don't need to worry about preserving a mapping between TileValues and 
+    //      indices in the TileTypes array. We only want to ensure that bitmap selected
+    //      as the MetaBitmaps->DrawThis bitmap continues to be selected after the reload,
+    //      assuming it is still in the game. Therefore, we store the filepath for the DrawThis
+    //      bitmap before clearing the MetaBitmaps array. If it is no longer in the game after reload, we just set
+    //      MetaBitmaps->DrawThis to 1 if there is at least one bitmap for this facing
+    //      in the dir, or 0 if there are no bitmaps in the dir
+    
+    char SavedDrawThisFilepath[STRING_LEN];
+    snprintf(SavedDrawThisFilepath, STRING_LEN, "%s", MetaBitmaps[FacingBitmaps->DrawThis].Filepath);
+
+    //  Clear the entire meta bitmaps array
     for(int NthBitmap = 0;
         NthBitmap < FACING_BITMAPS_ARRAY_LEN;
         ++NthBitmap)
     {
-        MetaBitmaps[NthBitmap].Bitmap = {};
+        MetaBitmaps[NthBitmap] = {};
     }
+
+    // Other stuff that needs state adjusted
+    FacingBitmaps->LastUpdateTime = GetDirWriteTime(Dirpath);
+    FacingBitmaps->ReadyToReload = false;
+    FacingBitmaps->NumBitmaps = 0;
+    FacingBitmaps->DrawThis = 0;
 
     buffer FoundFilenames;
     FoundFilenames.Size = MAX_FACING_BITMAPS * STRING_LEN;
     FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
     int NumFilesFound = 0;
-    char *SubDirName = nullptr;
-    switch(WhichFacing)
-    {
-        case EAST:
-        {
-            SubDirName = "east";
-        } break;
-
-        case NORTH:
-        {
-            SubDirName = "north";
-        } break;
-
-        case WEST:
-        {
-            SubDirName = "west";
-        } break;
-
-        case SOUTH:
-        {
-            SubDirName = "south";
-        } break;
-    }
     
-    char DirPath[STRING_LEN];
-    snprintf(DirPath, STRING_LEN, "player/%s", SubDirName);
-    GetListOfDirContents(&FoundFilenames, DirPath, &NumFilesFound);
+    GetListOfDirContents(&FoundFilenames, Dirpath, &NumFilesFound);
 
-    if(NumFilesFound > MAX_FACING_BITMAPS)
+    // If we found no bitmaps or too many, just return
+    if((NumFilesFound > MAX_FACING_BITMAPS) || (NumFilesFound == 0))
     {
-        // Too many bitmaps, don't load any
         if(Scratch)
         {
             FreeScratchArena(Scratch);
         }
-        return(-1);
+        return;
     }
 
+    // If we made it this far, we found a valid number of bitmaps (i.e., more than 0 and less than or equal to the max)
     char *ThisFilename = (char *)FoundFilenames.Data;
     for(int NthBitmapToLoad = 0;
         NthBitmapToLoad < NumFilesFound;
         ++NthBitmapToLoad)
     {
         char FilepathToLoad[STRING_LEN];
-        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "%s/%s", DirPath, ThisFilename);
-
-        // Note the first available slot in the array. If the bitmap is not in 
-        //      the game yet, we put the bitmap in this slot.
-        int FirstAvailable = 0;
-        b32 AlreadyExists = false;
-
-        // Always leave slot 0 empty
-        for(int NthSlot = 1;
-            NthSlot < FACING_BITMAPS_ARRAY_LEN;
-            ++NthSlot)
-        {
-            meta_bitmap *Slot = MetaBitmaps + NthSlot;
-            if(Slot->Filepath[0] == 0)
-            {
-                if(FirstAvailable == 0)
-                {
-                    FirstAvailable = NthSlot;
-                }
-            }
-            else
-            {
-                // If a bitmap with this filepath is already in memory, just reload the bitmap
-                if(strncmp(FilepathToLoad, Slot->Filepath, STRING_LEN) == 0)
-                {
-                    LoadBitmap(FacingArena, Slot);
-                    AlreadyExists = true;
-                    break;
-                }
-            }
-        }
-
-        // A bitmap with this filepath wasn't in the game yet. Load it into memory.
-        if(AlreadyExists == false)
-        {
-            Assert(strlen(FilepathToLoad) < STRING_LEN);
-            meta_bitmap *Slot = MetaBitmaps + FirstAvailable;
-            snprintf(Slot->Filepath, STRING_LEN, "%s", FilepathToLoad);
-            LoadBitmap(FacingArena, Slot);
-        }
+        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "%s/%s", Dirpath, ThisFilename);
+        meta_bitmap *Slot = &MetaBitmaps[NthBitmapToLoad+1];
+        snprintf(Slot->Filepath, STRING_LEN, "%s", FilepathToLoad);
+        LoadBitmap(FacingArena, Slot);
+        ++FacingBitmaps->NumBitmaps;
 
         while(*ThisFilename)
         {
@@ -260,27 +226,22 @@ LoadPlayerBitmapsDir(player *Player, facing_bitmaps *FacingBitmaps, scratch_head
         ++ThisFilename;
     }
 
-    // Do some cleanup. Find all instances of IDs that do have filepaths, but have no bitmap pointers.
-    //      These are tile bitmaps that were removed from the game. We want them to be
-    //      drawn as a bagel instead
+    // Check to see if the previous DrawThis bitmap filepath is still in the game
+    //      and set DrawThis to the idx of that bitmap if so (because its idx may have changed).
+    //      If not, just set the idx to 1.
 
+    FacingBitmaps->DrawThis = 1;
     for(int NthSlot = 1;
-        NthSlot < FACING_BITMAPS_ARRAY_LEN;
+        NthSlot <= FacingBitmaps->NumBitmaps;
         ++NthSlot)
     {
         meta_bitmap *NthMetaBitmap = MetaBitmaps + NthSlot;
-        if(NthMetaBitmap->Filepath[0]) // If the bitmap has a filepath
+        if(strncmp(SavedDrawThisFilepath, NthMetaBitmap->Filepath, strlen(NthMetaBitmap->Filepath)) == 0)
         {
-            *NumBitmaps += 1;
-            bitmap *Bitmap = &NthMetaBitmap->Bitmap;
-            if(Bitmap->Buffer.Data == 0)
-            {
-                *Bitmap = GlobalBagel->Bitmap;
-            }
+            FacingBitmaps->DrawThis = NthSlot;
         }
     }
-    
-    return(*NumBitmaps);
+
     FreeScratchArena(Scratch);
 }
 
@@ -300,20 +261,32 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
         TypeIdx < TILE_TYPES_ARRAY_LEN;
         ++TypeIdx)
     {
+        TileTypes[TypeIdx].LastUpdateTime = 0;
+        TileTypes[TypeIdx].ReadyToReload = false;
         TileTypes[TypeIdx].Bitmap = {};
     }
+
+    TileMap->LastUpdateTime = GetDirWriteTime("tiles");
+    TileMap->ReadyToReload = false;
+    TileMap->NumTileTypes = 0;
 
     buffer FoundFilenames;
     FoundFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
     FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
     int NumFilesFound = 0;
     GetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
-    if(NumFilesFound > MAX_TILE_TYPES)
+
+    // If we found no bitmaps or too many, just return
+    if((NumFilesFound > MAX_TILE_TYPES) || (NumFilesFound == 0))
     {
-        Assert(!"Tiles dir contains more than 200 tile types. 200 is the max.");
+        if(Scratch)
+        {
+            FreeScratchArena(Scratch);
+        }
+        return;
     }
 
-    // Load the bitmap for every .bmp filepath found in the tiles/ dir
+    // If we made it this far, we found a valid number of bitmaps (i.e., more than 0 and less than or equal to the max)
     char *ThisFilename = (char *)FoundFilenames.Data;
     for(int NthBitmapToLoad = 0;
         NthBitmapToLoad < NumFilesFound;
@@ -344,20 +317,22 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
                 if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
                 {
                     LoadBitmap(TilesArena, TileType);
+                    ++TileMap->NumTileTypes;
                     ExistingTileType = true;
                     break;
                 }
             }
         }
 
-        // If the bitmap wasn't in the game previously, we pick the first available ID slot.
+        // If the bitmap wasn't in the game previously, we pick the first available slot.
         //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
         if(ExistingTileType == false)
         {
             Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
             meta_bitmap *SlotForNewBitmap = TileTypes + FirstAvailable;
             snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
-           LoadBitmap(TilesArena, SlotForNewBitmap);
+            LoadBitmap(TilesArena, SlotForNewBitmap);
+            ++TileMap->NumTileTypes;
         }
 
         while(*ThisFilename)
@@ -367,26 +342,19 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
         ++ThisFilename;
     }
 
-        // Do some cleanup. Find all instances of IDs that do have filepaths, but have no bitmap pointers.
+        // Do some cleanup. Find all instances of TileTypes that do have filepaths, but have no bitmap pointers.
         //      These are tile bitmaps that were removed from the game. We want them to be
         //      drawn as a bagel instead
 
-    TileMap->NumTileTypes = 0;
     for(int Slot = 1;
         Slot < TILE_TYPES_ARRAY_LEN;
         ++Slot)
     {
         meta_bitmap *TileType = TileTypes + Slot;
-        bitmap *Bitmap = &TileType->Bitmap;
-        if(TileType->Filepath[0]) // If the TileType has a filepath
+        if(TileType->Filepath[0] && (TileType->Bitmap.Buffer.Data == 0))// If the TileType has a filepath
         {
-            // Then we count it as a TileType
-            ++TileMap->NumTileTypes;
-            if(Bitmap->Buffer.Data == 0) // if bitmap buffer pointer is null
-            {
-                // Set the bitmap to bagel
-                *Bitmap = GlobalBagel->Bitmap;
-            }
+            // Set it to bagel
+            TileType->Bitmap = GlobalBagel->Bitmap;
         }
     }
 
@@ -1357,7 +1325,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
 
         LoadTileBitmapsDir(TileMap, ScratchHeader);
-        DebugState->EditorState.LastTileDirUpdate = GetDirWriteTime("tiles");
 
 
 // Player
@@ -1366,23 +1333,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             ++Facing)
         {
             facing_bitmaps *ThisFacing = &Player->AllBitmaps.Array[Facing];
-            int NumLoaded = LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
-            if(NumLoaded == -1)
-            {
-                // This should already be zero anyway since we initialize all memory to zero but let's be explicit about it
-                ThisFacing->NumBitmaps = 0;
-                ThisFacing->DrawThis = 0;
-            }
-            if(ThisFacing->NumBitmaps >= 1)
-            {
-                ThisFacing->DrawThis = 1;
-            }
-            if(ThisFacing->NumBitmaps >= 2)
-            {
-                ThisFacing->DrawThis = 2;
-            }
+            LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
         }
-        
         Player->Position.X = Buffer->Width / 2;
         Player->Position.Y = Buffer->Height / 2;
         Player->IsFacing = EAST;
@@ -1402,36 +1354,47 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     DebugState->DebugTextArena.Cursor = 0;
 
-    // Check if new tile bitmaps added; if so unload and reload all bitmaps.
-    // Wait one frame after bitmap change detected so we don't try to load it
-    //      while the save is in progress.
-    if(TileMap->ReadyToReload == true)
+    // Bitmap reloading notes:
+    //      We have the following objectives:
+    //          1. Be able to immediately add bitmaps to the game
+    //          2. Be able to immediately remove bitmaps from the game
+    //          3. Be able to make a change to a bitmap and have that change appear immediately in the game.
+    //
+    //      In each case, the simplest way to avoid bugs that result from trying to read a file while
+    //          it's still being updated by the OS is to simply wait one frame after a change has been detected.
+    //          Therefore, we store the write times for dirs and files of interest locally, and, once per frame,
+    //          we compare these with the OS's write times. If the times match, no update has been made.
+    //          If the times differ, we store the new time and set a ReadyToReload variable to true.
+    //          Then we reload on the next frame.
+    //
+
+    // If we set ReadyToReload on the last frame, reload the tiles dir and set ReadyToReload back to false
+    if(TileMap->ReadyToReload)
     {
         TileMap->ReadyToReload = false;
         LoadTileBitmapsDir(TileMap, ScratchHeader);
     }
     else
     {
+        // Check dir write time and compare
         u64 CheckUpdateTime = GetDirWriteTime("tiles");
-        if(TileMap->LastUpdate != CheckUpdateTime)
+        if(TileMap->LastUpdateTime != CheckUpdateTime)
         {
-            TileMap->LastUpdate = CheckUpdateTime;
             TileMap->ReadyToReload = true;
         }
-    }
-
-    // Hot reload tile bitmaps but only do so if ReadyToReload is false; i.e., 
-    //      if we're not going to reload all of the tiles on the next frame
-    if(TileMap->ReadyToReload == false)
-    {
-        for(int TileIdx = 1;
-            TileIdx < TILE_TYPES_ARRAY_LEN;
-            ++TileIdx)
+        else
         {
-            meta_bitmap *TileType = TileMap->TileTypes + TileIdx;
-            if(TileType->Filepath[0])
+            // If we're not planning to reload all bitmaps on the next frame, check each bitmap
+            //      individually to see if that bitmap has been updated.
+            for(int TileIdx = 1;
+                TileIdx < TILE_TYPES_ARRAY_LEN;
+                ++TileIdx)
             {
-                DEBUGReloadBitmapIfChanged(TileType);
+                meta_bitmap *TileType = TileMap->TileTypes + TileIdx;
+                if(TileType->Filepath[0])
+                {
+                    DEBUGReloadBitmapIfChanged(TileType);
+                }
             }
         }
     }
@@ -1448,20 +1411,29 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
         else
         {
-
+            // TODO(AARON): Build dir path function
+            char Temp[STRING_LEN];
+            WriteFacingBitmapsDirToBuffer(FacingIdx, Temp);
+            u64 CheckUpdateTime = GetDirWriteTime(Temp);
+            if(ThisFacing->LastUpdateTime != CheckUpdateTime)
+            {
+                ThisFacing->ReadyToReload = true;
+            }
+            else
+            {
+                for(int NthBitmap = 1;
+                    NthBitmap <= MAX_FACING_BITMAPS;
+                    ++NthBitmap)
+                {
+                    meta_bitmap *MetaBitmap = ThisFacing->MetaBitmaps + NthBitmap;
+                    if(MetaBitmap->Filepath[0])
+                    {
+                        DEBUGReloadBitmapIfChanged(MetaBitmap);
+                    }
+                }
+            }
         }
     }
-
-
-
-    // hot reload player bitmaps
-    // for(int PlayerBitmapIdx = 0;
-    //     PlayerBitmapIdx < 4;
-    //     ++PlayerBitmapIdx)
-    // {
-    //     DEBUGReloadBitmapIfChanged(&GameState->PlayerBitmaps[PlayerBitmapIdx]);
-    // }
-    //
 
     // Controller
     for(int ControllerIdx = 0;
