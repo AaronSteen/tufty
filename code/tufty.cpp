@@ -1358,7 +1358,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         LoadTileBitmapsDir(TileMap, ScratchHeader);
         DebugState->EditorState.LastTileDirUpdate = GetDirWriteTime("tiles");
-        DebugState->EditorState.TilesReadyToReload = false;
 
 
 // Player
@@ -1406,24 +1405,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Check if new tile bitmaps added; if so unload and reload all bitmaps.
     // Wait one frame after bitmap change detected so we don't try to load it
     //      while the save is in progress.
-    if(DebugState->EditorState.TilesReadyToReload == true)
+    if(TileMap->ReadyToReload == true)
     {
-        DebugState->EditorState.TilesReadyToReload = false;
+        TileMap->ReadyToReload = false;
         LoadTileBitmapsDir(TileMap, ScratchHeader);
     }
     else
     {
         u64 CheckUpdateTime = GetDirWriteTime("tiles");
-        if(DebugState->EditorState.LastTileDirUpdate != CheckUpdateTime)
+        if(TileMap->LastUpdate != CheckUpdateTime)
         {
-            DebugState->EditorState.LastTileDirUpdate = CheckUpdateTime;
-            DebugState->EditorState.TilesReadyToReload = true;
+            TileMap->LastUpdate = CheckUpdateTime;
+            TileMap->ReadyToReload = true;
         }
     }
 
     // Hot reload tile bitmaps but only do so if ReadyToReload is false; i.e., 
     //      if we're not going to reload all of the tiles on the next frame
-    if(DebugState->EditorState.TilesReadyToReload == false)
+    if(TileMap->ReadyToReload == false)
     {
         for(int TileIdx = 1;
             TileIdx < TILE_TYPES_ARRAY_LEN;
@@ -1436,6 +1435,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
         }
     }
+
+    for(int FacingIdx = 0;
+        FacingIdx < 4;
+        ++FacingIdx)
+    {
+        facing_bitmaps *ThisFacing = &Player->AllBitmaps.Array[FacingIdx];
+        if(ThisFacing->ReadyToReload)
+        {
+            ThisFacing->ReadyToReload = false;
+            LoadPlayerBitmapsDir(Player, ThisFacing, ScratchHeader);
+        }
+        else
+        {
+
+        }
+    }
+
+
 
     // hot reload player bitmaps
     // for(int PlayerBitmapIdx = 0;

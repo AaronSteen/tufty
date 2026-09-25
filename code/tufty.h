@@ -177,6 +177,8 @@ struct meta_bitmap
 struct tile_map
 {
     arena TilesArena;
+    b32 ReadyToReload;
+    u64 LastUpdate;
     int NumRows;
     int NumCols;
     int NumTileTypes;
@@ -190,12 +192,13 @@ struct menu_tile
 {
     v2 TileMin;
     v2 TileMax;
-    b32 IsCurrentPlayerBitmap;
     meta_bitmap *MetaBitmap;
 };
 
 struct facing_bitmaps
 {
+    b32 ReadyToReload;
+    u64 LastUpdate;
     int NumBitmaps;
     arena Arena;
     int DrawThis;
@@ -243,8 +246,6 @@ struct editor_state
     which_editor WhichEditor;
     meta_bitmap *HeldTileType;
     b32 PrintRowsCols;
-    b32 TilesReadyToReload;
-    u64 LastTileDirUpdate;
 };
 
 struct debug_state
