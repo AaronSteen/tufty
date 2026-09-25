@@ -135,6 +135,10 @@ operator==(v2 A, v2 B)
     return(Result);
 }
 
+struct color
+{
+    f32 R, G, B, A;
+};
 
 struct bitmap
 {
@@ -186,6 +190,7 @@ struct menu_tile
 {
     v2 TileMin;
     v2 TileMax;
+    b32 IsCurrentPlayerBitmap;
     meta_bitmap *MetaBitmap;
 };
 
@@ -193,7 +198,7 @@ struct facing_bitmaps
 {
     int NumBitmaps;
     arena Arena;
-    bitmap *DrawThis;
+    int DrawThis;
     meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
 };
 

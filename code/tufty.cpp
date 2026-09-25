@@ -444,12 +444,14 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
 void
 DrawSpecialRect(game_offscreen_buffer *Buf,
                 v2 Min, v2 Max,
-                f32 R, f32 G, f32 B, f32 Opacity, b32 Outline)
+                color RectColor, color OutlineColor)
 {
     s32 MinX = RoundF32ToS32(Min.X);
     s32 MinY = RoundF32ToS32(Min.Y);
     s32 MaxX = RoundF32ToS32(Max.X);
     s32 MaxY = RoundF32ToS32(Max.Y);
+
+    b32 HasOutline = ((OutlineColor.R > 0) || (OutlineColor.G > 0) || (OutlineColor.B > 0) || (OutlineColor.A > 0));
 
     if(MinY < 0)
     {
@@ -468,9 +470,17 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
         MaxX = Buf->Width;
     }
 
-    u32 Blue = RoundF32ToU32(B * 255.0f);
-    u32 Green = RoundF32ToU32(G * 255.0f);
-    u32 Red = RoundF32ToU32(R * 255.0f);
+    u32 RectBlue = RoundF32ToU32(RectColor.B * 255.0f);
+    u32 RectGreen = RoundF32ToU32(RectColor.G * 255.0f);
+    u32 RectRed = RoundF32ToU32(RectColor.R * 255.0f);
+
+    u32 PackedOutlineColor = 0;
+    if(HasOutline)
+    {
+        PackedOutlineColor = ( (RoundF32ToU32(OutlineColor.R * 255.0f) << 16) |
+                               (RoundF32ToU32(OutlineColor.G * 255.0f) << 8 ) | 
+                               (RoundF32ToU32(OutlineColor.B * 255.0f) << 0 ) );
+    }
 
     u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
     for(int Y = MinY;
@@ -482,23 +492,23 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
             X < MaxX;
             ++X)
         {
-            if( ((X == MinX) && Outline) ||
-                ((Y == MinY) && Outline) ||
-                ((X == MaxX-1) && Outline) ||
-                ((Y == MaxY-1) && Outline))
+            if( ((X == MinX) && HasOutline)   ||
+                ((Y == MinY) && HasOutline)   ||
+                ((X == MaxX-1) && HasOutline) ||
+                ((Y == MaxY-1) && HasOutline) ) 
             {
-                *(u32 *)Pixel = 0;                
+                *(u32 *)Pixel = PackedOutlineColor;
             }
             else
             {
                 // Blue
-                Pixel[0] = LerpS32(Pixel[0], Blue, Opacity);
+                Pixel[0] = LerpS32(Pixel[0], RectBlue, RectColor.A);
 
                 // Green
-                Pixel[1] = LerpS32(Pixel[1], Green, Opacity);
+                Pixel[1] = LerpS32(Pixel[1], RectGreen, RectColor.A);
                 
                 // Red
-                Pixel[2] = LerpS32(Pixel[2], Red, Opacity);
+                Pixel[2] = LerpS32(Pixel[2], RectRed, RectColor.A);
 
             }
             Pixel += sizeof(u32);
@@ -511,8 +521,7 @@ void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
               char *StringText, arena *DebugTextArena,
-              f32 R, f32 G, f32 B,
-              f32 Alpha = 1.0f,
+              color Color,
               f32 Scale = 3.5f)
 {
     buffer QuadBuf = {};
@@ -526,13 +535,13 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
         quad *ThisQuad = (quad *)(QuadBuf.Data + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*Scale), (Y + ThisQuad->TopLeft.Y*Scale)};
         v2 Max = {(X + ThisQuad->BottomRight.X*Scale), (Y + ThisQuad->BottomRight.Y*Scale)};
-        if(Alpha == 1.0f)
+        if(Color.A == 1.0f)
         {
-            DrawSimpleRect(Backbuf, Min, Max, R, G, B);
+            DrawSimpleRect(Backbuf, Min, Max, Color.R, Color.G, Color.B);
         }
         else
         {
-            DrawSpecialRect(Backbuf, Min, Max, R, G, B, Alpha, false);
+            DrawSpecialRect(Backbuf, Min, Max, Color, color{0, 0, 0, 0});
         }
     }
 }
@@ -560,7 +569,7 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTex
     }
     char Temp[256];
     snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
+    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
 #undef FPS_SNAPS
 }
 
@@ -570,7 +579,7 @@ DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_m
     int OffsetFromGridX = 15;
     int OffsetFromGridY = 15;
     // 0, 0
-    DEBUGDrawText(Backbuf, OffsetFromGridX, OffsetFromGridY, "0", DebugTextArena, 0.9f, 0.2f, 0.5f);
+    DEBUGDrawText(Backbuf, OffsetFromGridX, OffsetFromGridY, "0", DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
 
     // Cols
     for(int Col = 1;
@@ -580,7 +589,7 @@ DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_m
         int PrintX = Col * TileMap->TileSideInPixels + OffsetFromGridX; 
         char Temp[3];
         snprintf(Temp, 3, "%d", Col);
-        DEBUGDrawText(Backbuf, PrintX, OffsetFromGridY, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
+        DEBUGDrawText(Backbuf, PrintX, OffsetFromGridY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
     }
 
     // Rows
@@ -591,7 +600,7 @@ DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_m
         int PrintY = Row * TileMap->TileSideInPixels + OffsetFromGridY; 
         char Temp[3];
         snprintf(Temp, 3, "%d", Row);
-        DEBUGDrawText(Backbuf, OffsetFromGridX, PrintY, Temp, DebugTextArena, 0.9f, 0.2f, 0.5f);
+        DEBUGDrawText(Backbuf, OffsetFromGridX, PrintY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
     }
 }
 
@@ -872,9 +881,9 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     v2 BrowserMax = {(f32)(Backbuf->Width), (f32)(Backbuf->Height)};
     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
 
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{0, 0, 0, 0});
 
-    DEBUGDrawText(Backbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.5);
+    DEBUGDrawText(Backbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", &DebugState->DebugTextArena, color{1, 1, 1, 1});
 
     char *Dirs[] = {"East", "North", "West", "South"};
     int NumTilesNeeded = 0;
@@ -888,9 +897,13 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         facing_bitmaps *Facing = &Player->AllBitmaps.Array[NthFacing];
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFacing]);
-        DEBUGDrawText(Backbuf, HeaderTextStart.X, HeaderTextStart.Y, Temp, &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
+        DEBUGDrawText(Backbuf, HeaderTextStart.X, HeaderTextStart.Y, Temp, &DebugState->DebugTextArena, color{0.9, 0.9, 0.9, 1}, 2.4);
 
         menu_tile *MenuTilesCursor = PushArray(&Scratch->Arena, menu_tile, Facing->NumBitmaps);
+        // Note which menu tile is the first one for this set of facing bitmap so we can index off of it
+        //      and set the IsCurrentPlayerBitmap field for this set of facing bitmaps
+        menu_tile *FirstBitmap = MenuTilesCursor;
+
         f32 XDrawCoord = HeaderTextStart.X;
         for(int NthBitmap = 1;
             NthBitmap <= Facing->NumBitmaps;
@@ -908,6 +921,9 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
             ++MenuTilesCursor;
             ++NumTilesNeeded;
         }
+
+        // Set IsCurrentPlayerBitmap as described above
+        FirstBitmap[Facing->DrawThis-1].IsCurrentPlayerBitmap = true;
         HeaderTextStart += v2{0, VerticalSpaceBetweenSections};
         CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
     }
@@ -920,28 +936,36 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
         ScaleAndBlitBitmap(Backbuf, MenuTile->TileMin, MenuTile->TileMax, &MenuTile->MetaBitmap->Bitmap);
         v2 OutlineMin = MenuTile->TileMin + v2{-1.0f, -1.0f};
         v2 OutlineMax = MenuTile->TileMax + v2{1.0f, 1.0f};
+        if(MenuTile->IsCurrentPlayerBitmap)
+        {
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.2, 0.9, 0.3, 1});
+        }
+        else
+        {
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{1, 1, 1, 1});        
+        }
         if(MouseCoords.X >= MenuTile->TileMin.X &&
             MouseCoords.Y >= MenuTile->TileMin.Y &&
             MouseCoords.X < MenuTile->TileMax.X &&
             MouseCoords.Y < MenuTile->TileMax.Y)
         {
-            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 1, 1, 1, 0.5f, true);
+            DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
         }
-        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 1, 1, 1, 0, true);
         ++MenuTile;
     }
 
     facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
     if(CurrentFacing->NumBitmaps > 0)
     {
+        bitmap *ToDraw = &CurrentFacing->MetaBitmaps[CurrentFacing->DrawThis].Bitmap;
         // Draw player to left of browser if player editor is active
-        f32 PlayerWidth = CurrentFacing->DrawThis->Width;
-        f32 PlayerHeight = CurrentFacing->DrawThis->Height;
+        f32 PlayerWidth = ToDraw->Width;
+        f32 PlayerHeight = ToDraw->Height;
 
         v2 PlayerMin = v2{(f32)Backbuf->Width * 0.25f - PlayerWidth * 0.5f, 
                             (f32)Backbuf->Height * 0.5f - PlayerHeight * 0.5f};
         v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-        ScaleAndBlitBitmap(Backbuf, PlayerMin, PlayerMax, CurrentFacing->DrawThis);
+        ScaleAndBlitBitmap(Backbuf, PlayerMin, PlayerMax, ToDraw);
     }
 
 
@@ -1029,9 +1053,9 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     editor_state *EditorState = &DebugState->EditorState;
 
     // Panel
-    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, 0.5f, 0.5f, 0.5f, 0.85f, false);
+    DrawSpecialRect(Backbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{});
 
-    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.5);
+    DEBUGDrawText(Backbuf, BrowserMin.X + 120, 80, "Tile Menu", &DebugState->DebugTextArena, color{1, 1, 1, 1}, 3.5);
 
     // Draw tiles in menu unless there are no tiles
     if(TileMap->NumTileTypes > 0)
@@ -1114,11 +1138,13 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
                         EditorState->HeldTileType = ThisMenuTile->MetaBitmap;
                     }
                 }
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, 0.5f, true);
+                // If mouse is hovering over this tile, highlight it
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0.75, 0.75, 0.75, 0.5}, color{1, 1, 1, 1});
             }
             else
             {
-                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0, 0, 0, 0, true);
+                // Otherwise just draw a box around it
+                DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{}, color{0, 0, 0, 1});
             }
         }
         if(Scratch)
@@ -1155,7 +1181,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
         v2 TinyTileMin = MouseCoords + (v2){20.0f, 20.0f};
         v2 TinyTileMax = TinyTileMin + (v2){(f32)(TileMap->TileSideInPixels * 0.5), (f32)(TileMap->TileSideInPixels * 0.5)};
         ScaleAndBlitBitmap(Backbuf, TinyTileMin, TinyTileMax, &EditorState->HeldTileType->Bitmap);
-        DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, 0, 0, 0, 0, true);
+        DrawSpecialRect(Backbuf, TinyTileMin, TinyTileMax, color{}, color{0, 0, 0, 1});
     }
 
 
@@ -1168,9 +1194,9 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
     if(MouseCoords.X < BrowserMin.X)
     {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(TileMap->TileSideInPixels);
-        v2 OutlineMin = {TileAsV2.X * TileMap->TileSideInPixels, TileAsV2.Y * TileMap->TileSideInPixels};
-        v2 OutlineMax = OutlineMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
-        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, 0.75, 0.75, 0.75, 0, true);
+        v2 OutlineMin = {TileAsV2.X * TileMap->TileSideInPixels + 1, TileAsV2.Y * TileMap->TileSideInPixels + 1};
+        v2 OutlineMax = OutlineMin + v2{TileMap->TileSideInPixels - 2, TileMap->TileSideInPixels - 2};
+        DrawSpecialRect(Backbuf, OutlineMin, OutlineMax, color{0.9, 0.9, 0.9, 0.5}, color{});
         s32 OneDimensionalTileIndex = TileAsV2.Y * TileMap->NumCols + TileAsV2.X;
 
         if((GlobalMouse->Secondary.EndedDown) &&
@@ -1335,11 +1361,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             {
                 // This should already be zero anyway since we initialize all memory to zero but let's be explicit about
                 ThisFacing->NumBitmaps = 0;
-                ThisFacing->DrawThis = &ThisFacing->MetaBitmaps[0].Bitmap;
+                ThisFacing->DrawThis = 0;
             }
             if(ThisFacing->NumBitmaps >= 1)
             {
-                ThisFacing->DrawThis = &ThisFacing->MetaBitmaps[1].Bitmap;
+                ThisFacing->DrawThis = 1;
             }
         }
         
@@ -1508,7 +1534,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             if(DebugState->EditorState.WhichEditor == TILE)
             {
-                DrawSpecialRect(Buffer, TileMin, TileMax, 0, 0, 0, 0, true);
+                DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
             }
         }
     }
@@ -1527,7 +1553,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else
     {
         // Player
-        bitmap *ToDraw = Player->AllBitmaps.Array[Player->Facing].DrawThis;
+        facing_bitmaps *CurrentFacing = &Player->AllBitmaps.Array[Player->Facing];
+        bitmap *ToDraw = &CurrentFacing->MetaBitmaps[CurrentFacing->DrawThis].Bitmap;
         f32 PlayerWidth = ToDraw->Width;
         f32 PlayerHeight = ToDraw->Height;
         v2 PlayerMin = {Player->Position.X - PlayerWidth * 0.5f, 
