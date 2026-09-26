@@ -47,20 +47,20 @@ struct quad
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
-void
+static void
 ZeroArena(arena *Arena)
 {
     memset(Arena->Data, 0, Arena->Size);
 }
 
-void
+static void
 ResetArena(arena *Arena)
 {
     ZeroArena(Arena);
     Arena->Cursor = 0;
 }
 
-scratch_arena *
+static scratch_arena *
 GetScratchArena(scratch_header *ScratchHeader)
 {
     for(int Idx = 0;
@@ -81,7 +81,7 @@ GetScratchArena(scratch_header *ScratchHeader)
     return((scratch_arena *)0);
 }
 
-void
+static void
 FreeScratchArena(scratch_arena *Scratch)
 {
     if(Scratch)
@@ -90,11 +90,28 @@ FreeScratchArena(scratch_arena *Scratch)
     }
 }
 
-void
+static void
 WriteFacingBitmapsDirToBuffer(int FacingIdx, char *Buffer)
 {
     char *Facings[] = {"east", "north", "west", "south"};
     snprintf(Buffer, STRING_LEN, "player/%s", Facings[FacingIdx]);
+}
+
+static mem_idx
+ComputeByteOffset(void *Start, void *Offset)
+{
+    // Compute how many bytes Offset is beyond Start, ignoring type.
+    // Note that this is meant to be called in a serialization context, where you are packing bytes into a file
+    //    contiguously (#pragma pack) and I am not sure how reliable or useful it is in other context because of 
+    //    memory-alignment work done by the compiler
+    // We ignore type because when serializing, it's important to think of offsets in terms of single bytes instead of 
+        // typed offsets, because we are packing everything contiguously in the file. 
+        // Just returns the raw count of single bytes between Offset and Start.
+        // Caller is required to cast both arguments to void *, to emphasize that type information is disregarded.
+        // e.g., Call this with int *Start and an Offset argument of any type that lives directly beyond Start in memory;
+        //      the returned value will be 4.
+    mem_idx Result = (u8 *)Offset - (u8 *)Start;
+    return(Result);
 }
 
 static void
@@ -377,7 +394,7 @@ LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
     FreeScratchArena(Scratch);
 }
 
-void
+static void
 DrawSimpleRect(game_offscreen_buffer *Buf,
                v2 Min, v2 Max,
                f32 R, f32 G, f32 B, f32 Alpha = 0.5f,
@@ -425,7 +442,7 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
     }
 }
 
-void
+static void
 DrawSpecialRect(game_offscreen_buffer *Buf,
                 v2 Min, v2 Max,
                 color RectColor, color OutlineColor)
@@ -501,7 +518,7 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
     }
 }
 
-void
+static void
 DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 X, f32 Y,
               char *StringText, arena *DebugTextArena,
@@ -530,7 +547,7 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
     }
 }
 
-void
+static void
 DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTextArena)
 {
 #define FPS_SNAPS 30
@@ -557,7 +574,7 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *DebugTex
 #undef FPS_SNAPS
 }
 
-void
+static void
 DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
 {
     int OffsetFromGridX = 15;
@@ -699,73 +716,110 @@ GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
 }
 
 static b32
-SaveTileMap(tile_map *TileMap, scratch_header *ScratchHeader)
+SaveProject(tile_map *TileMap, player *Player, scratch_header *ScratchHeader)
 {
     b32 Success = false;
+    
+    // TODO (AARON): Remove this and test how it behaves if we have no tile types, no player bitmaps, or combo of both
     if(TileMap->NumTileTypes == 0)
     {
         return(Success);
     }
 
-    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-    serialized_tile_map *ToWrite = PushStruct(&Scratch->Arena, serialized_tile_map);
+ 
+    scratch_arena *OutfileScratch = GetScratchArena(ScratchHeader);
+    arena *OutfileArena = &OutfileScratch->Arena;
+    saved_project *Header = PushStruct(OutfileArena, saved_project);
 
-    mem_idx BytesToWrite = sizeof(serialized_tile_map);
+// Magic number
     char *MagicNumber = "TILE";
     mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
     Assert(MagicNumberSize == 4);
-
     for(int NthLetter = 0;
         NthLetter < MagicNumberSize;
         ++NthLetter)
     {
-        ToWrite->MagicNumber[NthLetter] = MagicNumber[NthLetter];
+        Header->MagicNumber[NthLetter] = MagicNumber[NthLetter];
     }
 
-    ToWrite->NumRows = TileMap->NumRows;
-    ToWrite->NumCols = TileMap->NumCols;
-    ToWrite->NumTileTypes = TileMap->NumTileTypes;
-    ToWrite->TileTypeFilepathsOffset = sizeof(serialized_tile_map);
+// Fields we can just copy    
+    Header->NumTileRows = TileMap->NumRows;
+    Header->NumTileCols = TileMap->NumCols;
+    Header->NumTileTypes = TileMap->NumTileTypes;
 
-    // We initially set this to the same as TileTypeFilepathsOffset but continually increment it as
-    //      we write more filepaths to the file
-    ToWrite->TileValuesOffset = sizeof(serialized_tile_map);
-
-    for(int TypeIdx = 1;
-        TypeIdx <= ToWrite->NumTileTypes;
-        ++TypeIdx)
+// NumBitmaps per facing
+    for(int NthFacing = 0;
+        NthFacing < 4;
+        ++NthFacing)
     {
-        char *FilepathToWrite = TileMap->TileTypes[TypeIdx].Filepath;
-        mem_idx FilepathBytesNeeded = strnlen(FilepathToWrite, STRING_LEN);
-
-        // For null terminator
-        FilepathBytesNeeded += 1;
-
-        char *WriteFilepathHere = PushArray(&Scratch->Arena, char, FilepathBytesNeeded);
-        snprintf(WriteFilepathHere, FilepathBytesNeeded, "%s", FilepathToWrite);
-        ToWrite->TileValuesOffset += FilepathBytesNeeded;
-        BytesToWrite += FilepathBytesNeeded;
+        Header->NumPlayerBitmapsPerFacing[NthFacing] = Player->AllBitmaps.Array[NthFacing].NumBitmaps;
     }
 
-    s32 *WriteTileValuesHere = PushArray(&Scratch->Arena, s32, TileMap->NumTilesInWorld);
-    for(int ValueIdx = 0;
-        ValueIdx < TileMap->NumTilesInWorld;
-        ++ValueIdx)
+// Player DrawThis.
+// It is slow to do multiple loops like this but it's easier to read the code and understand and don't think
+//      perf is critical here
+    Header->PlayerDrawThisOffset = OutfileArena->Cursor;
+    int *PlayerDrawThisArray = PushArray(OutfileArena, int, 4);
+    for(int NthFacing = 0;
+        NthFacing < 4;
+        ++NthFacing)
     {
-        WriteTileValuesHere[ValueIdx] = TileMap->TileValues[ValueIdx];
-        BytesToWrite += sizeof(s32);
+        PlayerDrawThisArray[NthFacing] = Player->AllBitmaps.Array[NthFacing].DrawThis;
     }
 
-    mem_idx MaxPath = 260;
-    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, true);
+    Header->PlayerFilepathsOffset = OutfileArena->Cursor;
 
+// Player filepaths
+    for(int NthFacing = 0;
+        NthFacing < 4;
+        ++NthFacing)
+    {
+        facing_bitmaps *ThisFacing = &Player->AllBitmaps.Array[NthFacing];
+        meta_bitmap *ThisFacingMetaBitmaps = ThisFacing->MetaBitmaps;
+        for(int NthBitmap = 1;
+            NthBitmap <= ThisFacing->NumBitmaps;
+            ++NthBitmap)
+        {
+            char *PlayerBitmapFilepath = ThisFacingMetaBitmaps[NthBitmap].Filepath;
+            mem_idx FilepathLen = strlen(PlayerBitmapFilepath);
+            // Null terminator
+            ++FilepathLen;
+            char *FilepathBufferInOutfile = PushArray(OutfileArena, char, FilepathLen);
+            snprintf(FilepathBufferInOutfile, FilepathLen, "%s", PlayerBitmapFilepath);
+        }
+    }
+
+// Tile type filepaths
+    Header->TileTypeFilepathsOffset = OutfileArena->Cursor;
+    for(int NthTileTypeFilepath = 1;
+        NthTileTypeFilepath <= TileMap->NumTileTypes;
+        ++NthTileTypeFilepath)
+    {
+        char *TileTypeFilepath = TileMap->TileTypes[NthTileTypeFilepath].Filepath;
+        mem_idx FilepathLen = strlen(TileTypeFilepath);
+        // Null terminator
+        ++FilepathLen;
+        char *FilepathBufferInOutfile = PushArray(OutfileArena, char, FilepathLen);
+        snprintf(FilepathBufferInOutfile, FilepathLen, "%s", TileTypeFilepath);
+    }
+
+// Tile values
+    Header->TileValuesOffset = OutfileArena->Cursor;
+    mem_idx NumTileValuesToCopy = Header->NumTileRows * Header->NumTileCols;
+    s32 *TileValuesInOutfile = PushArray(OutfileArena, s32, NumTileValuesToCopy);
+    mem_idx NumBytesToCopy = NumTileValuesToCopy * sizeof(s32);
+    memcpy(TileValuesInOutfile, TileMap->TileValues, NumBytesToCopy);
+
+// Write file
+    mem_idx NumBytesToWrite = OutfileArena->Cursor - 1;
+    char FilepathToWrite[260];
+    int GetFilepathResult = GetFilepathFromDialog(FilepathToWrite, 260, true);
     if(GetFilepathResult)
     {
-        Success = WriteEntireFile(Filepath, BytesToWrite, Scratch->Arena.Data);
+        Success = WriteEntireFile(FilepathToWrite, NumBytesToWrite, OutfileArena->Data);
     }
 
-    FreeScratchArena(Scratch);
+    FreeScratchArena(OutfileScratch);
     return(Success);
 }
 
@@ -778,7 +832,7 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     b32 Result = false;
 
     // Pointers to the data in the loaded file
-    serialized_tile_map *Header = 0;
+    saved_project *Header = 0;
     char *TileTypeFilepaths = 0;
     s32 *LoadedTileValues = 0;
 
@@ -800,7 +854,7 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
     // Validate and set data pointers
     if(ReadFileInto(Filepath, Size, LoadedTileMap))
     {
-        Header = (serialized_tile_map *)LoadedTileMap;
+        Header = (saved_project *)LoadedTileMap;
         char *CompareMagicNumber = "TILE";
         for(int LetterIdx = 0;
             LetterIdx < 4;
@@ -808,10 +862,10 @@ LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
         {
             Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
         }
-        Assert(Header->NumRows);
-        TileMap->NumRows = Header->NumRows;
-        Assert(Header->NumCols);
-        TileMap->NumCols = Header->NumCols;
+        Assert(Header->NumTileRows);
+        TileMap->NumRows = Header->NumTileRows;
+        Assert(Header->NumTileCols);
+        TileMap->NumCols = Header->NumTileCols;
         Assert(Header->NumTileTypes);
         TileMap->NumTileTypes = Header->NumTileTypes;
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
@@ -964,65 +1018,6 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     }
 
     FreeScratchArena(Scratch);
-
-
-    
-
-
-    
-
-
-
-    
-
-
-    
-
-    // // Layout.
-    // //      Draw text headings
-    // DEBUGDrawText(Backbuf, BrowserMin.X + 10, 10, "Player Bitmaps Menu", &DebugState->DebugTextArena, 1, 1, 1, 1, 3.1);
-    // v2 FacingTextOffset = {40, 70};
-    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing East", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    // FacingTextOffset += v2{460, 0};
-    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing North", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    // FacingTextOffset += v2{460, 0};
-    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing West", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    // FacingTextOffset += v2{460, 0};
-    // DEBUGDrawText(Backbuf, FacingTextOffset.X, FacingTextOffset.Y, "Facing South", &DebugState->DebugTextArena, 0.9, 0.9, 0.9, 1, 2.4);
-    //
-    // //      Draw bitmaps
-    // v2 FacingBitmapsOffsetStart = {40, 110};
-    // for(int NthHeading = 0;
-    //     NthHeading < 4;
-    //     ++NthHeading)
-    // {
-    //     facing_bitmaps *FacingBitmaps = &Player->AllBitmaps.Array[NthHeading];
-    //     v2 FacingBitmapsOffsetMovable = FacingBitmapsOffsetStart;
-    //     for(int NthBitmap = 1;
-    //         NthBitmap < FacingBitmaps;
-    //         ++NthBitmap)
-    //     {
-    //         DrawSpecialRect(Backbuf, 
-    //                         FacingBitmapsOffsetMovable, 
-    //                         FacingBitmapsOffsetMovable + v2{64, 64},
-    //                         1, 1, 1, true, 0);
-    //         FacingBitmapsOffsetMovable += v2{70, 0};
-    //     }
-    //     FacingBitmapsOffsetStart += v2{460, 0};
-    // }
-    //
-
-    // Subregion
-
-
-
-
-
-
-        
-
-
-
 }
 
 static void
@@ -1058,7 +1053,7 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
             NthTileType < TileMap->NumTileTypes;
             ++NthTileType)
         {
-            // scan for the next tile type that does not have an empty filepath
+            // Scan for the next tile type that does not have an empty filepath
             while(NextTileType->Filepath[0] == 0)
             {
                 ++NextTileType;
@@ -1206,26 +1201,6 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
         }
     }
 
-    // MoveDown is the "S" key
-    // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
-    //      messages are routed to the message loop for the save/load dialog, not our usual
-    //      message loop in the platform layer, and we have code in the platform layer to
-    //      ensure that these are ignored (AS, 9/22)
-    if(GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
-    {
-        b32 WriteResult = SaveTileMap(TileMap, ScratchHeader);
-    }
-
-    // ActionRight is the "L" key
-    if(GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
-    {
-        b32 LoadResult = LoadTileMapFromFile(TileMap, ScratchHeader);
-    }
-
-    if(GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1)
-    {
-        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
-    }
 
     if(DebugState->EditorState.PrintRowsCols)
     {
@@ -1589,7 +1564,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         DrawPlayerEditor(Buffer, ScratchHeader, DebugState, &GameState->Player);
     }
-
     else
     {
         // Player
@@ -1604,6 +1578,28 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
         //      in the game when moving character around. test this.
         ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, ToDraw);
+    }
+
+    // MoveDown is the "S" key
+    // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
+    //      messages are routed to the message loop for the save/load dialog, not our usual
+    //      message loop in the platform layer, and we have code in the platform layer to
+    //      ensure that these are ignored (AS, 9/22)
+    if(GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
+    {
+        b32 WriteResult = SaveProject(TileMap, Player, ScratchHeader);
+        Assert(WriteResult == true);
+    }
+
+    // ActionRight is the "L" key
+    if(GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
+    {
+        b32 LoadResult = LoadTileMapFromFile(TileMap, ScratchHeader);
+    }
+
+    if(GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1)
+    {
+        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
     }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);

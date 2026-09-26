@@ -276,14 +276,17 @@ struct bitmap_header
     //      for now we don't use.
 };
 
-struct serialized_tile_map
+struct saved_project
 {
     char MagicNumber[4];
-    int NumRows;
-    int NumCols;
+    int NumPlayerBitmapsPerFacing[4];
+    int NumTileRows;
+    int NumTileCols;
     int NumTileTypes;
-    int TileTypeFilepathsOffset;
-    int TileValuesOffset;
+    mem_idx PlayerDrawThisOffset;
+    mem_idx PlayerFilepathsOffset;
+    mem_idx TileTypeFilepathsOffset;
+    mem_idx TileValuesOffset;
 };
 #pragma pack(pop)
 

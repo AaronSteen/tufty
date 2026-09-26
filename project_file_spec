@@ -1,7 +1,27 @@
-TILEMAP FILE SPEC (.tilemap)
-This is intended to be a simple spec which allows us to edit a tilemap using the in-game editor, save it, and reload it.
+PROJECT FILE SPEC (.tufty)
+A tufty project stores the state of certain game variables such that the user can exit the game, reopen it, reload the project file,
+        and resume working with it as though no interruption had occurred.
 
-Below, "tile type" means, e.g., a grass tile, a water tile, a right-angled path tile, a straight path tile, etc. Each of
+Currently, the variables we need to store to achieve this may be divided into two groups: player variables and tile variables.
+
+PLAYER VARIABLES
+- For each of the four directions the player can face, the number of bitmaps that were loaded for that facing direction
+- The filepath for every player facing bitmap that was in memory
+- The value of the DrawThis variable for each of the four facing directions. Since the user may load multiple bitmaps
+        for each of the four directions the character can face, we store a DrawThis variable to indicate
+        which of the loaded bitmaps for each facing direction is the one the renderer should display on screen.
+        It is merely an index into the array storing the loaded bitmaps.
+
+TILE VARIABLES
+- The number of rows that were in the tile map
+- The number of columns that were in the tile map
+- The number of tile types that were loaded
+- The filepath for each tile type that was loaded
+- An array of tile values whose size is equal to the number of rows multiplied by the number of columns. Each
+        entry in this array is an integer that indexes into the array of tile values. For each tile,
+        the renderer reads this value to determine which tile to display on the screen.
+        
+Note that "tile type" means, e.g., a grass tile, a water tile, a right-angled path tile, a straight path tile, etc. Each of
 these tile types has its own filepath. Therefore, this file contains an array of N zero-terminated strings; the Nth string
 contains the filepath for the Nth tile type. Note that while the the entries in the tile type filepath array are zero-indexed,
 when we load them into the game, the 0th filepath in the array must be loaded into the TileTypes array at index 1, because

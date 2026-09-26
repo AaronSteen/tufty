@@ -431,8 +431,8 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
     Filename.hwndOwner = Window;
     Filename.lpstrFile = Dest;
     Filename.nMaxFile = DestSize;
-    Filename.lpstrFilter = "Tile map (.tilemap)\0*.tilemap\0All files\0*.*\0\0";
-    Filename.lpstrDefExt = ".tilemap";
+    Filename.lpstrFilter = "Tufty project (.tufty)\0*.tufty\0All files\0*.*\0\0";
+    Filename.lpstrDefExt = ".tufty";
     Filename.Flags = OFN_OVERWRITEPROMPT|OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
 
     int Result = 0;
