@@ -848,25 +848,26 @@ mem_idx
 LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
 {
     scratch_arena *pScratch = GetScratchArena(ScratchHeader);
+
     arena *pTilesArena = &TileMap->TilesArena;
-    all_bitmaps *pFacingBitmaps = &Player->AllBitmaps.Array;
+    facing_bitmaps *pFacingBitmaps = Player->AllBitmaps.Array;
     saved_project *pHeader = 0;
     int *pPlayerDrawThis = 0;
     char *pPlayerFilepaths = 0;
     char *pTileTypeFilepaths = 0;
     s32 *pTileValues = 0;
 
-    char *LoadedFileFilepath = PushArray(pScratch->Arena, char, STRING_LEN);
+    char *LoadedFileFilepath = PushArray(&pScratch->Arena, char, STRING_LEN);
     int GetFilepathResult = GetFilepathFromDialog(LoadedFileFilepath, STRING_LEN, false);
-    if(GetFilepathResult == 0) { goto fail; }
+    if(GetFilepathResult == 0) {FreeScratchArena(pScratch); return(0);}
 
     u32 LoadedFileSize = GetFileSize(LoadedFileFilepath);
-    if(LoadedFileSize == 0) { goto fail; }
+    if(LoadedFileSize == 0) {FreeScratchArena(pScratch); return(0);}
 
-    u8 *LoadedProject = PushArray(pScratch->Arena, u8, LoadedFileSize);
+    u8 *LoadedProject = PushArray(&pScratch->Arena, u8, LoadedFileSize);
     // Validate and set data pointers
-    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFilepath, LoadedFileSize, LoadedProject);
-    if(BytesReadIntoBuffer == 0) { goto fail; }
+    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFileFilepath, LoadedFileSize, LoadedProject);
+    if(BytesReadIntoBuffer == 0) {FreeScratchArena(pScratch); return(0);} 
 
     pHeader = (saved_project *)LoadedProject;
     char *CompareMagicNumber = "TUFT";
@@ -874,11 +875,10 @@ LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
         LetterIdx < 4;
         ++LetterIdx)
     {
-        if(CompareMagicNumber[LetterIdx] != Header->MagicNumber[LetterIdx]) { goto fail; }
+        if(CompareMagicNumber[LetterIdx] != pHeader->MagicNumber[LetterIdx]) {FreeScratchArena(pScratch); return(0);}
     }
 
-fail:
-    FreeScratchArena(pScratch);
+    FreeScratchArena(pScratch); 
     return(0);
 
 
@@ -1689,7 +1689,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // ActionRight is the "L" key
     if(GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        b32 LoadResult = LoadTileMapFromFile(TileMap, ScratchHeader);
+        LoadProject(Player, TileMap, ScratchHeader);
     }
 
     if(GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1)

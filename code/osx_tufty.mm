@@ -309,10 +309,10 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
             Panel = OpenPanel;
         }
 
-        UTType *TileMapType = [UTType typeWithFilenameExtension:@"tilemap"];
-        if(TileMapType)
+        UTType *TuftyType = [UTType typeWithFilenameExtension:@"tufty"];
+        if(TuftyType)
         {
-            [Panel setAllowedContentTypes:@[TileMapType]];
+            [Panel setAllowedContentTypes:@[TuftyType]];
         }
 
         if([Panel runModal] == NSModalResponseOK)
