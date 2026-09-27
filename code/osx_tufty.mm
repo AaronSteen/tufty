@@ -117,7 +117,7 @@ DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
 {
     mem_idx Result = 0;
     struct stat FileStat;
-    if(stat(Filename, &FileStat) == 0)
+    if(stat(Filepath, &FileStat) == 0)
     {
         Result = SafeTruncateU64ToU32(FileStat.st_size);
     }
@@ -145,7 +145,7 @@ DEBUG_PLATFORM_READ_FILE_INTO(DEBUGPlatformReadFileInto)
 {
     u32 Result = 0;
 
-    int FileHandle = open(Filename, O_RDONLY);
+    int FileHandle = open(Filepath, O_RDONLY);
     if(FileHandle != -1)
     {
         struct stat FileStat;
