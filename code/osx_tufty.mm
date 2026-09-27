@@ -211,20 +211,19 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
     return(Result);
 }
 
-/* #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, mem_idx MemorySize, void *Memory) */
+/* #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) mem_idx name(char *Filepath, mem_idx BufferSize, void *WriteHere) */
 DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 {
-    b32 Result = false;
-
-    int FileHandle = open(Filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-    if(FileHandle != -1)
+    mem_idx BytesWritten = 0;
+    int FileHandle = open(Filepath, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+    if(FileHandle == -1)
     {
-        ssize_t BytesWritten = write(FileHandle, Memory, MemorySize);
-        Result = (BytesWritten == (ssize_t)MemorySize);
-        close(FileHandle);
+        return(BytesWritten);
     }
 
-    return(Result);
+    BytesWritten = write(FileHandle, WriteHere, BufferSize);
+    close(FileHandle);
+    return(BytesWritten);
 }
 
 

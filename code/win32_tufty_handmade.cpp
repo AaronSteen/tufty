@@ -219,32 +219,21 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
     return(Result);
 }
 
+/* #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) mem_idx name(char *Filepath, mem_idx BufferSize, void *WriteHere) */
 DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUGPlatformWriteEntireFile)
 {
-    b32 Result = false;
+    mem_idx BytesWritten = 0;
     
-    HANDLE FileHandle = CreateFileA(Filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
-    if(FileHandle != INVALID_HANDLE_VALUE)
+    HANDLE FileHandle = CreateFileA(Filepath, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+    if(FileHandle == INVALID_HANDLE_VALUE)
     {
-        DWORD BytesWritten;
-        if(WriteFile(FileHandle, Memory, MemorySize, &BytesWritten, 0))
-        {
-            // NOTE(casey): File read successfully
-            Result = (BytesWritten == MemorySize);
-        }
-        else
-        {
-            // TODO(casey): Logging
-        }
-
-        CloseHandle(FileHandle);
+        return(BytesWritten);
     }
-    else
-    {
-        // TODO(casey): Logging
-    }
-
-    return(Result);
+    DWORD DWordBytesWritten = 0;
+    WriteFile(FileHandle, WriteHere, BufferSize, &DWordBytesWritten, 0);
+    BytesWritten = DWordBytesWritten;
+    CloseHandle(FileHandle);
+    return(BytesWritten);
 }
 
 // #define DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)

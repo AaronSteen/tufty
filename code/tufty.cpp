@@ -715,24 +715,39 @@ GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
     return(Result);
 }
 
-static b32
+static mem_idx
 SaveProject(tile_map *TileMap, player *Player, scratch_header *ScratchHeader)
 {
-    b32 Success = false;
-    
-    // TODO (AARON): Remove this and test how it behaves if we have no tile types, no player bitmaps, or combo of both
-    if(TileMap->NumTileTypes == 0)
-    {
-        return(Success);
-    }
+    // If we successfully got a filepath from the OS file dialog and wrote the project to a file,
+    //      this function returns the number of bytes written to that file. If we didn't have
+    //      anything to write (e.g., empty project), or some failure occurred along the way,
+    //      we return 0. The caller can interpret this in whichever way they choose.
 
+    mem_idx Result = 0;
+    // TODO (AARON): Remove this and test how it behaves if we have no tile types, no player bitmaps, or combo of both
+
+    // On Windows we call GetSaveFilenameA. It returns either nonzero or zero.
+    //      The return value is NONZERO if: 
+    //              - the user specifies a filepath, and 
+    //              - clicks the OK button, and
+    //              - the function is successful.
+    //      The return value is ZERO if:
+    //              - the user cancels, or
+    //              - the user closes the dialog box, or
+    //              - an error, such as the file name buffer being too small, occurred.
+    char FilepathToWrite[STRING_LEN];
+    int GetFilepathResult = GetFilepathFromDialog(FilepathToWrite, STRING_LEN, true);
+    if(GetFilepathResult == 0)
+    {
+        return(0);
+    }
  
     scratch_arena *OutfileScratch = GetScratchArena(ScratchHeader);
     arena *OutfileArena = &OutfileScratch->Arena;
     saved_project *Header = PushStruct(OutfileArena, saved_project);
 
 // Magic number
-    char *MagicNumber = "TILE";
+    char *MagicNumber = "TUFT";
     mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
     Assert(MagicNumberSize == 4);
     for(int NthLetter = 0;
@@ -812,16 +827,97 @@ SaveProject(tile_map *TileMap, player *Player, scratch_header *ScratchHeader)
 
 // Write file
     mem_idx NumBytesToWrite = OutfileArena->Cursor - 1;
-    char FilepathToWrite[260];
-    int GetFilepathResult = GetFilepathFromDialog(FilepathToWrite, 260, true);
-    if(GetFilepathResult)
+
+    // TODO(AARON): On Windows we have updated WriteEntireFile to return the number of bytes the file wrote,
+    //      so that we can return that from this function.
+    mem_idx BytesWritten = WriteEntireFile(FilepathToWrite, NumBytesToWrite, OutfileArena->Data);
+    if(BytesWritten != NumBytesToWrite)
     {
-        Success = WriteEntireFile(FilepathToWrite, NumBytesToWrite, OutfileArena->Data);
+        Result = 0;
+    }
+    else
+    {
+        Result = BytesWritten;
     }
 
     FreeScratchArena(OutfileScratch);
-    return(Success);
+    return(Result);
 }
+
+mem_idx
+LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
+{
+    scratch_arena *pScratch = GetScratchArena(ScratchHeader);
+    arena *pTilesArena = &TileMap->TilesArena;
+    all_bitmaps *pFacingBitmaps = &Player->AllBitmaps.Array;
+    saved_project *pHeader = 0;
+    int *pPlayerDrawThis = 0;
+    char *pPlayerFilepaths = 0;
+    char *pTileTypeFilepaths = 0;
+    s32 *pTileValues = 0;
+
+    char *LoadedFileFilepath = PushArray(pScratch->Arena, char, STRING_LEN);
+    int GetFilepathResult = GetFilepathFromDialog(LoadedFileFilepath, STRING_LEN, false);
+    if(GetFilepathResult == 0) { goto fail; }
+
+    u32 LoadedFileSize = GetFileSize(LoadedFileFilepath);
+    if(LoadedFileSize == 0) { goto fail; }
+
+    u8 *LoadedProject = PushArray(pScratch->Arena, u8, LoadedFileSize);
+    // Validate and set data pointers
+    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFilepath, LoadedFileSize, LoadedProject);
+    if(BytesReadIntoBuffer == 0) { goto fail; }
+
+    pHeader = (saved_project *)LoadedProject;
+    char *CompareMagicNumber = "TUFT";
+    for(int LetterIdx = 0;
+        LetterIdx < 4;
+        ++LetterIdx)
+    {
+        if(CompareMagicNumber[LetterIdx] != Header->MagicNumber[LetterIdx]) { goto fail; }
+    }
+
+fail:
+    FreeScratchArena(pScratch);
+    return(0);
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 static b32
 LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
@@ -1587,8 +1683,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      ensure that these are ignored (AS, 9/22)
     if(GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        b32 WriteResult = SaveProject(TileMap, Player, ScratchHeader);
-        Assert(WriteResult == true);
+        SaveProject(TileMap, Player, ScratchHeader);
     }
 
     // ActionRight is the "L" key
@@ -1603,7 +1698,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
 
     DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
-
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
