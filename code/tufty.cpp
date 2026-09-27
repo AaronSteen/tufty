@@ -1023,7 +1023,6 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
     DEBUGDrawText(Backbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", &DebugState->DebugTextArena, color{1, 1, 1, 1});
 
     char *Dirs[] = {"East", "North", "West", "South"};
-    int NumTilesNeeded = 0;
     f32 VerticalSpaceBetweenSections = 220;
     v2 HeaderTextStart = {BrowserMin.X + 30, 120};
     f32 CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
@@ -1052,7 +1051,6 @@ DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, 
 
             XDrawCoord = MenuTilesCursor->TileMax.X + 30.0f;
             ++MenuTilesCursor;
-            ++NumTilesNeeded;
         }
         HeaderTextStart += v2{0, VerticalSpaceBetweenSections};
         CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
