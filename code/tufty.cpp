@@ -175,11 +175,13 @@ LoadBitmap(arena *Arena, meta_bitmap *MetaBitmap)
 {
     bitmap *Bitmap = &MetaBitmap->Bitmap;
     char *Filepath = MetaBitmap->Filepath;
-    // If we can't get the file size, then we can't load the file, 
-    //      so we want the file size in the bitmap to be 0.
+    // Not being able to get the file size is the sentinel for a filepath
+    //      we have stored not matching an actual file in the dir. In this case,
+    //      draw the bagel instead.
     Bitmap->Buffer.Size = GetFileSize(Filepath);
     if(Bitmap->Buffer.Size == 0)
     {
+        MetaBitmap = GlobalBagel;
         return;
     }
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
@@ -279,119 +281,191 @@ LoadPlayerBitmapsDir(player *Player, facing_bitmaps *FacingBitmaps, scratch_head
 }
 
 static void
-LoadTileBitmapsDir(tile_map *TileMap, scratch_header *ScratchHeader)
+LoadTileBitmapsDir(tile_map *pTileMap, scratch_header *pScratchHeader)
 {
+    struct keep_track
+    {
+        char Filepath[STRING_LEN];
+        b32 LoadedYet;
+    };
     // TODO: Use CPP class constructor destructor setup to always 
     //      FreeScratchArena whenever any scope containing a 
     //      GetScratchArena call is exited
-    arena *TilesArena = &TileMap->TilesArena;
-    ResetArena(TilesArena);
-    meta_bitmap *TileTypes = TileMap->TileTypes;
-    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+    arena *pTilesArena = &pTileMap->TilesArena;
+    ResetArena(pTilesArena);
+    meta_bitmap *pTileTypes = pTileMap->TileTypes;
+    scratch_arena *pScratch = GetScratchArena(pScratchHeader);
     
     // Clear bitmap structs in tile types array
     for(int TypeIdx = 0;
         TypeIdx < TILE_TYPES_ARRAY_LEN;
         ++TypeIdx)
     {
-        TileTypes[TypeIdx].LastUpdateTime = 0;
-        TileTypes[TypeIdx].ReadyToReload = false;
-        TileTypes[TypeIdx].Bitmap = {};
+        pTileTypes[TypeIdx].LastUpdateTime = 0;
+        pTileTypes[TypeIdx].ReadyToReload = false;
+        pTileTypes[TypeIdx].Bitmap = {};
     }
 
-    TileMap->LastUpdateTime = GetDirWriteTime("tiles");
-    TileMap->ReadyToReload = false;
-    TileMap->NumTileTypes = 0;
+    pTileMap->LastUpdateTime = GetDirWriteTime("tiles");
+    pTileMap->ReadyToReload = false;
+    pTileMap->NumTileTypes = 0;
 
     buffer FoundFilenames;
     FoundFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
-    FoundFilenames.Data = PushArray(&Scratch->Arena, u8, FoundFilenames.Size);
+    FoundFilenames.Data = PushArray(&pScratch->Arena, u8, FoundFilenames.Size);
     int NumFilesFound = 0;
     GetListOfDirContents(&FoundFilenames, "tiles", &NumFilesFound);
 
     // If we found no bitmaps or too many, just return
     if((NumFilesFound > MAX_TILE_TYPES) || (NumFilesFound == 0))
     {
-        FreeScratchArena(Scratch);
+        FreeScratchArena(pScratch);
         return;
     }
 
-    // If we made it this far, we found a valid number of bitmaps (i.e., more than 0 and less than or equal to the max)
-    char *ThisFilename = (char *)FoundFilenames.Data;
-    for(int NthBitmapToLoad = 0;
-        NthBitmapToLoad < NumFilesFound;
-        ++NthBitmapToLoad)
+    keep_track *pKeepTracks = PushArray(&pScratch->Arena, keep_track, NumFilesFound);
+    char *pFoundFilenamesCursor = (char *)FoundFilenames.Data;
+    keep_track *pKeepTrackCursor = pKeepTracks;
+    for(int NthFilepath = 0;
+        NthFilepath < NumFilesFound;
+        ++NthFilepath)
     {
-        char FilepathToLoad[STRING_LEN];
-        
-        // TODO(Aaron): Confirm that we check that the OS is giving us a filename less than or equal to STRING_LEN in length
-        snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles/%s", ThisFilename);
+        snprintf(pKeepTrackCursor->Filepath, STRING_LEN, "tiles/%s", pFoundFilenamesCursor);
+        ++pKeepTrackCursor;
+        mem_idx FoundFilepathLen = strlen(pFoundFilenamesCursor);
+        ++FoundFilepathLen; // null terminator
+        pFoundFilenamesCursor += FoundFilepathLen;
+    }
 
-        int FirstAvailable = 0;
-        b32 ExistingTileType = false;
-        // Always keep 0th slot empty
-        for(int NthSlot = 1;
-            NthSlot < MAX_TILE_TYPES + 1;
-            ++NthSlot)
+    // Try to load all of the filepaths in the game. Record if we used
+    //      one of the filepaths the OS gave us.
+    for(int Slot = 1;
+        Slot <= MAX_TILE_TYPES;
+        ++Slot)
+    {
+        meta_bitmap *TileType = pTileMap->TileTypes + Slot;
+        if(strlen(TileType->Filepath) > 0)
         {
-            meta_bitmap *TileType = TileTypes + NthSlot;
-            if(TileType->Filepath[0] == 0)
+            LoadBitmap(pTilesArena, TileType);
+            ++pTileMap->NumTileTypes;
+            for(int NthFoundFilepath = 0;
+                NthFoundFilepath < NumFilesFound;
+                ++NthFoundFilepath)
             {
-                if(!FirstAvailable)
+
+                keep_track *pCompareWith = pKeepTracks + NthFoundFilepath;
+                if(strncmp(TileType->Filepath, pCompareWith->Filepath, STRING_LEN) == 0)
                 {
-                    FirstAvailable = NthSlot;
+                    pCompareWith->LoadedYet = true;
                 }
             }
-            else
+        }
+    }
+
+    for(int NthFoundFilepath = 0;
+        NthFoundFilepath < NumFilesFound;
+        ++NthFoundFilepath)
+    {
+        keep_track *pCheckIfLoaded = pKeepTracks + NthFoundFilepath;
+        if(pCheckIfLoaded->LoadedYet == false)
+        {
+            // Find the first available bitmap slot in the array
+            for(int Slot = 1;
+                Slot <= MAX_TILE_TYPES;
+                ++Slot)
             {
-                if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
+                meta_bitmap *pThisTileType = pTileMap->TileTypes + Slot;
+                if(strlen(pThisTileType->Filepath) == 0)
                 {
-                    LoadBitmap(TilesArena, TileType);
-                    ExistingTileType = true;
+                    mem_idx FilepathLen = strlen(pCheckIfLoaded->Filepath);
+                    snprintf(pThisTileType->Filepath, FilepathLen+1, "%s", pCheckIfLoaded->Filepath);
+                    LoadBitmap(pTilesArena, pThisTileType);
+                    pCheckIfLoaded->LoadedYet = true;
+                    ++pTileMap->NumTileTypes;
                     break;
                 }
             }
         }
-
-        // If the bitmap wasn't in the game previously, we pick the first available slot.
-        //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
-        if(ExistingTileType == false)
-        {
-            Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
-            meta_bitmap *SlotForNewBitmap = TileTypes + FirstAvailable;
-            snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
-            LoadBitmap(TilesArena, SlotForNewBitmap);
-        }
-
-        while(*ThisFilename)
-        {
-            ++ThisFilename;
-        }
-        ++ThisFilename;
     }
 
+    // // If we made it this far, we found a valid number of bitmaps (i.e., more than 0 and less than or equal to the max)
+    // char *ThisFilename = (char *)FoundFilenames.Data;
+    // for(int NthBitmapToLoad = 0;
+    //     NthBitmapToLoad < NumFilesFound;
+    //     ++NthBitmapToLoad)
+    // {
+    //     char FilepathToLoad[STRING_LEN];
+    //
+    //     // TODO(Aaron): Confirm that we check that the OS is giving us a filename less than or equal to STRING_LEN in length
+    //     snprintf(FilepathToLoad, sizeof(FilepathToLoad), "tiles/%s", ThisFilename);
+    //
+    //     int FirstAvailable = 0;
+    //     b32 ExistingTileType = false;
+    //     // Always keep 0th slot empty
+    //     for(int NthSlot = 1;
+    //         NthSlot < MAX_TILE_TYPES + 1;
+    //         ++NthSlot)
+    //     {
+    //         meta_bitmap *TileType = pTileTypes + NthSlot;
+    //         if(TileType->Filepath[0] == 0)
+    //         {
+    //             if(!FirstAvailable)
+    //             {
+    //                 FirstAvailable = NthSlot;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             if(strncmp(FilepathToLoad, TileType->Filepath, STRING_LEN) == 0)
+    //             {
+    //                 LoadBitmap(pTilesArena, TileType);
+    //                 ++pTileMap->NumTileTypes;
+    //                 ExistingTileType = true;
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //
+    //     // If the bitmap wasn't in the game previously, we pick the first available slot.
+    //     //      We have to copy the contents of the FilepathToLoad array to the new ID's Filepath field.
+    //     if(ExistingTileType == false)
+    //     {
+    //         Assert(strnlen(FilepathToLoad, STRING_LEN) < STRING_LEN);
+    //         meta_bitmap *SlotForNewBitmap = pTileTypes + FirstAvailable;
+    //         snprintf(SlotForNewBitmap->Filepath, STRING_LEN, "%s", FilepathToLoad);
+    //         LoadBitmap(pTilesArena, SlotForNewBitmap);
+    //         ++pTileMap->NumTileTypes;
+    //     }
+    //
+    //     while(*ThisFilename)
+    //     {
+    //         ++ThisFilename;
+    //     }
+    //     ++ThisFilename;
+    // }
+    //
         // Do some cleanup. Find all instances of TileTypes that do have filepaths, but have no bitmap pointers.
         //      These are tile bitmaps that were removed from the game. We want them to be
         //      drawn as a bagel instead
 
-    for(int Slot = 1;
-        Slot < TILE_TYPES_ARRAY_LEN;
-        ++Slot)
-    {
-        meta_bitmap *TileType = TileTypes + Slot;
-        bitmap *Bitmap = &TileType->Bitmap;
-        if(TileType->Filepath[0]) // If the TileType has a filepath
-        {
-            ++TileMap->NumTileTypes;
-            if(Bitmap->Buffer.Data == 0) // if bitmap buffer pointer is null
-            {
-                // Set the bitmap to bagel
-                *Bitmap = GlobalBagel->Bitmap;
-            }
-        }
-    }
+    // for(int Slot = 1;
+    //     Slot < TILE_TYPES_ARRAY_LEN;
+    //     ++Slot)
+    // {
+    //     meta_bitmap *TileType = TileTypes + Slot;
+    //     bitmap *Bitmap = &TileType->Bitmap;
+    //     if(TileType->Filepath[0]) // If the TileType has a filepath
+    //     {
+    //         ++TileMap->NumTileTypes;
+    //         if(Bitmap->Buffer.Data == 0) // if bitmap buffer pointer is null
+    //         {
+    //             // Set the bitmap to bagel
+    //             *Bitmap = GlobalBagel->Bitmap;
+    //         }
+    //     }
+    // }
 
-    FreeScratchArena(Scratch);
+    FreeScratchArena(pScratch);
 }
 
 static void
