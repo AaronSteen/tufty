@@ -181,7 +181,7 @@ LoadBitmap(arena *Arena, meta_bitmap *MetaBitmap)
     Bitmap->Buffer.Size = GetFileSize(Filepath);
     if(Bitmap->Buffer.Size == 0)
     {
-        MetaBitmap = GlobalBagel;
+        MetaBitmap->Bitmap = GlobalBagel->Bitmap;
         return;
     }
     Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
@@ -357,6 +357,7 @@ LoadTileBitmapsDir(tile_map *pTileMap, scratch_header *pScratchHeader)
                 if(strncmp(TileType->Filepath, pCompareWith->Filepath, STRING_LEN) == 0)
                 {
                     pCompareWith->LoadedYet = true;
+                    break;
                 }
             }
         }
