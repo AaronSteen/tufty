@@ -223,6 +223,12 @@ struct player
     all_player_bitmaps AllBitmaps;
 };
 
+struct found_filepath
+{
+    char Filepath[STRING_LEN];
+    b32 LoadedYet;
+};
+
 struct game_state
 {
     arena WorldArena;
