@@ -849,14 +849,6 @@ LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
 {
     scratch_arena *pScratch = GetScratchArena(ScratchHeader);
 
-    arena *pTilesArena = &TileMap->TilesArena;
-    facing_bitmaps *pFacingBitmaps = Player->AllBitmaps.Array;
-    saved_project *pHeader = 0;
-    int *pPlayerDrawThis = 0;
-    char *pPlayerFilepaths = 0;
-    char *pTileTypeFilepaths = 0;
-    s32 *pTileValues = 0;
-
     char *LoadedFileFilepath = PushArray(&pScratch->Arena, char, STRING_LEN);
     int GetFilepathResult = GetFilepathFromDialog(LoadedFileFilepath, STRING_LEN, false);
     if(GetFilepathResult == 0) {FreeScratchArena(pScratch); return(0);}
@@ -864,12 +856,14 @@ LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
     u32 LoadedFileSize = GetFileSize(LoadedFileFilepath);
     if(LoadedFileSize == 0) {FreeScratchArena(pScratch); return(0);}
 
-    u8 *LoadedProject = PushArray(&pScratch->Arena, u8, LoadedFileSize);
-    // Validate and set data pointers
-    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFileFilepath, LoadedFileSize, LoadedProject);
+    u8 *pLoadedDataStart = PushArray(&pScratch->Arena, u8, LoadedFileSize);
+    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFileFilepath, LoadedFileSize, pLoadedDataStart);
     if(BytesReadIntoBuffer == 0) {FreeScratchArena(pScratch); return(0);} 
 
-    pHeader = (saved_project *)LoadedProject;
+    saved_project *pHeader = 0;
+    pHeader = (saved_project *)pLoadedDataStart;
+
+    // char MagicNumber[4];
     char *CompareMagicNumber = "TUFT";
     for(int LetterIdx = 0;
         LetterIdx < 4;
@@ -878,134 +872,149 @@ LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
         if(CompareMagicNumber[LetterIdx] != pHeader->MagicNumber[LetterIdx]) {FreeScratchArena(pScratch); return(0);}
     }
 
-    FreeScratchArena(pScratch); 
-    return(0);
+    if( (pHeader->NumTileRows == 0) || (pHeader->NumTileCols == 0) ) {FreeScratchArena(pScratch); return(0);}
 
+    TileMap->NumRows = pHeader->NumTileRows;
+    TileMap->NumCols = pHeader->NumTileCols;
+    TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
+    TileMap->NumTileTypes = pHeader->NumTileTypes;
 
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-static b32
-LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
-{
-    scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-    arena *TilesArena = &TileMap->TilesArena;
-
-    b32 Result = false;
-
-    // Pointers to the data in the loaded file
-    saved_project *Header = 0;
-    char *TileTypeFilepaths = 0;
-    s32 *LoadedTileValues = 0;
-
-    // TODO(Aaron): Fix how we handle strings to be uniform. Currently we are all over the place!!!!
-    mem_idx MaxPath = 260;
-    char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-    int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, false);
-    if(GetFilepathResult == 0)
+    // int NumPlayerBitmapsPerFacing[4];
+    // mem_idx PlayerDrawThisOffset;
+    // mem_idx PlayerFilepathsOffset;
+    facing_bitmaps *pFacingBitmaps = Player->AllBitmaps.Array;
+    char *pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->PlayerFilepathsOffset);
+    int *pPlayerDrawThisToCopy = (int *)(pLoadedDataStart + pHeader->PlayerDrawThisOffset);
+    for(int NthFacing = 0;
+        NthFacing < 4;
+        ++NthFacing)
     {
-        FreeScratchArena(Scratch);
-        return(Result);
-    }
-
-    u32 Size = GetFileSize(Filepath);
-    u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
-    // We don't worry about dest buffer being too small here because if it's too small
-    //      PushArray call above will fail
-
-    // Validate and set data pointers
-    if(ReadFileInto(Filepath, Size, LoadedTileMap))
-    {
-        Header = (saved_project *)LoadedTileMap;
-        char *CompareMagicNumber = "TILE";
-        for(int LetterIdx = 0;
-            LetterIdx < 4;
-            ++LetterIdx)
+        facing_bitmaps *pThisFacing = &pFacingBitmaps[NthFacing];
+        pThisFacing->NumBitmaps = pHeader->NumPlayerBitmapsPerFacing[NthFacing];
+        for(int NthFilepath = 0;
+            NthFilepath < pThisFacing->NumBitmaps;
+            ++NthFilepath)
         {
-            Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
+            char *pPasteFilepathHere = pThisFacing->MetaBitmaps[NthFilepath+1].Filepath;
+            mem_idx FilepathLen = strlen(pFilepathToCopyCursor);
+            ++FilepathLen; // Null terminator
+            snprintf(pPasteFilepathHere, FilepathLen, "%s", pFilepathToCopyCursor);
+            pFilepathToCopyCursor += FilepathLen;
         }
-        Assert(Header->NumTileRows);
-        TileMap->NumRows = Header->NumTileRows;
-        Assert(Header->NumTileCols);
-        TileMap->NumCols = Header->NumTileCols;
-        Assert(Header->NumTileTypes);
-        TileMap->NumTileTypes = Header->NumTileTypes;
-        TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-        TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
-        LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
+        pThisFacing->DrawThis = pPlayerDrawThisToCopy[NthFacing];
+        LoadPlayerBitmapsDir(Player, pThisFacing, ScratchHeader);
     }
 
-    // If the file is valid go ahead and clear the tile data structures to prepare for loading 
-    //      the new data from the file
-    ResetArena(TilesArena);
-    meta_bitmap *TileTypes = TileMap->TileTypes;
-    for(int TypeIdx = 0;
-        TypeIdx < TILE_TYPES_ARRAY_LEN;
-        ++TypeIdx)
+    // Use the same cursor pointer as we used for player filepaths
+    pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->TileTypeFilepathsOffset);
+    for(int NthTileType = 0;
+        NthTileType < TileMap->NumTileTypes;
+        ++NthTileType)
     {
-        TileTypes[TypeIdx] = {};
+        char *pPasteFilepathHere = TileMap->TileTypes[NthTileType+1].Filepath;
+        mem_idx FilepathLen = strlen(pFilepathToCopyCursor);
+        ++FilepathLen; // Null terminator
+        snprintf(pPasteFilepathHere, FilepathLen, "%s", pFilepathToCopyCursor);
+        pFilepathToCopyCursor += FilepathLen;
     }
 
-    char *FilepathCursor = TileTypeFilepaths;
-    for(int NthType = 1;
-        NthType <= TileMap->NumTileTypes;
-        ++NthType)
-    {
-        meta_bitmap *ThisType = TileTypes + NthType;
-        mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
-
-        FilepathLen += 1;
-        snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
-        FilepathCursor += FilepathLen;
-    }
+    // Tile values
+    mem_idx NumTileValueBytes = TileMap->NumTilesInWorld * sizeof(s32);
+    memcpy(TileMap->TileValues, pLoadedDataStart + pHeader->TileValuesOffset, NumTileValueBytes);
 
     LoadTileBitmapsDir(TileMap, ScratchHeader);
 
-    for(int ValueIdx = 0;
-        ValueIdx < TileMap->NumTilesInWorld;
-        ++ValueIdx)
-    {
-        TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
-    }
-
-    FreeScratchArena(Scratch);
-
-    return(true);
+    FreeScratchArena(pScratch); 
+    return(0);
 }
+
+// static b32
+// LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
+// {
+//     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
+//     arena *TilesArena = &TileMap->TilesArena;
+//
+//     b32 Result = false;
+//
+//     // Pointers to the data in the loaded file
+//     saved_project *Header = 0;
+//     char *TileTypeFilepaths = 0;
+//     s32 *LoadedTileValues = 0;
+//
+//     // TODO(Aaron): Fix how we handle strings to be uniform. Currently we are all over the place!!!!
+//     mem_idx MaxPath = 260;
+//     char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
+//     int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, false);
+//     if(GetFilepathResult == 0)
+//     {
+//         FreeScratchArena(Scratch);
+//         return(Result);
+//     }
+//
+//     u32 Size = GetFileSize(Filepath);
+//     u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
+//     // We don't worry about dest buffer being too small here because if it's too small
+//     //      PushArray call above will fail
+//
+//     // Validate and set data pointers
+//     if(ReadFileInto(Filepath, Size, LoadedTileMap))
+//     {
+//         Header = (saved_project *)LoadedTileMap;
+//         char *CompareMagicNumber = "TILE";
+//         for(int LetterIdx = 0;
+//             LetterIdx < 4;
+//             ++LetterIdx)
+//         {
+//             Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
+//         }
+//         Assert(Header->NumTileRows);
+//         TileMap->NumRows = Header->NumTileRows;
+//         Assert(Header->NumTileCols);
+//         TileMap->NumCols = Header->NumTileCols;
+//         Assert(Header->NumTileTypes);
+//         TileMap->NumTileTypes = Header->NumTileTypes;
+//         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
+//         TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
+//         LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
+//     }
+//
+//     // If the file is valid go ahead and clear the tile data structures to prepare for loading 
+//     //      the new data from the file
+//     ResetArena(TilesArena);
+//     meta_bitmap *TileTypes = TileMap->TileTypes;
+//     for(int TypeIdx = 0;
+//         TypeIdx < TILE_TYPES_ARRAY_LEN;
+//         ++TypeIdx)
+//     {
+//         TileTypes[TypeIdx] = {};
+//     }
+//
+//     char *FilepathCursor = TileTypeFilepaths;
+//     for(int NthType = 1;
+//         NthType <= TileMap->NumTileTypes;
+//         ++NthType)
+//     {
+//         meta_bitmap *ThisType = TileTypes + NthType;
+//         mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
+//
+//         FilepathLen += 1;
+//         snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
+//         FilepathCursor += FilepathLen;
+//     }
+//
+//     LoadTileBitmapsDir(TileMap, ScratchHeader);
+//
+//     for(int ValueIdx = 0;
+//         ValueIdx < TileMap->NumTilesInWorld;
+//         ++ValueIdx)
+//     {
+//         TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
+//     }
+//
+//     FreeScratchArena(Scratch);
+//
+//     return(true);
+// }
 
 static void
 DrawPlayerEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, debug_state *DebugState, player *Player)
@@ -1674,17 +1683,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, ToDraw);
     }
 
-    // MoveDown is the "S" key
     // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
     //      messages are routed to the message loop for the save/load dialog, not our usual
     //      message loop in the platform layer, and we have code in the platform layer to
     //      ensure that these are ignored (AS, 9/22)
+    //
+    // Note MoveDown is the "S" key
     if(GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
         SaveProject(TileMap, Player, ScratchHeader);
     }
 
-    // ActionRight is the "L" key
+    // and ActionRight is the "L" key
     if(GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
         LoadProject(Player, TileMap, ScratchHeader);

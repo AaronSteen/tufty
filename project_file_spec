@@ -35,36 +35,3 @@ and the player just sees whatever flat color is the background. A tile value of 
 filepath string encountered in the tile type filepath array (noting that this array is actually zero-indexed as described above...
 man this shit is hard to define). A value of 2 corresponds to the second filepath in the tile type filepath array, etc.
 
-Contents:
-    Magic number                    :                                       "TILE"
-    NumRows                         :                                       Number of rows of tiles in the tilemap
-    NumCols                         :                                       Number of columns of tiles in the tilemap
-    NumTileTypes                    :                                       How many tile types the file contains. This
-                                                                                tells us how many strings will be in the
-                                                                                TileTypeFilepaths array.
-    TileTypeFilepathsOffset         :                                       How many bytes to jump from the start of the file to
-                                                                                get to the first byte of the TileTypeFilepaths array
-    TileValuesOffset                :                                       How many bytes to jump from the start of the file to                                       
-                                                                                get to the first byte of the TileValues array
-                                                                                    
-Definition of the struct that serves as the header of the file.
-(#pragma pack)
-struct serialized_tile_map
-{
-    char MagicNumber[4];
-    int NumRows;
-    int NumCols;
-    int NumTileTypes;
-    int TileTypeFilepathsOffset;
-    int TileValuesOffset;
-};
-
-TYPE                        BYTES                                                           CONTENTS
-char                        0-3                                                             Magic number "TILE"
-int                         4-7                                                             NumRows
-int                         8-11                                                            NumCols
-int                         12-15                                                           NumTileTypes
-int                         16-19                                                           Offset to array of zero-terminated strings containing the filepaths for the tile types. Since this string array directly follows the serialized_tile_map struct, the offset is equal to the size of the struct itself.
-int                         20-23                                                           Offset to array of s32 TileValues
-tile_type[]                 24+                                                             Array of zero-terminated strings containing the filepaths for the tile types
-tile_value[]                Unknown; depends on the size of the tile type string array      Array of (NumRows * NumCols) s32 values.
