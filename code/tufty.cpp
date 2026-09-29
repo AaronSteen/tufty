@@ -765,6 +765,22 @@ GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
     return(Result);
 }
 
+static int
+CountBitmaps(meta_bitmap *pMetaBitmapsList, mem_idx ListLen)
+{
+    int Count = 0;
+    for(int Slot = 1;
+        Slot <= ListLen;
+        ++Slot)
+    {
+        if(strlen(pMetaBitmapsList[Slot].Filepath) > 0)
+        {
+            ++Count;
+        }
+    }
+    return(Count);
+}
+
 static mem_idx
 SaveProject(tile_map *TileMap, player *Player, scratch_header *ScratchHeader)
 {
@@ -977,94 +993,6 @@ LoadProject(player *Player, tile_map *TileMap, scratch_header *ScratchHeader)
     return(0);
 }
 
-// static b32
-// LoadTileMapFromFile(tile_map *TileMap, scratch_header *ScratchHeader)
-// {
-//     scratch_arena *Scratch = GetScratchArena(ScratchHeader);
-//     arena *TilesArena = &TileMap->TilesArena;
-//
-//     b32 Result = false;
-//
-//     // Pointers to the data in the loaded file
-//     saved_project *Header = 0;
-//     char *TileTypeFilepaths = 0;
-//     s32 *LoadedTileValues = 0;
-//
-//     // TODO(Aaron): Fix how we handle strings to be uniform. Currently we are all over the place!!!!
-//     mem_idx MaxPath = 260;
-//     char *Filepath = PushArray(&Scratch->Arena, char, MaxPath);
-//     int GetFilepathResult = GetFilepathFromDialog(Filepath, MaxPath, false);
-//     if(GetFilepathResult == 0)
-//     {
-//         FreeScratchArena(Scratch);
-//         return(Result);
-//     }
-//
-//     u32 Size = GetFileSize(Filepath);
-//     u8 *LoadedTileMap = PushArray(&Scratch->Arena, u8, Size);
-//     // We don't worry about dest buffer being too small here because if it's too small
-//     //      PushArray call above will fail
-//
-//     // Validate and set data pointers
-//     if(ReadFileInto(Filepath, Size, LoadedTileMap))
-//     {
-//         Header = (saved_project *)LoadedTileMap;
-//         char *CompareMagicNumber = "TILE";
-//         for(int LetterIdx = 0;
-//             LetterIdx < 4;
-//             ++LetterIdx)
-//         {
-//             Assert(CompareMagicNumber[LetterIdx] == Header->MagicNumber[LetterIdx]);
-//         }
-//         Assert(Header->NumTileRows);
-//         TileMap->NumRows = Header->NumTileRows;
-//         Assert(Header->NumTileCols);
-//         TileMap->NumCols = Header->NumTileCols;
-//         Assert(Header->NumTileTypes);
-//         TileMap->NumTileTypes = Header->NumTileTypes;
-//         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-//         TileTypeFilepaths = (char *)(LoadedTileMap + Header->TileTypeFilepathsOffset);
-//         LoadedTileValues = (s32 *)(LoadedTileMap + Header->TileValuesOffset);
-//     }
-//
-//     // If the file is valid go ahead and clear the tile data structures to prepare for loading 
-//     //      the new data from the file
-//     ResetArena(TilesArena);
-//     meta_bitmap *TileTypes = TileMap->TileTypes;
-//     for(int TypeIdx = 0;
-//         TypeIdx < TILE_TYPES_ARRAY_LEN;
-//         ++TypeIdx)
-//     {
-//         TileTypes[TypeIdx] = {};
-//     }
-//
-//     char *FilepathCursor = TileTypeFilepaths;
-//     for(int NthType = 1;
-//         NthType <= TileMap->NumTileTypes;
-//         ++NthType)
-//     {
-//         meta_bitmap *ThisType = TileTypes + NthType;
-//         mem_idx FilepathLen = strnlen(FilepathCursor, STRING_LEN);
-//
-//         FilepathLen += 1;
-//         snprintf(ThisType->Filepath, FilepathLen, "%s", FilepathCursor);
-//         FilepathCursor += FilepathLen;
-//     }
-//
-//     LoadTileBitmapsDir(TileMap, ScratchHeader);
-//
-//     for(int ValueIdx = 0;
-//         ValueIdx < TileMap->NumTilesInWorld;
-//         ++ValueIdx)
-//     {
-//         TileMap->TileValues[ValueIdx] = LoadedTileValues[ValueIdx];
-//     }
-//
-//     FreeScratchArena(Scratch);
-//
-//     return(true);
-// }
-
 static void
 DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, debug_state *pDebugState, player *pPlayer)
 {
@@ -1202,7 +1130,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
                                 mem_idx GetsReplacedIdx = (GetsReplaced - NthFacing->MetaBitmaps);
                                 mem_idx ReplaceWithIdx = (pEditorState->HeldTileType - NthFacing->MetaBitmaps);
                                 ReplaceBagel(NthFacing->MetaBitmaps, GetsReplacedIdx, ReplaceWithIdx);
-                                --NthFacing->NumBitmaps;
+                                NthFacing->NumBitmaps = CountBitmaps(NthFacing->MetaBitmaps, MAX_FACING_BITMAPS);
                                 pEditorState->HeldTileType = nullptr;
                             }
                         }
@@ -1323,8 +1251,8 @@ DrawTileEditor(game_offscreen_buffer *Backbuf, scratch_header *ScratchHeader, de
                         mem_idx ReplaceWithIdx = (EditorState->HeldTileType - TileMap->TileTypes);
                         ReplaceBagel(TileMap->TileTypes, GetsReplacedIdx, ReplaceWithIdx);
 
-                        // MUST decrement this at call site per note in ReplaceBagel
-                        --TileMap->NumTileTypes;
+                        // MUST recompute this at call site after replacing bagel
+                        TileMap->NumTileTypes = CountBitmaps(TileMap->TileTypes, MAX_TILE_TYPES);
 
                         // Bitmap B's slot in the bitmap list has changed, so we need to find all tile values
                         //      still referencing that old slot and replace them with the new one.
