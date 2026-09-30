@@ -61,7 +61,7 @@ static b32 GlobalPause;
 static win32_offscreen_buffer GlobalBackbuffer;
 static win32_wasapi_audio WasapiAudio;
 static u64 GlobalCpuFreq;
-static HWND Window;
+static HWND GlobalWindow;
 static b32 GlobalDialogWasOpen;
 static win32_state *GlobalWin32State;
 static game_controller_input *GlobalKeyboardController;
@@ -417,7 +417,7 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
 
     OPENFILENAMEA Filename = {};
     Filename.lStructSize = sizeof(OPENFILENAMEA);
-    Filename.hwndOwner = Window;
+    Filename.hwndOwner = GlobalWindow;
     Filename.lpstrFile = Dest;
     Filename.nMaxFile = DestSize;
     Filename.lpstrFilter = "Tufty project (.tufty)\0*.tufty\0All files\0*.*\0\0";
@@ -717,6 +717,9 @@ Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer,
                   DIB_RGB_COLORS, SRCCOPY);
 }
 
+static void
+Win32ProcessKeyboardAndMouseMessage(game_button_state *NewState, b32 IsDown);
+
 static LRESULT CALLBACK
 Win32MainWindowCallback(HWND Window,
                         UINT Message,
@@ -772,6 +775,13 @@ Win32MainWindowCallback(HWND Window,
             Win32DisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
                                        Dimension.Width, Dimension.Height);
             EndPaint(Window, &Paint);
+        } break;
+
+        case WM_CAPTURECHANGED:
+        {
+            Win32ProcessKeyboardAndMouseMessage(&GlobalMouse->Primary, false);
+            Win32ProcessKeyboardAndMouseMessage(&GlobalMouse->WheelClick, false);
+            Win32ProcessKeyboardAndMouseMessage(&GlobalMouse->Secondary, false);
         } break;
 
         default:
@@ -1101,6 +1111,10 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 b32 IsDown = ((Message.message == WM_LBUTTONDOWN) ||
                               (Message.message == WM_MBUTTONDOWN) ||
                               (Message.message == WM_RBUTTONDOWN));
+                if(IsDown)
+                {
+                    SetCapture(GlobalWindow);
+                }
 
                 // Primary is left button for right-handed mouse, right button for a mouse the user
                 //      has set up to be left-handed with Windows; vice-versa for Secondary
@@ -1113,7 +1127,15 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 {
                     Button = &Mouse->Secondary;
                 }
+
                 Win32ProcessKeyboardAndMouseMessage(Button, IsDown);
+
+                if(!Mouse->Primary.EndedDown &&
+                   !Mouse->WheelClick.EndedDown &&
+                   !Mouse->Secondary.EndedDown)
+                {
+                    ReleaseCapture();
+                }
             } break;
 
             default:
@@ -1289,7 +1311,7 @@ WinMain(HINSTANCE Instance,
         int WindowWidth = WindowRect.right - WindowRect.left;
         int WindowHeight = WindowRect.bottom - WindowRect.top;
 
-        Window =
+        GlobalWindow =
             CreateWindowExA(
                 0, // WS_EX_TOPMOST|WS_EX_LAYERED,
                 WindowClass.lpszClassName,
@@ -1303,16 +1325,16 @@ WinMain(HINSTANCE Instance,
                 0,
                 Instance,
                 0);
-        if(Window)
+        if(GlobalWindow)
         {
-            UINT DPI = GetDpiForWindow(Window);
+            UINT DPI = GetDpiForWindow(GlobalWindow);
 
             RECT ClientRect = {};
             ClientRect.right = GlobalBackbuffer.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
             ClientRect.bottom = GlobalBackbuffer.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
             AdjustWindowRectExForDpi(&ClientRect, WindowStyle, FALSE, 0, DPI);
 
-            SetWindowPos(Window, 0, 0, 0,
+            SetWindowPos(GlobalWindow, 0, 0, 0,
                          ClientRect.right - ClientRect.left,
                          ClientRect.bottom - ClientRect.top,
                          SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
@@ -1322,9 +1344,9 @@ WinMain(HINSTANCE Instance,
 
             // TODO(casey): How do we reliably query on this on Windows?
             int MonitorRefreshHz = 60;
-            HDC RefreshDC = GetDC(Window);
+            HDC RefreshDC = GetDC(GlobalWindow);
             int Win32RefreshRate = GetDeviceCaps(RefreshDC, VREFRESH);
-            ReleaseDC(Window, RefreshDC);
+            ReleaseDC(GlobalWindow, RefreshDC);
             if(Win32RefreshRate > 1)
             {
                 MonitorRefreshHz = Win32RefreshRate;
@@ -1459,7 +1481,7 @@ WinMain(HINSTANCE Instance,
 
                     POINT MouseP;
                     GetCursorPos(&MouseP);
-                    ScreenToClient(Window, &MouseP);
+                    ScreenToClient(GlobalWindow, &MouseP);
                     NewMouse->X = MouseP.x - WIN32_BACKBUFFER_OFFSET_X;
                     NewMouse->Y = MouseP.y - WIN32_BACKBUFFER_OFFSET_Y;
 
@@ -1473,13 +1495,14 @@ WinMain(HINSTANCE Instance,
                         NewDevKeys->Keys[FnKeyIdx].EndedDown = OldDevKeys->Keys[FnKeyIdx].EndedDown;
                     }
 
-                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewDevKeys, NewMouse);
-
                     // NOTE(Aaron): We hoist these to globals so that we can clean them up
                     //      in the case that a file dialog ran this frame
                     GlobalKeyboardController = NewKeyboardController;
                     GlobalDevKeys = NewDevKeys;
                     GlobalMouse = NewMouse;
+
+                    Win32ProcessPendingMessages(&Win32State, NewKeyboardController, NewDevKeys, NewMouse);
+
 
                     if(!GlobalPause)
                     {
@@ -1702,11 +1725,11 @@ WinMain(HINSTANCE Instance,
                         LastCounter = EndCounter;
                         
 
-                        win32_window_dimension Dimension = Win32GetWindowDimension(Window);
-                        HDC DeviceContext = GetDC(Window);
+                        win32_window_dimension Dimension = Win32GetWindowDimension(GlobalWindow);
+                        HDC DeviceContext = GetDC(GlobalWindow);
                         Win32DisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
                                                    Dimension.Width, Dimension.Height);
-                        ReleaseDC(Window, DeviceContext);
+                        ReleaseDC(GlobalWindow, DeviceContext);
 
 
                         game_input *Temp = NewInput;

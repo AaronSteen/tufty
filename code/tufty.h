@@ -229,6 +229,20 @@ struct found_filepath
     b32 LoadedYet;
 };
 
+enum mouse_mode
+{
+    IDLE,
+    CONSUMED,
+    PAINTING
+};
+
+struct mouse_state
+{
+    mouse_mode PrimaryMode;
+    mouse_mode SecondaryMode;
+    b32 InBackbuf;
+};
+
 struct game_state
 {
     arena WorldArena;
@@ -237,6 +251,7 @@ struct game_state
     random_series RandomSeries;
 
     player Player;
+    mouse_state MouseState;
 };
 
 enum which_editor

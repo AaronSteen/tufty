@@ -1,6 +1,5 @@
 *temp*
 build/*
-data/
 *.rdbg
 *todo*
 *notes*
@@ -8,4 +7,5 @@ data/
 run_tufty
 today
 .cache/
-test.tufty
+*.tufty
+*.vscode*
