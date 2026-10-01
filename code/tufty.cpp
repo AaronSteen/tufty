@@ -203,6 +203,13 @@ GetTileValueIdxFromMetaBitmapPtr(tile_map *pTileMap, meta_bitmap *pMetaBitmap)
     }
 }
 
+static b32
+IsBagel(meta_bitmap *Check)
+{
+    b32 Result = false;
+    Result = Check->Bitmap.Pixels==pGlobalBagel->Bitmap.Pixels;
+    return(Result);
+}
 
 static void
 ReplaceBagel(meta_bitmap *pMetaBitmapsStart, mem_idx GetsReplacedSlot,
@@ -1087,7 +1094,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
             Slot <= pThisFacing->NumBitmaps;
             ++Slot)
         {
-            if(pThisFacing->MetaBitmaps[Slot].Bitmap.Pixels == pGlobalBagel->Bitmap.Pixels)
+            if(IsBagel(pThisFacing->MetaBitmaps + Slot))
             {
                 BagelActive = true;
                 break;
@@ -1179,6 +1186,8 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
                     //      3. If there is a bagel active and the user is holding a bitmap with the cursor
                     //          and they clicked on the bagel, the click should replace the bagel, and the
                     //          held tile type should be reset to nullptr. 
+                    //
+                    //  TODO(AARON): 
                     if(BagelActive == false)
                     {
                         NthFacing->DrawThis = NthBitmap;
@@ -1267,6 +1276,10 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         pMenuTiles = PushArray(&pScratch->Arena, menu_tile, pTileMap->NumTileTypes);
         meta_bitmap *pNextTileType = pTileMap->TileTypes + 1;
 
+        // Record whether bagel is active because if so we have to
+        //      handle it after setting CursorState->PrimaryMode
+        int BagelIdx = -1;
+
         /***********MAKE ARRAY OF TILES TO DRAW**************/
         for(int NthTileType = 0;
             NthTileType < pTileMap->NumTileTypes;
@@ -1290,6 +1303,10 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
 
             // Store the bitmap of the tile to be drawn
             pThisMenuTile->MetaBitmap = pThisTileType;
+            if(IsBagel(pThisTileType))
+            {
+                BagelIdx = NthTileType;
+            }
 
             // Compute the min coordinate of the next tile to be drawn
             ++TilesDrawnInThisRow;
@@ -1363,7 +1380,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
                     // The user has primary-clicked in the browser.
                     //      Consume the click and check if it was over a tile.
                     pCursorState->PrimaryMode = CONSUMED;
-                    if(MenuIdxMouseIsOver > -1)
+                    if((MenuIdxMouseIsOver > -1) && (MenuIdxMouseIsOver != BagelIdx))
                     {
                         ChangeHeldMetaBitmap(ppHeldTile, 
                                              pMenuTiles[MenuIdxMouseIsOver].MetaBitmap);
@@ -1435,6 +1452,27 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
                     }
                 }
             }
+        }
+
+        // If the user clicked on the bagel
+        if(pCursorState->PrimaryMode==CONSUMED && 
+           (BagelIdx > -1) &&
+           BagelIdx==MenuIdxMouseIsOver)
+        {
+            meta_bitmap *pGetsReplaced = pMenuTiles[BagelIdx].MetaBitmap;
+            int GetsReplacedIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, pGetsReplaced);
+            int ReplaceWithIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, *ppHeldTile);
+            ReplaceBagel(pTileMap->TileTypes, GetsReplacedIdx, ReplaceWithIdx);
+
+            // MUST recompute at call site after replacing bagel
+            pTileMap->NumTileTypes = CountBitmaps(pTileMap->TileTypes, MAX_TILE_TYPES);
+
+            // Bitmap B's slot in the bitmap list has changed, so we need to find
+            //      all tiles still referencing that old slot and replace them with
+            //      the new one
+            SearchAndReplaceTileValue(pTileMap, ReplaceWithIdx, GetsReplacedIdx);
+
+            ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)nullptr);
         }
 
         if(pCursorState->PrimaryMode==PAINTING)
