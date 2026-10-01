@@ -236,11 +236,11 @@ enum mouse_mode
     PAINTING
 };
 
-struct mouse_state
+struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
-    b32 InBackbuf;
+    meta_bitmap *HeldMetaBitmap;
 };
 
 struct game_state
@@ -251,7 +251,6 @@ struct game_state
     random_series RandomSeries;
 
     player Player;
-    mouse_state MouseState;
 };
 
 enum which_editor
@@ -264,7 +263,7 @@ enum which_editor
 struct editor_state
 {
     which_editor WhichEditor;
-    meta_bitmap *HeldTileType;
+    cursor_state CursorState;
     b32 PrintRowsCols;
 };
 
