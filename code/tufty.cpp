@@ -124,6 +124,15 @@ ComputeByteOffset(void *Start, void *Offset)
     return(Result);
 }
 
+static arr_meta_bitmap
+GetMetaBitmapArray(arena *Arena, mem_idx Len)
+{
+    arr_meta_bitmap Result;
+    Result.Len = Len;
+    Result.Elms = PushArray(Arena, meta_bitmap, Len);
+    return(Result);
+}
+
 static void
 SetTileValue(tile_map *pTileMap, s32 IdxToChange, s32 NewValue)
 {
@@ -309,6 +318,20 @@ ClearMetaBitmapsButLeaveFilepaths(meta_bitmap *pMetaBitmaps,
 }
 
 static void
+ClearPlayerMetaBitmapsButLeaveFilepaths(arr_meta_bitmap Metas)
+{
+
+    for(int Slot = 0;
+        Slot < Metas.Len;
+        ++Slot)
+    {
+        Metas.Elms[Slot].LastUpdateTime = 0;
+        Metas.Elms[Slot].ReadyToReload = false;
+        Metas.Elms[Slot].Bitmap = {};
+    }
+}
+
+static void
 LoadBitmap(arena *Arena, meta_bitmap *MetaBitmap)
 {
     bitmap *Bitmap = &MetaBitmap->Bitmap;
@@ -467,19 +490,18 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
     //      GetScratchArena call is exited
     arena *pFacingArena = &pFacingBitmaps->Arena;
     ResetArena(pFacingArena);
-    meta_bitmap *pMetaBitmaps = pFacingBitmaps->MetaBitmaps;
+
     scratch_arena *pScratch = GetScratchArena(pScratchHeader);
 
     // Clear bitmap structs in meta bitmaps 
-    ClearMetaBitmapsButLeaveFilepaths(pMetaBitmaps, MAX_FACING_BITMAPS);
+    ClearPlayerMetaBitmapsButLeaveFilepaths(pFacingBitmaps->MetaBitmaps);
     
-
     char FacingDirpath[STRING_LEN];
     mem_idx ThisFacing = pFacingBitmaps - pPlayer->AllBitmaps.Array;
     WriteFacingBitmapsDirToBuffer((int)ThisFacing, FacingDirpath);
     pFacingBitmaps->LastUpdateTime = GetDirWriteTime(FacingDirpath);
     pFacingBitmaps->ReadyToReload = false;
-    pFacingBitmaps->NumBitmaps = 0;
+
 
     buffer OsFilenames;
     OsFilenames.Size = MAX_FACING_BITMAPS * STRING_LEN;
@@ -1643,8 +1665,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Facing < 4;
             ++Facing)
         {
-            arena *Arena = &Player->AllBitmaps.Array[Facing].Arena;
+            facing_bitmaps *ThisFacing = &Player->AllBitmaps.Array[Facing];
+            arena *Arena = &ThisFacing->Arena;
             InitializeArena(Arena, GameRegion.Data + GameRegionOffset, Megabytes(1));
+            ThisFacing->MetaBitmaps = GetMetaBitmapArray(Arena, 11);
             GameRegionOffset += Arena->Size;
         }
 

@@ -173,6 +173,12 @@ struct meta_bitmap
     bitmap Bitmap;
 };
 
+struct arr_meta_bitmap
+{
+    mem_idx Len;
+    meta_bitmap *Elms;
+};
+
 struct tile_map
 {
     arena TilesArena;
@@ -198,10 +204,9 @@ struct facing_bitmaps
 {
     b32 ReadyToReload;
     u64 LastUpdateTime;
-    int NumBitmaps;
     arena Arena;
     int DrawThis;
-    meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
+    arr_meta_bitmap MetaBitmaps;
 };
 
 union all_player_bitmaps
