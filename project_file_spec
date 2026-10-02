@@ -1,18 +1,69 @@
 PROJECT FILE SPEC (.tufty)
-A tufty project stores the state of certain game variables such that the user can exit the game, reopen it, reload the project file,
-        and resume working with it as though no interruption had occurred.
+A tufty project stores the state of certain game variables such that the user 
+can exit the game, reopen it, reload the project file, and resume working 
+with it as though no interruption had occurred.
 
-Currently, the variables we need to store to achieve this may be divided into two groups: player variables and tile variables.
+Central to understanding the file spec is the distinction the game makes between a
+"bitmap" and a "meta_bitmap".
 
-PLAYER VARIABLES
-- For each of the four directions the player can face, the number of bitmaps that were loaded for that facing direction
+A bitmap is a struct defined as follows:
+struct bitmap
+{
+    // This is the entire bitmap file, including the header
+    buffer Buffer;
+
+    // Where the pixels actually live. Just a pointer into
+    //      the buffer Buffer above where the pixels start.
+    u8 *Pixels;
+    int Height, Width, BytesPerPixel, Pitch;
+};
+
+The first field of a bitmap, "buffer", is defined as follows:
+struct buffer
+{
+    mem_idx Size;
+    u8 *Data;
+};
+
+And in a bitmap's "buffer", "Data" points to the first byte of the bitmap
+in game memory. When we load a bitmap, we parse the file and extract important
+information we need to draw it: Height, Width, BytesPerPixel, and Pitch,
+and store them in the struct. Similarly, we also store a pointer
+directly to where the pixels live in the bitmap file.
+
+A bitmap struct always lives in a struct called a "meta_bitmap":
+struct meta_bitmap
+{
+    char Filepath[STRING_LEN];
+    b32 ReadyToReload;
+    u64 LastUpdateTime;
+    bitmap Bitmap;
+};
+In addition to the bitmap itself, we store information used while the
+game is running that allows us to reload a bitmap if the user edits it
+while the game is running, and add or remove a bitmap from the game
+if the user removes it from the game's data directory while
+the game is running.
+
+Currently, the variables we need to store upon save be divided into 
+two groups: player variables and tile variables.
+
+For player variables, we need to save:
+- For each of the four directions the player can face, the number of bitmaps that 
+    were loaded for that facing direction
 - The filepath for every player facing bitmap that was in memory
-- The value of the DrawThis variable for each of the four facing directions. Since the user may load multiple bitmaps
-        for each of the four directions the character can face, we store a DrawThis variable to indicate
-        which of the loaded bitmaps for each facing direction is the one the renderer should display on screen.
-        It is merely an index into the array storing the loaded bitmaps.
+- The value of the DrawThis variable for each of the four facing directions. 
+PLAYER VARIABLE DEFINITIONS:
+"Player facing bitmap": Since the player can face in four directions, we 
+have a set of "player facing bitmaps" for each of those directions. 
+e.g., the user may load multiple bitmaps for each facing direction and 
+switch between them while the game is running.
 
-TILE VARIABLES
+"DrawThis": And since each facing direction can have multiple bitmaps from
+which the user may choose, "DrawThis" is simply an integer representing 
+the index for the currently selected bitmap for that facing direction.
+
+For tile variables, we save:
 - The number of rows that were in the tile map
 - The number of columns that were in the tile map
 - The number of tile types that were loaded
@@ -20,14 +71,14 @@ TILE VARIABLES
 - An array of tile values whose size is equal to the number of rows multiplied by the number of columns. Each
         entry in this array is an integer that indexes into the array of tile values. For each tile,
         the renderer reads this value to determine which tile to display on the screen.
-        
-Note that "tile type" means, e.g., a grass tile, a water tile, a right-angled path tile, a straight path tile, etc. Each of
+TILE VARIABLE DEFINITIONS:
+"Tile type": e.g., a grass tile, a water tile, a right-angled path tile, a straight path tile, etc. Each of
 these tile types has its own filepath. Therefore, this file contains an array of N zero-terminated strings; the Nth string
 contains the filepath for the Nth tile type. Note that while the the entries in the tile type filepath array are zero-indexed,
 when we load them into the game, the 0th filepath in the array must be loaded into the TileTypes array at index 1, because
 in the game, a TileValue of 0 indicates an empty tile. 
 
-Speaking of tile values: Following the array of strings containing the tile type filepaths is an array of M s32 values, where
+"Tile values": Following the array of strings containing the tile type filepaths is an array of M s32 values, where
 M = NumRows * NumCols = the number of tiles in the tile map represented by this file. Basically, the game has a notion of a "tile"; 
 we want to iterate over every tile in the map and read a value and know what picture to draw for it. Each s32 is a value in the range of
 0 to (number of tile types). In the game, 0 corresponds to an empty tile; it means we draw nothing for that tile
@@ -35,3 +86,6 @@ and the player just sees whatever flat color is the background. A tile value of 
 filepath string encountered in the tile type filepath array (noting that this array is actually zero-indexed as described above...
 man this shit is hard to define). A value of 2 corresponds to the second filepath in the tile type filepath array, etc.
 
+IMPORTANT! For player bitmaps and tile bitmaps, the zero index in arrays in which they are stored
+must always be empty. This is so, e.g., we can store a value of 0 for a tile in the game and
+have that mean that the tile is empty.

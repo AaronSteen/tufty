@@ -1682,6 +1682,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
         TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
         TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
+        TileMap->TileTypes = PushArray(WorldArena, meta_bitmap, MAX_TILE_TYPES);
         TileMap->TileValues = PushArray(WorldArena, s32, TileMap->NumTilesInWorld); 
 
         LoadTileBitmapsDir(TileMap, ScratchHeader);

@@ -181,7 +181,7 @@ struct tile_map
     int NumRows;
     int NumCols;
     int NumTileTypes;
-    meta_bitmap TileTypes[TILE_TYPES_ARRAY_LEN];
+    meta_bitmap *TileTypes;
     int NumTilesInWorld;
     f32 TileSideInPixels;
     s32 *TileValues;
