@@ -194,6 +194,118 @@ struct menu_tile
     meta_bitmap *MetaBitmap;
 };
 
+b32
+DoFilepathsMatch(char *A, char *B) {
+    if(strncmp(A, B, STRING_LEN) == 0) {
+        return(true);
+    }
+    else {
+        return(false);
+    }
+}
+
+struct arr_meta_bitmap {
+    int Size;
+    meta_bitmap *Data;
+    // int *Used;
+    int NextEmptySlot = 1;
+
+    int 
+        Add(char *AddFilepath) {
+            int Slot = 0;
+            if(NextEmptySlot < Size) {
+                Slot = NextEmptySlot++;
+            }
+            if(Slot) {
+                Data[Slot] = {};
+                snprintf(Data[Slot].Filepath, strlen(AddFilepath), "%s", AddFilepath);
+                return(Slot);
+            } 
+            else {
+                return(0);
+            }
+        }
+
+    meta_bitmap& 
+        Get(int Idx) {
+            if(Idx > 0 && Idx < Size) {
+                return(Data[Idx]);
+            } 
+            else {
+                return(Data[0]);
+            }
+        }
+
+    void
+        SetMissing(int Idx) {
+            if(Idx > 0 && Idx < Size) {
+                Data[Idx].ReadyToReload = false;
+                Data[Idx].LastUpdateTime = 0;
+                Data[Idx].Bitmap = {};
+            }
+        }
+
+    void
+        SetEmpty(int Idx) {
+            if(Idx > 0 && Idx < Size) {
+                Data[Idx] = {};
+            }
+        }
+
+    bool 
+        IsEmpty(int Slot) {
+            if(Data[Slot].Filepath[0] == 0) {
+                return(true);
+            }
+            else {
+                return(false);
+            }
+        }
+
+    bool 
+        IsMissing(int Slot) {
+            if(Data[Slot].Filepath[0] != 0 && Data[Slot].Bitmap.Buffer.Size == 0) {
+                return(true);
+            }
+            else {
+                return(false);
+            }
+        }
+
+    bool 
+        IsPresent(int Slot) {
+            if(Data[Slot].Filepath[0] != 0 && Data[Slot].Bitmap.Buffer.Size > 0) {
+                return(true);
+            }
+            else {
+                return(false);
+            }
+        }
+
+    int
+        FindByFilepath(char *SearchFilepath) {
+            if(SearchFilepath[0] != 0) {
+                for(int Idx = 1; Idx < Size; ++Idx) {
+                    if(DoFilepathsMatch(Data[Idx].Filepath, SearchFilepath)) {
+                        return(Idx);
+                    }
+                }
+            }
+            return(0);
+        }
+
+    int
+        CountNonEmptySlots(void) {
+            int Count = 0;
+            for(int Idx = 1; Idx < Size; ++Idx) {
+                if(!IsEmpty(Idx)) {
+                    ++Count;
+                }
+            }
+            return(Count);
+        }
+};
+
 struct facing_bitmaps
 {
     b32 ReadyToReload;
@@ -201,7 +313,7 @@ struct facing_bitmaps
     int NumBitmaps;
     arena Arena;
     int DrawThis;
-    meta_bitmap MetaBitmaps[FACING_BITMAPS_ARRAY_LEN];
+    arr_meta_bitmap MetaBitmaps;
 };
 
 union all_player_bitmaps

@@ -6,7 +6,7 @@
 // DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 // DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
 // DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *Filename)
-// DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, u32 MemorySize, void *Memory)
+// DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(char *Filename, u33 MemorySize, void *Memory)
 // DEBUG_PLATFORM_GET_FILE_WRITE_TIME(name) u64 name(char *Filename)
 // DEBUG_PLATFORM_GET_DIR_WRITE_TIME(name) u64 name(char *SubDirName)
 // DEBUG_PLATFORM_GET_LIST_OF_DIR_CONTENTS(name) void name(buffer *GamePackedFilenames, char *SubDirName, int *NumFilesFound)
@@ -46,6 +46,31 @@ struct quad
 {
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
+
+
+struct _meta_bitmap
+{
+    char Filepath[STRING_LEN];
+    b32 ReadyToReload;
+    u64 LastUpdateTime;
+    bitmap Bitmap;
+};
+
+
+static void
+InitPlayerBitmaps(mem_region *pGameRegion, mem_idx *pGameRegionOffset, player *pPlayer) {
+    for(int FacingIdx = 0; 
+        FacingIdx < 4; 
+        ++FacingIdx) {
+            facing_bitmaps *pFacing = &pPlayer->AllBitmaps.Array[FacingIdx];
+            arena *Arena = &pFacing->Arena;
+            InitializeArena(Arena, pGameRegion->Data + *pGameRegionOffset, Megabytes(1));
+            Facing->MetaBitmaps.Data = PushArray(Arena, arr_meta_bitmap, MAX_FACING_BITMAPS+1);
+            Facing->MetaBitmaps.Size = MAX_FACING_BITMAPS+1;
+
+            *GameRegionOffset += Arena->Size;
+    }
+}
 
 static void
 ZeroArena(arena *Arena)
@@ -1604,7 +1629,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Convenience pointers
     tile_map *TileMap = &GameState->TileMap;
-    player *Player = &GameState->Player;
+    player *pPlayer = &GameState->Player;
 
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
     FreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
@@ -1639,14 +1664,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameRegionOffset += GameState->TileMap.TilesArena.Size;
 
         // Player
-        for(int Facing = 0;
-            Facing < 4;
-            ++Facing)
-        {
-            arena *Arena = &Player->AllBitmaps.Array[Facing].Arena;
-            InitializeArena(Arena, GameRegion.Data + GameRegionOffset, Megabytes(1));
-            GameRegionOffset += Arena->Size;
-        }
+        InitPlayerBitmaps(&GameRegion, &GameRegionOffset, pPlayer);
 
         // World
         InitializeArena(&GameState->WorldArena, GameRegion.Data + GameRegionOffset, (GameRegion.Size - GameRegionOffset));
