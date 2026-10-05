@@ -173,6 +173,48 @@ struct meta_bitmap
     bitmap Bitmap;
 };
 
+struct _meta_bitmap
+{
+    char Filepath[STRING_LEN];
+    b32 ReadyToReload;
+    u64 LastWriteTime;
+    bitmap Bitmap;
+
+    bool 
+    IsEmpty(void) 
+    {
+        if (Filepath[0] == 0) {
+            return(true);
+        }
+        else {
+            return(false);
+        }
+    }
+
+    bool 
+    IsMissing(void) 
+    {
+        if (Filepath[0] != 0 && Bitmap.Buffer.Size == 0) {
+            return(true);
+        }
+        else {
+            return(false);
+        }
+    }
+
+    bool 
+    IsPresent(void) 
+    {
+        if (Filepath[0] != 0 && Bitmap.Buffer.Size > 0) {
+            return(true);
+        }
+        else {
+            return(false);
+        }
+    }
+
+};
+
 struct tile_map
 {
     arena TilesArena;
@@ -204,136 +246,172 @@ DoFilepathsMatch(char *A, char *B) {
     }
 }
 
-struct arr_meta_bitmap {
-    int Size;
-    meta_bitmap *Data;
-    // int *Used;
+struct arr_meta_bitmap
+{
+    int Len;
+    _meta_bitmap *Data;
     int NextEmptySlot = 1;
+    arena Arena;
 
     int 
-        Add(char *AddFilepath) {
-            int Slot = 0;
-            if(NextEmptySlot < Size) {
-                Slot = NextEmptySlot++;
-            }
-            if(Slot) {
-                Data[Slot] = {};
-                snprintf(Data[Slot].Filepath, strlen(AddFilepath), "%s", AddFilepath);
-                return(Slot);
-            } 
-            else {
-                return(0);
-            }
+    Add(char *AddFilepath)
+    {
+        int Slot = 0;
+        if(NextEmptySlot < Len) {
+            Slot = NextEmptySlot++;
         }
-
-    meta_bitmap& 
-        Get(int Idx) {
-            if(Idx > 0 && Idx < Size) {
-                return(Data[Idx]);
-            } 
-            else {
-                return(Data[0]);
-            }
-        }
-
-    void
-        SetMissing(int Idx) {
-            if(Idx > 0 && Idx < Size) {
-                Data[Idx].ReadyToReload = false;
-                Data[Idx].LastUpdateTime = 0;
-                Data[Idx].Bitmap = {};
-            }
-        }
-
-    void
-        SetEmpty(int Idx) {
-            if(Idx > 0 && Idx < Size) {
-                Data[Idx] = {};
-            }
-        }
-
-    bool 
-        IsEmpty(int Slot) {
-            if(Data[Slot].Filepath[0] == 0) {
-                return(true);
-            }
-            else {
-                return(false);
-            }
-        }
-
-    bool 
-        IsMissing(int Slot) {
-            if(Data[Slot].Filepath[0] != 0 && Data[Slot].Bitmap.Buffer.Size == 0) {
-                return(true);
-            }
-            else {
-                return(false);
-            }
-        }
-
-    bool 
-        IsPresent(int Slot) {
-            if(Data[Slot].Filepath[0] != 0 && Data[Slot].Bitmap.Buffer.Size > 0) {
-                return(true);
-            }
-            else {
-                return(false);
-            }
-        }
-
-    int
-        FindByFilepath(char *SearchFilepath) {
-            if(SearchFilepath[0] != 0) {
-                for(int Idx = 1; Idx < Size; ++Idx) {
-                    if(DoFilepathsMatch(Data[Idx].Filepath, SearchFilepath)) {
-                        return(Idx);
-                    }
-                }
-            }
+        if(Slot) {
+            Data[Slot] = {};
+            snprintf(Data[Slot].Filepath, strlen(AddFilepath), "%s", AddFilepath);
+            return(Slot);
+        } 
+        else {
             return(0);
         }
+    }
+
+    meta_bitmap *
+    Get(int Idx) 
+    {
+        if(Idx > 0 && Idx < Len) {
+            return(Data + Idx);
+        } 
+    }
+
+    void
+    SetMissing(int Idx) 
+    {
+        if(Idx > 0 && Idx < Len) {
+            Data[Idx].ReadyToReload = false;
+            Data[Idx].LastWriteTime = 0;
+            Data[Idx].Bitmap = {};
+        }
+    }
+
+    void
+    SetEmpty(int Idx) 
+    {
+        if(Idx > 0 && Idx < Len) {
+            Data[Idx] = {};
+        }
+    }
 
     int
-        CountNonEmptySlots(void) {
-            int Count = 0;
-            for(int Idx = 1; Idx < Size; ++Idx) {
-                if(!IsEmpty(Idx)) {
-                    ++Count;
+    FindByFilepath(char *SearchFilepath) 
+    {
+        if(SearchFilepath[0] != 0) {
+            for(int Idx = 1; Idx < Len; ++Idx) {
+                if(DoFilepathsMatch(Data[Idx].Filepath, SearchFilepath)) {
+                    return(Idx);
                 }
             }
-            return(Count);
         }
+        return(0);
+    }
+
+    int
+    CountNonEmptySlots(void) 
+    {
+        int Count = 0;
+        for(int Idx = 1; Idx < Len; ++Idx) {
+            if(!IsEmpty(Idx)) {
+                ++Count;
+            }
+        }
+        return(Count);
+    }
+
+    void
+    ClearButLeaveFilepaths(void) 
+    {
+        for(int Slot = 1; Slot < Len; ++Slot) {
+            Data[Slot].LastWriteTime = 0;
+            Data[Slot].ReadyToReload = false;
+            Data[Slot].Bitmap = {};
+        }
+    }
+
+    void
+    UpdateBitmapList(found_filepath *pOsFilepaths, int NumOsFilepaths)
+    {
+        // First find any filepaths that were in the game before but are not on the OsFilepaths list,
+        //      and mark them as missing.
+        for (int Slot = 1; Slot < Len; ++Slot) {
+            b32 FoundInOsFilepaths = false;
+            for (int OsIdx = 0; OsIdx < NumOsFilepaths; ++OsIdx) {
+                if (DoFilepathsMatch(Data[Slot].Filepath, pOsFilepaths[OsIdx].Filepath) {
+                    FoundInOsFilepaths = true;
+                    pOsFilepaths[OsIdx].LoadedYet = true;
+                    break;
+                }
+            }
+            if (!FoundInOsFilepaths) {
+                pMetaBitmaps->SetMissing(Slot);
+            }
+        }
+
+        // Add any OsFilepaths that were not in the game yet to the list
+        for (int OsIdx = 0; OsIdx < NumOsFilepaths; ++OsIdx) {
+            if (!pOsFilepaths[OsIdx].LoadedYet) {
+                pMetaBitmaps.Add(pOsFilepaths[OsIdx].Filepath);
+                pOsFilepaths.LoadedYet = true;
+            }
+        }
+
+        // Get all the file sizes. If there is a filepath, call GetFileSize. GetFileSize
+        //      will return size of 0 for any filepath the Os couldn't find.
+        for (int Slot = 1; Slot < Len; ++Slot) {
+            if (!Data[Slot].IsMissing()) {
+                Data[Slot].Bitmap.Buffer.Size = GetFileSize(pIt->Filepath);
+            }
+        }
+    }   
+
+    void
+    ReloadBitmapIfChanged(int Slot)
+    {
+        if (Slot > 0 && Slot < Len) {
+            meta_bitmap *pIt = Data + Slot;
+            if (It->ReadyToReload) {
+                It->ReadyToReload = false;
+                It->LastUpdateTime = GetFileWriteTime(It->Filepath);
+                mem_idx NewBitmapSize = GetFileSize(It->Filepath);
+                bitmap *ItsBitmap = &It->Bitmap;
+                // If the bitmap changed size, put the bitmap on the end of the arena instead of using the same buffer
+                if (NewBitmapSize != ItsBitmap->Buffer.Size) {
+                    // Assert in PushArray will crash if we try to push a bitmap that is too big
+                    ItsBitmap->Buffer.Data = PushArray(Arena, u8, NewBitmapSize);
+                    ItsBitmap->Buffer.Size = NewBitmapSize;
+                }
+                ReadFileInto(Filepath, (u32)ItsBitmap->Buffer.Size, ItsBitmap->Buffer.Data);
+                ParseBitmapHeader(ItsBitmap);
+            }
+            else {
+                u64 OsWriteTime = GetFileWriteTime(It->Filepath);
+                if (OsWriteTime && OsWriteTime != It->LastWriteTime) {
+                    It->ReadyToReload = true;
+                }
+            }
+        }
+    }
+
 };
 
 struct facing_bitmaps
 {
     b32 ReadyToReload;
     u64 LastUpdateTime;
-    int NumBitmaps;
-    arena Arena;
     int DrawThis;
-    arr_meta_bitmap MetaBitmaps;
-};
-
-union all_player_bitmaps
-{
-    facing_bitmaps Array[4];
-    struct
-    {
-        facing_bitmaps East;
-        facing_bitmaps North;
-        facing_bitmaps West;
-        facing_bitmaps South;
-    };
+    arr_meta_bitmap MetaBitmaps[MAX_FACING_BITMAPS+1];
 };
 
 struct player
 {
     v2 Position;
     facing IsFacing;
-    all_player_bitmaps AllBitmaps;
+    facing_bitmaps FacingBitmaps[4];
 };
+
 
 struct found_filepath
 {
@@ -357,11 +435,8 @@ struct cursor_state
 
 struct game_state
 {
-    arena WorldArena;
-
     tile_map TileMap;
     random_series RandomSeries;
-
     player Player;
 };
 
