@@ -241,11 +241,11 @@ struct tile_map
     s32 *TileValues;
 };
 
-struct menu_tile
+struct menu_bitmap
 {
     v2 TileMin;
     v2 TileMax;
-    meta_bitmap *MetaBitmap;
+    _meta_bitmap *pMetaBitmap;
 };
 
 b32
