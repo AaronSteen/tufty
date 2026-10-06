@@ -316,7 +316,7 @@ struct arr_meta_bitmap
 {
     int Len;
     _meta_bitmap *Data;
-    int NextEmptySlot = 1;
+    int NextEmptySlot;
     arena Arena;
 
     int 
@@ -328,7 +328,7 @@ struct arr_meta_bitmap
         }
         if(Slot) {
             Data[Slot] = {};
-            snprintf(Data[Slot].Filepath, strlen(AddFilepath), "%s", AddFilepath);
+            snprintf(Data[Slot].Filepath, strlen(AddFilepath)+1, "%s", AddFilepath);
             return(Slot);
         } 
         else {
@@ -440,9 +440,7 @@ struct arr_meta_bitmap
         //      will return size of 0 for any filepath the Os couldn't find.
         for (int Slot = 1; Slot < Len; ++Slot) {
             _meta_bitmap *pIt = Data + Slot;
-            if (!pIt->IsMissing()) {
-                pIt->Bitmap.Buffer.Size = GetFileSize(pIt->Filepath);
-            }
+            pIt->Bitmap.Buffer.Size = GetFileSize(pIt->Filepath);
         }
     }   
 

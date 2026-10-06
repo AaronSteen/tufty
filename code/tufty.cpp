@@ -1732,6 +1732,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
             pMetaBitmaps->Data = PushArray(&GameState->WorldArena, _meta_bitmap, MAX_FACING_BITMAPS+1);
             pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
+            pMetaBitmaps->NextEmptySlot = 1;
             LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, ScratchHeader);
             if(pMetaBitmaps->Data[1].IsPresent()) {
                 pFacingBitmaps->DrawThis = 1;
