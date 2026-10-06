@@ -246,6 +246,8 @@ struct menu_bitmap
     v2 TileMin;
     v2 TileMax;
     _meta_bitmap *pMetaBitmap;
+    int FacingIdx;
+    int Slot;
 };
 
 b32
@@ -491,7 +493,7 @@ struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
-    int HeldMetaBitmapIdx;
+    _meta_bitmap *pHeldMetaBitmap;
 };
 
 struct game_state

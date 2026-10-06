@@ -1151,6 +1151,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     DEBUGDrawText(pBackbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", &pDebugState->DebugTextArena, color{1, 1, 1, 1});
 
     char *Dirs[] = {"East", "North", "West", "South"};
+    menu_bitmap* pMouseHoveringBitmap = nullptr;
     f32 VerticalSpaceBetweenSections = 220;
     v2 HeaderTextStart = {BrowserMin.X + 30, 120};
     f32 CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
@@ -1165,6 +1166,8 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
             _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
             if (pIt->IsEmpty()) continue;
+            pMenuBitmapsCursor->FacingIdx = NthFace;
+            pMenuBitmapsCursor->Slot = Slot;
             f32 Width, Height;
             if (pIt->IsMissing()) {
                 Width = pGlobalBagel->Bitmap.Width;
@@ -1178,6 +1181,9 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
             }
             pMenuBitmapsCursor->TileMin = v2{(f32)XDrawCoord, CenterAroundThisVerticalLine - Height * 0.5f};
             pMenuBitmapsCursor->TileMax = pMenuBitmapsCursor->TileMin + v2{Width, Height};
+            if (IsInRect(MouseCoords, pMenuBitmapsCursor->TileMin, pMenuBitmapsCursor->TileMax)) {
+                pMouseHoveringBitmap = pMenuBitmapsCursor;
+            }
             XDrawCoord = pMenuBitmapsCursor->TileMax.X + 30.0f;
             ++pMenuBitmapsCursor;
         }
@@ -1192,9 +1198,44 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         for (int NthMenuBitmap = 0; NthMenuBitmap < HowMany; ++NthMenuBitmap) {
             bitmap *pToDraw = &pIt->pMetaBitmap->Bitmap;
             ScaleAndBlitBitmap(pBackbuf, pIt->TileMin, pIt->TileMax, pToDraw);
+            v2 OutlineMin = {pIt->TileMin.X-1, pIt->TileMin.Y-1};
+            v2 OutlineMax = {pIt->TileMax.X+1, pIt->TileMax.Y+1};
+
+            // Draw generic box around all of them
+            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
             ++pIt;
         }
+        // Highlight DrawThis if one is selected
+        int DrawThis = pPlayer->FacingBitmaps[NthFace].DrawThis;
+        if (DrawThis) {
+            menu_bitmap *pToOutline = pMenuBitmaps + NthFace * MAX_FACING_BITMAPS + DrawThis;
+            v2 OutlineMin = {pToOutline->TileMin.X-1, pToOutline->TileMin.Y-1};
+            v2 OutlineMax = {pToOutline->TileMax.X+1, pToOutline->TileMax.Y+1};
+            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.7, 0.5, 0.8});
+        }
     }
+
+    // Highlight hovered tile
+    if (pMouseHoveringBitmap != nullptr) {
+        v2 OutlineMin = {pMouseHoveringBitmap->TileMin.X-1, pMouseHoveringBitmap->TileMin.Y-1};
+        v2 OutlineMax = {pMouseHoveringBitmap->TileMax.X+1, pMouseHoveringBitmap->TileMax.Y+1};
+        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
+    }
+
+    /*********** UPDATE CURSOR STATE **************/
+    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
+    if (!pGlobalMouse->Primary.EndedDown) {
+        pCursorState->PrimaryMode = IDLE;
+    }
+    else if (pCursorState->PrimaryMode == IDLE &&
+             pGlobalMouse->Primary.EndedDown &&
+             pGlobalMouse->Primary.HalfTransitionCount == 1) {
+        pCursorState->PrimaryMode = CONSUMED;
+        if (pMouseHoveringBitmap->pMetaBitmap->IsMissing()) {
+
+
+
+
 
 
                 
