@@ -23,6 +23,7 @@ static debug_platform_get_dir_write_time *GetDirWriteTime;
 static debug_platform_get_list_of_dir_contents *GetListOfDirContents;
 static debug_platform_read_file_into *ReadFileInto;
 static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
+static debug_output *DebugOutput;
 
 static u32
 RoundF32ToU32(f32 Real)
@@ -216,7 +217,7 @@ struct _meta_bitmap
     bool 
     IsPresent(void) 
     {
-        if (Filepath[0] != 0 && Bitmap.Buffer.Size > 0) {
+        if (Filepath[0] != 0 && Bitmap.Buffer.Size > 0 && Bitmap.Buffer.Data) {
             return(true);
         }
         else {
@@ -343,7 +344,7 @@ struct arr_meta_bitmap
             return(Data + Idx);
         } 
         else {
-            return(0);
+            return(Data + 0);
         }
     }
 
@@ -412,64 +413,54 @@ struct arr_meta_bitmap
     void
     UpdateBitmapList(found_filepath *pOsFilepaths, int NumOsFilepaths)
     {
-        // First find any filepaths that were in the game before but are not on the OsFilepaths list,
-        //      and mark them as missing.
+        // Identify filepaths whose bitmaps were previously in the game, and are still in the game.
+        //      If so, found_filepath->LoadedYet = true, and we don't add this bitmap
+        //      to the array in the list below
         for (int Slot = 1; Slot < Len; ++Slot) {
-            b32 FoundInOsFilepaths = false;
             for (int OsIdx = 0; OsIdx < NumOsFilepaths; ++OsIdx) {
                 if (DoFilepathsMatch(Data[Slot].Filepath, pOsFilepaths[OsIdx].Filepath)) {
-                    FoundInOsFilepaths = true;
                     pOsFilepaths[OsIdx].LoadedYet = true;
                     break;
                 }
-            }
-            if (!FoundInOsFilepaths) {
-                SetMissing(Slot);
             }
         }
 
         // Add any OsFilepaths that were not in the game yet to the list
         for (int OsIdx = 0; OsIdx < NumOsFilepaths; ++OsIdx) {
             if (!pOsFilepaths[OsIdx].LoadedYet) {
-                Add(pOsFilepaths[OsIdx].Filepath);
-                pOsFilepaths->LoadedYet = true;
-            }
-        }
-
-        // Get all the file sizes. If there is a filepath, call GetFileSize. GetFileSize
-        //      will return size of 0 for any filepath the Os couldn't find.
-        for (int Slot = 1; Slot < Len; ++Slot) {
-            _meta_bitmap *pIt = Data + Slot;
-            pIt->Bitmap.Buffer.Size = GetFileSize(pIt->Filepath);
-        }
-    }   
-
-    void
-    ReloadBitmapIfChanged(int Slot)
-    {
-        if (Slot > 0 && Slot < Len) {
-            _meta_bitmap *pIt = Data + Slot;
-            if (pIt->ReadyToReload) {
-                pIt->ReadyToReload = false;
-                pIt->LastWriteTime = GetFileWriteTime(pIt->Filepath);
-                mem_idx NewBitmapSize = GetFileSize(pIt->Filepath);
-                bitmap *pItsBitmap = &pIt->Bitmap;
-                // If the bitmap changed size, put the bitmap on the end of the arena instead of using the same buffer
-                if (NewBitmapSize != pItsBitmap->Buffer.Size) {
-                    // Assert in PushArray will crash if we try to push a bitmap that is too big
-                    pItsBitmap->Buffer.Data = PushArray(&Arena, u8, NewBitmapSize);
-                    pItsBitmap->Buffer.Size = NewBitmapSize;
+                int AddedIdx = Add(pOsFilepaths[OsIdx].Filepath);
+                if(AddedIdx == 0) {
+                    DebugOutput("Error: In %s, couldn't add OSFilepath %s because would have \
+                                overflowed facing bitmaps list", __func__, pOsFilepaths[OsIdx].Filepath);
                 }
-                ReadFileInto(pIt->Filepath, (u32)pItsBitmap->Buffer.Size, pItsBitmap->Buffer.Data);
-                ParseBitmapHeader(pItsBitmap);
+                else {
+                    pOsFilepaths->LoadedYet = true;
+                }
             }
-            else {
-                u64 OsWriteTime = GetFileWriteTime(pIt->Filepath);
-                if (OsWriteTime && OsWriteTime != pIt->LastWriteTime) {
+        }
+
+        // For every slot in the array that contains a filepath, try to get its size.
+        //      If the Os gives us a size, store that size in the bitmap and give it a buffer.
+        //      If it doesn't, size remains zero and future pIt->IsPresent() calls will
+        //      return false.
+        for (int Slot = 0; Slot < Len; ++Slot) {
+            _meta_bitmap *pIt = Get(Slot);
+            if (!pIt->IsEmpty()) {
+                mem_idx Size = GetFileSize(pIt->Filepath);
+                if (Size) {
+                    pIt->Bitmap.Buffer.Size = Size;
+                    pIt->Bitmap.Buffer.Data = PushArray(&Arena, u8, Size);
                     pIt->ReadyToReload = true;
                 }
             }
         }
+    }   
+
+    bool
+    IsNilBitmap(_meta_bitmap *pToCheck)
+    {
+        bool Result = (pToCheck - Data == 0);
+        return(Result);
     }
 
 };
@@ -488,7 +479,6 @@ struct player
     facing IsFacing;
     facing_bitmaps FacingBitmaps[4];
 };
-
 
 enum mouse_mode
 {

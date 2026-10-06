@@ -126,8 +126,7 @@ Win32BuildEXEPathFileName(win32_state *State, char *FileName,
                DestCount, Dest);
 }
 
-static void
-DebugOutput(const char *Format, ...)
+DEBUG_OUTPUT(DEBUGOutput)
 {
     char PrintBuffer[512];
     int PrintBufferSize = sizeof(PrintBuffer);
@@ -1382,6 +1381,7 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
             GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
             GameMemory.DEBUGPlatformGetFilepathFromDialog = DEBUGPlatformGetFilepathFromDialog;
+            GameMemory.DEBUGOutput = DEBUGOutput;
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token

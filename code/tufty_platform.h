@@ -145,6 +145,9 @@ typedef DEBUG_PLATFORM_READ_FILE_INTO(debug_platform_read_file_into);
 #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, mem_idx DestSize, b32 IsSave)
 typedef DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(debug_platform_get_file_path_from_dialog);
 
+#define DEBUG_OUTPUT(name) void name(const char *Format, ...)
+typedef DEBUG_OUTPUT(debug_output);
+
 #endif
 
 // *** SERVICES THE GAME PROVIDES TO THE PLATFORM ***
@@ -289,7 +292,9 @@ typedef struct game_memory
     debug_platform_get_dir_write_time *DEBUGPlatformGetDirWriteTime;
     debug_platform_get_list_of_dir_contents *DEBUGPlatformGetListOfDirContents;
     debug_platform_get_file_path_from_dialog *DEBUGPlatformGetFilepathFromDialog;
+    debug_output *DEBUGOutput;
 } game_memory;
+
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);

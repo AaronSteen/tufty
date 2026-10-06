@@ -21,6 +21,7 @@
 // GLOBALS
     // variables
     static meta_bitmap *pGlobalBagel;
+    static _meta_bitmap *_pGlobalBagel;
     static game_controller_input *GlobalKeyboardController;
     static dev_keys *GlobalDevKeys;
     static game_mouse_input *pGlobalMouse;
@@ -80,7 +81,7 @@ FreeScratchArena(scratch_arena *Scratch)
 }
 
 static void
-WriteFacingBitmapsDirnameToBuffer(player *pPlayer, facing_bitmaps *pFacingBitmaps, char *Buffer)
+WriteFacingBitmapsDirpathToBuffer(player *pPlayer, facing_bitmaps *pFacingBitmaps, char *Buffer)
 {
     // Subtract address of start of array containing all the facing bitmaps from the 
     //      address of this particular facing bitmaps array to determine which
@@ -290,14 +291,39 @@ ClearMetaBitmapsButLeaveFilepaths(meta_bitmap *pMetaBitmaps, mem_idx ArrayLen)
     }
 }
 
+
 static void
-_LoadBitmap(facing_bitmaps *pFacing, int Slot)
+ActuallyLoadBitmap(_meta_bitmap *pIt)
 {
-    arr_meta_bitmap *pMetaBitmaps = &pFacing->MetaBitmaps;
+    Assert(pIt->IsPresent());
+    ReadFileInto(pIt->Filepath, (u32)pIt->Bitmap.Buffer.Size, pIt->Bitmap.Buffer.Data);
+    ParseBitmapHeader(&pIt->Bitmap);
+    pIt->LastWriteTime = GetFileWriteTime(pIt->Filepath);
+    pIt->ReadyToReload = false;
+}
+
+void
+ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
+{
     _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
-    if (pIt->IsPresent()) {
-        pIt->ReadyToReload = true;
-        pMetaBitmaps->ReloadBitmapIfChanged(Slot);
+    if (!pMetaBitmaps->IsNilBitmap(pIt) && pIt->IsPresent()) {
+        if (pIt->ReadyToReload) {
+            pIt->ReadyToReload = false;
+            pIt->LastWriteTime = GetFileWriteTime(pIt->Filepath);
+            mem_idx NewBitmapSize = GetFileSize(pIt->Filepath);
+            bitmap *pItsBitmap = &pIt->Bitmap;
+            if (NewBitmapSize != pItsBitmap->Buffer.Size) {
+                pItsBitmap->Buffer.Data = PushArray(&pMetaBitmaps->Arena, u8, NewBitmapSize);
+                pItsBitmap->Buffer.Size = NewBitmapSize;
+            }
+            ActuallyLoadBitmap(pIt);
+        }
+        else {
+            u64 OsWriteTime = GetFileWriteTime(pIt->Filepath);
+            if (OsWriteTime && OsWriteTime != pIt->LastWriteTime) {
+                pIt->ReadyToReload = true;
+            }
+        }
     }
 }
 
@@ -469,7 +495,7 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
     pMetaBitmaps->ClearButLeaveFilepaths();
 
     char FacingDirpath[STRING_LEN];
-    WriteFacingBitmapsDirnameToBuffer(pPlayer, pFacingBitmaps, FacingDirpath);
+    WriteFacingBitmapsDirpathToBuffer(pPlayer, pFacingBitmaps, FacingDirpath);
     pFacingBitmaps->LastUpdateTime = GetDirWriteTime(FacingDirpath);
     pFacingBitmaps->ReadyToReload = false;
 
@@ -486,18 +512,14 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
         return;
     }
 
-    // TODO(AARON): ARRAY TYPE
-    // What are we doing here? We are taking the list of filepaths found by the OS and comparing it with 
-    //      our current list of bitmaps in memory. If an OsFilepath is already in memory, do nothing.
-    //      If an OsFilepath is not in memory yet, load it. arr_meta_bitmap should mark it as "missing."
-    //      Then, below, we load it with LoadBitmap call.
     found_filepath *pOsFilepaths = MakeOsFilepathsList(&pScratch->Arena, OsFilenames, NumFilesFound, FacingDirpath);
     pMetaBitmaps->UpdateBitmapList(pOsFilepaths, NumFilesFound);
 
-
-
     for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-        _LoadBitmap(pFacingBitmaps, Slot);
+        _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
+        if (!pMetaBitmaps->IsNilBitmap(pIt) && pIt->IsPresent()) {
+            ActuallyLoadBitmap(pIt);
+        }
     }
 
     FreeScratchArena(pScratch);
@@ -748,18 +770,11 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 }
 
 static void
-_ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, _meta_bitmap *pMetaBitmap)
+_ScaleAndBlitBitmap(game_offscreen_buffer *pBuf, v2 Min, v2 Max, bitmap *pBitmap)
 {
-    bitmap *pToDraw;
-    if(!pMetaBitmap->IsPresent()) {
-        pToDraw = &pGlobalBagel->Bitmap;
-    }
-    else {
-        pToDraw = &pMetaBitmap->Bitmap;
-    }
     //  TODO(Aaron): Validate that this tolerates walking off the side of the screen
-    f32 XCoef = (f32)pToDraw->Width / (Max.X - Min.X);
-    f32 YCoef = (f32)pToDraw->Height / (Max.Y - Min.Y);
+    f32 XCoef = (f32)pBitmap->Width / (Max.X - Min.X);
+    f32 YCoef = (f32)pBitmap->Height / (Max.Y - Min.Y);
 
     s32 ScreenMinY = RoundF32ToS32(Min.Y);
     s32 ScreenMaxY = RoundF32ToS32(Max.Y);
@@ -779,26 +794,26 @@ _ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, _meta_bitmap *pM
     {
         SampledScreenMinX = 0;
     }
-    if (ScreenMaxY > Buf->Height)
+    if (ScreenMaxY > pBuf->Height)
     {
-        SampledScreenMaxY = Buf->Height;
+        SampledScreenMaxY = pBuf->Height;
     }
-    if (ScreenMaxX > Buf->Width)
+    if (ScreenMaxX > pBuf->Width)
     {
-        SampledScreenMaxX = Buf->Width;
+        SampledScreenMaxX = pBuf->Width;
     }
 
     // Pixels are always 32 bits wide, memory order BB GG RR XX
-    u8 *DestRow = (u8 *)Buf->Memory + SampledScreenMinY * Buf->Pitch + SampledScreenMinX * Buf->BytesPerPixel;
+    u8 *DestRow = (u8 *)pBuf->Memory + SampledScreenMinY * pBuf->Pitch + SampledScreenMinX * pBuf->BytesPerPixel;
     for (int Y = SampledScreenMinY; Y < SampledScreenMaxY; ++Y)
     {
         s32 SrcRowIdx = FloorF32ToS32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
-        s32 SrcRow = pToDraw->Height - 1 - SrcRowIdx;
+        s32 SrcRow = pBitmap->Height - 1 - SrcRowIdx;
         u8 *DestPixel = DestRow;
         for (int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
         {
             s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
-            u8 *SrcPixel = pToDraw->Pixels + SrcRow * pToDraw->Pitch + SrcCol * pToDraw->BytesPerPixel;
+            u8 *SrcPixel = pBitmap->Pixels + SrcRow * pBitmap->Pitch + SrcCol * pBitmap->BytesPerPixel;
 
             // Get the alpha value
             f32 Alpha = ((f32)SrcPixel[3]) / 255.0f;
@@ -814,7 +829,7 @@ _ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, _meta_bitmap *pM
 
             DestPixel += sizeof(u32);   
         }
-        DestRow += Buf->Pitch;
+        DestRow += pBuf->Pitch;
     }
 }
 
@@ -1661,6 +1676,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     GetListOfDirContents = Memory->DEBUGPlatformGetListOfDirContents;
     ReadFileInto = Memory->DEBUGPlatformReadFileInto;
     GetFilepathFromDialog = Memory->DEBUGPlatformGetFilepathFromDialog;
+    DebugOutput = Memory->DEBUGOutput;
 
     // Global input pointers
     GlobalKeyboardController = GetController(Input, 0);
@@ -1749,6 +1765,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         char *BagelFilepath = "bagel1.bmp";
         snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
         LoadBitmap(&DebugState->FailBitmapsArena, pGlobalBagel);
+
+        _pGlobalBagel = PushStruct(&DebugState->FailBitmapsArena, _meta_bitmap);
+        snprintf(_pGlobalBagel->Filepath, sizeof(_pGlobalBagel->Filepath), "%s", BagelFilepath);
+        mem_idx BagelSize = GetFileSize(_pGlobalBagel->Filepath);
+        if (BagelSize) {
+            _pGlobalBagel->Bitmap.Buffer.Size = BagelSize;
+            _pGlobalBagel->Bitmap.Buffer.Data = PushArray(&DebugState->FailBitmapsArena, u8, BagelSize);
+        }
+        ActuallyLoadBitmap(_pGlobalBagel);
         
         Memory->IsInitialized = true;
     }
@@ -1821,7 +1846,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
         else {
             char Temp[STRING_LEN];
-            WriteFacingBitmapsDirnameToBuffer(pPlayer, pThisFacing, Temp);
+            WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, Temp);
             u64 CheckUpdateTime = GetDirWriteTime(Temp);
             if (pThisFacing->LastUpdateTime != CheckUpdateTime) {
                 pThisFacing->ReadyToReload = true;
@@ -1830,7 +1855,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             else {
                 arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
                 for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-                    pMetaBitmaps->ReloadBitmapIfChanged(Slot);
+                    ReloadBitmapIfChanged(pMetaBitmaps, Slot);
                 }
             }
         }
@@ -1957,18 +1982,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     else
     {
-        // pPlayer
+        // Player
         facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
-        bitmap *ToDraw = &CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis)->Bitmap;
-        f32 PlayerWidth = ToDraw->Width;
-        f32 PlayerHeight = ToDraw->Height;
+        _meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
+        if (!pToDraw->IsPresent()) {
+            pToDraw = _pGlobalBagel;
+        }
+        f32 PlayerWidth = pToDraw->Bitmap.Width;
+        f32 PlayerHeight = pToDraw->Bitmap.Height;
         v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
                         pPlayer->Position.Y - PlayerHeight};
         v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
 
         // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
         //      in the game when moving character around. test this.
-        ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, ToDraw);
+        _ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &pToDraw->Bitmap);
     }
 
     // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
