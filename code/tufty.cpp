@@ -104,6 +104,14 @@ IsInRect(v2 Point, v2 RectMin, v2 RectMax)
     return(Result);
 }
 
+static void
+InitializeCursorState(cursor_state *pCursorState) 
+{
+    pCursorState = {};
+    pCursorState->HeldPlayerBitmapFacing = -1;
+    pCursorState->HeldSlot = -1;
+}
+
 static mem_idx
 ComputeByteOffset(void *Start, void *Offset)
 {
@@ -1140,6 +1148,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.5f), 0};
     v2 BrowserMax = {(f32)(pBackbuf->Width), (f32)(pBackbuf->Height)};
     scratch_arena *pScratch = GetScratchArena(pScratchHeader);
+    b32 BagelActive = false;
 
     // Get an array of menu_tile structs accommodating the maximum number of player bitmaps the game supports.
     //      Note that this is different than the length of the actual arr_meta_bitmaps.Data array for
@@ -1170,6 +1179,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
             pMenuBitmapsCursor->Slot = Slot;
             f32 Width, Height;
             if (pIt->IsMissing()) {
+                BagelActive = true;
                 Width = pGlobalBagel->Bitmap.Width;
                 Height = pGlobalBagel->Bitmap.Height;
                 pMenuBitmapsCursor->pMetaBitmap = _pGlobalBagel;
@@ -1223,6 +1233,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     }
 
     /*********** UPDATE CURSOR STATE **************/
+
     cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
     if (!pGlobalMouse->Primary.EndedDown) {
         pCursorState->PrimaryMode = IDLE;
@@ -1231,17 +1242,38 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
              pGlobalMouse->Primary.EndedDown &&
              pGlobalMouse->Primary.HalfTransitionCount == 1) {
         pCursorState->PrimaryMode = CONSUMED;
+        arr_meta_bitmap *pHoveringMetaBitmaps = 
+            &pPlayer->FacingBitmaps[pMouseHoveringBitmap->FacingIdx].MetaBitmaps;
+        _meta_bitmap *pHoveredBitmap = pHoveringMetaBitmaps->Get(pMouseHoveringBitmap->Slot);
+        if (pHoveringMetaBitmaps->IsNilBitmap(pHoveredBitmap)) {
+            if (pCursorState->HeldSlot && 
+                pCursorState->HeldPlayerBitmapFacing == pMouseHoveringBitmap->FacingIdx &&
+                pHoveredBitmap->IsMissing()) {
+                    pHoveringMetaBitmaps->ReplaceSlotAWithSlotB(pCursorState->HeldSlot, pMouseHoveringBitmap->Slot);
+                    pCursorState->HeldPlayerBitmapFacing = -1;
+                    pCursorState->HeldSlot = -1;
+            }
+            else {
+                pCursorState->HeldPlayerBitmapFacing = pMouseHoveringBitmap->FacingIdx;
+                pCursorState->HeldSlot = pMouseHoveringBitmap->Slot;
+            }
+        }
+    }
+
+#if 0
+            struct menu_bitmap
+            {
+                v2 TileMin;
+                v2 TileMax;
+                _meta_bitmap *pMetaBitmap;
+                int FacingIdx;
+                int Slot;
+            };
+
         if (pMouseHoveringBitmap->pMetaBitmap->IsMissing()) {
-
-
-
-
-
-
-                
-
-        
-
+            arr_meta_bitmaps *pMetaBitmaps = 
+                &pPlayer->FacingBitmaps[pMouseHoveringBitmap->FacingIdx].MetaBitmaps;
+            pMetaBitmaps->ReplaceSlotAWithSlotB(pMouseHoveringBitmap->Slot
 
     // Update cursor state
 
@@ -1249,7 +1281,6 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
 
     // Find out if there's a bagel active so that we can do the click-replace thing
-# if 0
     b32 BagelActive = false;
     for (int Facing = 0;
         Facing < 4;
@@ -2023,7 +2054,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if (GlobalDevKeys->F1.EndedDown && GlobalDevKeys->F1.HalfTransitionCount == 1)
     {
         // Zero cursor state before changing editor
-        DebugState->EditorState.CursorState = {};
+        InitializeCursorState(&DebugState->EditorState.CursorState);
         if (DebugState->EditorState.WhichEditor == TILE)
         {
             DebugState->EditorState.WhichEditor = NO_EDITOR;
@@ -2035,7 +2066,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     if (GlobalDevKeys->F6.EndedDown && GlobalDevKeys->F6.HalfTransitionCount == 1)
     {
-        DebugState->EditorState.CursorState = {};
+        InitializeCursorState(&DebugState->EditorState.CursorState);
         if (DebugState->EditorState.WhichEditor == PLAYER)
         {
             DebugState->EditorState.WhichEditor = NO_EDITOR;

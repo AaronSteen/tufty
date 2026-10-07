@@ -465,6 +465,15 @@ struct arr_meta_bitmap
         return(Result);
     }
 
+    void
+    ReplaceSlotAWithSlotB(int SlotA, int SlotB)
+    {
+        if (SlotA > 0 && SlotA < Len && SlotB > 0 && SlotB < Len) {
+            Data[SlotA] = Data[SlotB];
+            Data[SlotB] = {};
+        }
+    }
+
 };
 
 struct facing_bitmaps
@@ -493,7 +502,8 @@ struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
-    _meta_bitmap *pHeldMetaBitmap;
+    int HeldPlayerBitmapFacing;
+    int HeldSlot;
 };
 
 struct game_state
