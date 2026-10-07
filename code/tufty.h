@@ -185,10 +185,18 @@ struct meta_bitmap
     bitmap Bitmap;
 };
 
+enum WAIT_STATE
+{
+    NOTHING,
+    WAITING,
+    READY_TO_RELOAD
+};
+
 struct _meta_bitmap
 {
     char Filepath[STRING_LEN];
-    b32 ReadyToReload;
+    WAIT_STATE WaitState; 
+    int WaitedFrames;
     u64 LastWriteTime;
     bitmap Bitmap;
 
@@ -355,8 +363,8 @@ struct arr_meta_bitmap
     SetMissing(int Idx) 
     {
         if(Idx > 0 && Idx < Len) {
-            Data[Idx].ReadyToReload = false;
-            Data[Idx].LastWriteTime = 0;
+            Data[Idx].WaitState = NOTHING;
+            Data[Idx].WaitedFrames = 0;
             Data[Idx].Bitmap = {};
         }
     }
@@ -407,7 +415,8 @@ struct arr_meta_bitmap
     {
         for (int Slot = 1; Slot < Len; ++Slot) {
             Data[Slot].LastWriteTime = 0;
-            Data[Slot].ReadyToReload = false;
+            Data[Slot].WaitState = NOTHING;
+            Data[Slot].WaitedFrames = 0;
             Data[Slot].Bitmap = {};
         }
     }
@@ -452,7 +461,8 @@ struct arr_meta_bitmap
                 if (Size) {
                     pIt->Bitmap.Buffer.Size = Size;
                     pIt->Bitmap.Buffer.Data = PushArray(&Arena, u8, Size);
-                    pIt->ReadyToReload = true;
+                    pIt->WaitState = READY_TO_RELOAD;
+                    pIt->WaitedFrames = 0;
                 }
             }
         }
@@ -478,6 +488,8 @@ struct arr_meta_bitmap
 
 struct facing_bitmaps
 {
+    WAIT_STATE WaitState;
+    int WaitedFrames;
     b32 ReadyToReload;
     u64 LastUpdateTime;
     int DrawThis;
@@ -487,7 +499,7 @@ struct facing_bitmaps
 struct player
 {
     v2 Position;
-    facing IsFacing;
+    int IsFacing;
     facing_bitmaps FacingBitmaps[4];
 };
 
@@ -503,7 +515,7 @@ struct cursor_state
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
     int HeldPlayerBitmapFacing;
-    int HeldSlot;
+    int Slot;
 };
 
 struct game_state
