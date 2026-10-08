@@ -1085,7 +1085,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     // Get an array of menu_tile structs accommodating the maximum number of player bitmaps the game supports.
     //      Note that this is different than the length of the actual arr_meta_bitmaps.Data array for
     //      player bitmaps because that array contains the special nil bitmap at the front
-    menu_bitmap *pMenuBitmaps = PushArray(&pScratch->Arena, menu_bitmap, 4 * (MAX_FACING_BITMAPS+1));
+    menu_bitmap *pMenuBitmaps = PushArray(&pScratch->Arena, menu_bitmap, 4 * (MAX_FACING_BITMAPS));
 
     DrawSpecialRect(pBackbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{0, 0, 0, 0});
 
@@ -1096,8 +1096,8 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     f32 VerticalSpaceBetweenSections = 220;
     v2 HeaderTextStart = {BrowserMin.X + 30, 120};
     f32 CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
+    menu_bitmap *pMenuBitmapsCursor = pMenuBitmaps;
     for (int NthFace = 0; NthFace < 4; ++NthFace) {
-        menu_bitmap *pMenuBitmapsCursor = pMenuBitmaps + NthFace * (MAX_FACING_BITMAPS+1);
         arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFace].MetaBitmaps;
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFace]);
@@ -1107,10 +1107,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
             meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
 
-            if (pIt->IsEmpty()) {
-                ++pMenuBitmapsCursor;
-                continue;
-            }
+            if (pIt->IsEmpty()) { continue; }
 
             pMenuBitmapsCursor->FacingIdx = NthFace;
             pMenuBitmapsCursor->Slot = Slot;
