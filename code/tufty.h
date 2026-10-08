@@ -177,25 +177,17 @@ struct mem_region
     u8 *Data;
 };
 
-struct meta_bitmap
-{
-    char Filepath[STRING_LEN];
-    b32 ReadyToReload;
-    u64 LastUpdateTime;
-    bitmap Bitmap;
-};
-
-enum WAIT_STATE
+enum wait_state
 {
     NOTHING,
     WAITING,
     READY_TO_RELOAD
 };
 
-struct _meta_bitmap
+struct meta_bitmap
 {
     char Filepath[STRING_LEN];
-    WAIT_STATE WaitState; 
+    wait_state WaitState; 
     int WaitedFrames;
     u64 LastWriteTime;
     bitmap Bitmap;
@@ -235,27 +227,10 @@ struct _meta_bitmap
 
 };
 
-struct tile_map
+struct found_filepath
 {
-    arena TilesArena;
-    b32 ReadyToReload;
-    u64 LastUpdateTime;
-    int NumRows;
-    int NumCols;
-    int NumTileTypes;
-    meta_bitmap *TileTypes;
-    int NumTilesInWorld;
-    f32 TileSideInPixels;
-    s32 *TileValues;
-};
-
-struct menu_bitmap
-{
-    v2 TileMin;
-    v2 TileMax;
-    _meta_bitmap *pMetaBitmap;
-    int FacingIdx;
-    int Slot;
+    char Filepath[STRING_LEN];
+    b32 LoadedYet;
 };
 
 b32
@@ -268,67 +243,12 @@ DoFilepathsMatch(char *A, char *B) {
     }
 }
 
-struct found_filepath
-{
-    char Filepath[STRING_LEN];
-    b32 LoadedYet;
-};
-
-#pragma pack(push, 1)
-struct bitmap_header
-{
-    char Signature[2];
-    u32 FileSize;
-    u8 Reserved[4];
-    u32 DataOffset;
-    u32 HeaderSize;
-    u32 Width;
-    s32 Height;
-    u16 Planes;
-    u16 BitsPerPixel;
-    u32 Compression;
-    u32 CompressedImageSize;
-    u32 XPixelsPerMeter;
-    u32 YPixelsPerMeter;
-    u32 ColorsUsed;
-    u32 ImportantColors;
-    // NOTE(Aaron): May need to adopt alpha and RGB masks fields from Beaver at some point, but
-    //      for now we don't use.
-};
-
-struct saved_project
-{
-    char MagicNumber[4];
-    int NumPlayerBitmapsPerFacing[4];
-    int NumTileRows;
-    int NumTileCols;
-    int NumTileTypes;
-    mem_idx PlayerDrawThisOffset;
-    mem_idx PlayerFilepathsOffset;
-    mem_idx TileTypeFilepathsOffset;
-    mem_idx TileValuesOffset;
-};
-#pragma pack(pop)
-
-
-static void
-ParseBitmapHeader(bitmap *Bitmap)
-{
-    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
-    Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
-    Bitmap->Height = Header->Height;
-    Bitmap->Width = Header->Width;
-    Assert(Header->BitsPerPixel == 32);
-    Bitmap->BytesPerPixel = Header->BitsPerPixel / 8;
-    Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
-}
-
 struct arr_meta_bitmap
 {
     int Len;
-    _meta_bitmap *Data;
+    meta_bitmap *Data;
     int NextEmptySlot;
-    arena Arena;
+    arena BitmapsArena;
 
     int 
     Add(char *AddFilepath)
@@ -347,7 +267,7 @@ struct arr_meta_bitmap
         }
     }
 
-    _meta_bitmap *
+    meta_bitmap *
     Get(int Idx) 
     {
         if(Idx > 0 && Idx < Len) {
@@ -436,13 +356,13 @@ struct arr_meta_bitmap
             }
         }
 
-        // Add any OsFilepaths that were not in the game yet to the list
+            // Add any OsFilepaths that were not in the game yet to the list
         for (int OsIdx = 0; OsIdx < NumOsFilepaths; ++OsIdx) {
             if (!pOsFilepaths[OsIdx].LoadedYet) {
                 int AddedIdx = Add(pOsFilepaths[OsIdx].Filepath);
                 if(AddedIdx == 0) {
                     DebugOutput("Error: In %s, couldn't add OSFilepath %s because would have \
-                                overflowed facing bitmaps list", __func__, pOsFilepaths[OsIdx].Filepath);
+                                overflowed bitmaps list", __func__, pOsFilepaths[OsIdx].Filepath);
                 }
                 else {
                     pOsFilepaths->LoadedYet = true;
@@ -455,12 +375,12 @@ struct arr_meta_bitmap
         //      If it doesn't, size remains zero and future pIt->IsPresent() calls will
         //      return false.
         for (int Slot = 0; Slot < Len; ++Slot) {
-            _meta_bitmap *pIt = Get(Slot);
+            meta_bitmap *pIt = Get(Slot);
             if (!pIt->IsEmpty()) {
                 mem_idx Size = GetFileSize(pIt->Filepath);
                 if (Size) {
                     pIt->Bitmap.Buffer.Size = Size;
-                    pIt->Bitmap.Buffer.Data = PushArray(&Arena, u8, Size);
+                    pIt->Bitmap.Buffer.Data = PushArray(&BitmapsArena, u8, Size);
                     pIt->WaitState = READY_TO_RELOAD;
                     pIt->WaitedFrames = 0;
                 }
@@ -469,7 +389,7 @@ struct arr_meta_bitmap
     }   
 
     bool
-    IsNilBitmap(_meta_bitmap *pToCheck)
+    IsNilBitmap(meta_bitmap *pToCheck)
     {
         bool Result = (pToCheck - Data == 0);
         return(Result);
@@ -486,9 +406,82 @@ struct arr_meta_bitmap
 
 };
 
+struct tile_map
+{
+    wait_state WaitState;
+    int WaitedFrames;
+    u64 LastUpdateTime;
+    int NumRows;
+    int NumCols;
+    int NumTilesInWorld;
+    arr_meta_bitmap TileTypes;
+    f32 TileSideInPixels;
+    s32 *TileValues;
+};
+
+struct menu_bitmap
+{
+    v2 TileMin;
+    v2 TileMax;
+    meta_bitmap *pMetaBitmap;
+    int FacingIdx;
+    int Slot;
+};
+
+
+
+#pragma pack(push, 1)
+struct bitmap_header
+{
+    char Signature[2];
+    u32 FileSize;
+    u8 Reserved[4];
+    u32 DataOffset;
+    u32 HeaderSize;
+    u32 Width;
+    s32 Height;
+    u16 Planes;
+    u16 BitsPerPixel;
+    u32 Compression;
+    u32 CompressedImageSize;
+    u32 XPixelsPerMeter;
+    u32 YPixelsPerMeter;
+    u32 ColorsUsed;
+    u32 ImportantColors;
+    // NOTE(Aaron): May need to adopt alpha and RGB masks fields from Beaver at some point, but
+    //      for now we don't use.
+};
+
+struct saved_project
+{
+    char MagicNumber[4];
+    int NumPlayerBitmapsPerFacing[4];
+    int NumTileRows;
+    int NumTileCols;
+    int NumTileTypes;
+    mem_idx PlayerDrawThisOffset;
+    mem_idx PlayerFilepathsOffset;
+    mem_idx TileTypeFilepathsOffset;
+    mem_idx TileValuesOffset;
+};
+#pragma pack(pop)
+
+
+static void
+ParseBitmapHeader(bitmap *Bitmap)
+{
+    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
+    Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
+    Bitmap->Height = Header->Height;
+    Bitmap->Width = Header->Width;
+    Assert(Header->BitsPerPixel == 32);
+    Bitmap->BytesPerPixel = Header->BitsPerPixel / 8;
+    Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
+}
+
 struct facing_bitmaps
 {
-    WAIT_STATE WaitState;
+    wait_state WaitState;
     int WaitedFrames;
     b32 ReadyToReload;
     u64 LastUpdateTime;

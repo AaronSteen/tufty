@@ -21,7 +21,6 @@
 // GLOBALS
     // variables
     static meta_bitmap *pGlobalBagel;
-    static _meta_bitmap *_pGlobalBagel;
     static game_controller_input *GlobalKeyboardController;
     static dev_keys *GlobalDevKeys;
     static game_mouse_input *pGlobalMouse;
@@ -193,6 +192,7 @@ GetTileValueFrom1DCoord(tile_map *pTileMap, int CoordIn1D)
     return(Result);
 }
 
+#if 0
 static meta_bitmap *
 GetMetaBitmapPtrFromTileValue(tile_map *pTileMap, s32 TileValue)
 {
@@ -210,6 +210,7 @@ IsTheZeroTile(tile_map *pTileMap, meta_bitmap *pMetaBitmap)
     return(Result);
 }
 
+
 static int
 GetTileValueIdxFromMetaBitmapPtr(tile_map *pTileMap, meta_bitmap *pMetaBitmap)
 {
@@ -223,6 +224,8 @@ GetTileValueIdxFromMetaBitmapPtr(tile_map *pTileMap, meta_bitmap *pMetaBitmap)
         return(0);
     }
 }
+
+#endif
 
 static b32
 IsBagel(meta_bitmap *Check)
@@ -258,66 +261,8 @@ ReplaceBagel(meta_bitmap *pMetaBitmapsStart, mem_idx GetsReplacedSlot,
     pMetaBitmapsStart[ReplaceWithSlot] = {};
 }
 
-
-static mem_idx
-DEBUGReloadBitmapIfChanged(meta_bitmap *MetaBitmap)
-{
-    // Wait one frame after bitmap change detected so we don't try to load it
-    //      while the save is in progress.
-    bitmap *Bitmap = &MetaBitmap->Bitmap;
-    char *Filepath = MetaBitmap->Filepath;
-    if (MetaBitmap->ReadyToReload == true)
-    {
-        MetaBitmap->ReadyToReload = false;
-        // Load the bitmap and check to see if it has the same dimensions. If so, just replace the pixels.
-        
-        // If not, the bitmap the user reloaded changed size; and we need to reload the entire dir, so return the size of the 
-        // bitmap to load so the caller can decide what to do.
-        // because e.g., if the reloaded bitmap is bigger than the previous version, it might not
-        // fit in the space in the arena we have set aside for it.
-
-        // In the future we could just say that a bitmap has a max size and always allocate that any bytes;
-        //      this would allow us to use the same pointer for any single reloaded bitmap, no matter
-        //      what the reloaded size is, and keep the other bitmaps where they are.
-        mem_idx NewBitmapSize = GetFileSize(Filepath);
-        if (NewBitmapSize == Bitmap->Buffer.Size)
-        {
-            mem_idx NumBytesLoaded = ReadFileInto(Filepath, (u32)Bitmap->Buffer.Size, Bitmap->Buffer.Data);
-            ParseBitmapHeader(Bitmap);
-            MetaBitmap->LastUpdateTime = GetFileWriteTime(Filepath);
-            return(NumBytesLoaded);
-        }
-        else
-        {
-            return(NewBitmapSize);
-        }
-    }
-    else
-    {
-        u64 WriteTime = GetFileWriteTime(Filepath);
-        if (WriteTime && (WriteTime != MetaBitmap->LastUpdateTime))
-        {
-            MetaBitmap->ReadyToReload = true;
-        }
-        return(Bitmap->Buffer.Size);
-    }
-}
-
 static void
-ClearMetaBitmapsButLeaveFilepaths(meta_bitmap *pMetaBitmaps, mem_idx ArrayLen)
-{
-    for (int Slot = 0;
-        Slot < ArrayLen;
-        ++Slot) {
-            pMetaBitmaps[Slot].LastUpdateTime = 0;
-            pMetaBitmaps[Slot].ReadyToReload = false;
-            pMetaBitmaps[Slot].Bitmap = {};
-    }
-}
-
-
-static void
-ActuallyLoadBitmap(_meta_bitmap *pIt)
+ActuallyLoadBitmap(meta_bitmap *pIt)
 {
     Assert(pIt->IsPresent());
     ReadFileInto(pIt->Filepath, (u32)pIt->Bitmap.Buffer.Size, pIt->Bitmap.Buffer.Data);
@@ -330,7 +275,7 @@ ActuallyLoadBitmap(_meta_bitmap *pIt)
 void
 ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
 {
-    _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
+    meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
     if (!pMetaBitmaps->IsNilBitmap(pIt) && pIt->IsPresent()) {
         if (pIt->WaitState == READY_TO_RELOAD) {
             pIt->WaitState = NOTHING;
@@ -338,7 +283,7 @@ ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
             mem_idx NewBitmapSize = GetFileSize(pIt->Filepath);
             bitmap *pItsBitmap = &pIt->Bitmap;
             if (NewBitmapSize != pItsBitmap->Buffer.Size) {
-                pItsBitmap->Buffer.Data = PushArray(&pMetaBitmaps->Arena, u8, NewBitmapSize);
+                pItsBitmap->Buffer.Data = PushArray(&pMetaBitmaps->BitmapsArena, u8, NewBitmapSize);
                 pItsBitmap->Buffer.Size = NewBitmapSize;
             }
             ActuallyLoadBitmap(pIt);
@@ -358,25 +303,6 @@ ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
             }
         }
     }
-}
-
-static void
-LoadBitmap(arena *Arena, meta_bitmap *MetaBitmap)
-{
-    bitmap *Bitmap = &MetaBitmap->Bitmap;
-    char *Filepath = MetaBitmap->Filepath;
-    // Not being able to get the file size is the sentinel for a filepath
-    //      we have stored not matching an actual file in the dir. In this case,
-    //      draw the bagel instead.
-    Bitmap->Buffer.Size = GetFileSize(Filepath);
-    if (Bitmap->Buffer.Size == 0)
-    {
-        MetaBitmap->Bitmap = pGlobalBagel->Bitmap;
-        return;
-    }
-    Bitmap->Buffer.Data = PushArray(Arena, u8, Bitmap->Buffer.Size);
-    MetaBitmap->ReadyToReload = true;
-    DEBUGReloadBitmapIfChanged(MetaBitmap);
 }
 
 static found_filepath *
@@ -467,17 +393,16 @@ LoadTileBitmapsDir(tile_map *pTileMap, scratch_header *pScratchHeader)
     // TODO: Use CPP class constructor destructor setup to always 
     //      FreeScratchArena whenever any scope containing a 
     //      GetScratchArena call is exited
-    arena *pTilesArena = &pTileMap->TilesArena;
-    ResetArena(pTilesArena);
-    meta_bitmap *pTileTypes = pTileMap->TileTypes;
+    arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
+    ResetArena(&pTileTypes->BitmapsArena);
     scratch_arena *pScratch = GetScratchArena(pScratchHeader);
     
     // Clear bitmap structs in tile types array
-    ClearMetaBitmapsButLeaveFilepaths(pTileTypes, TILE_TYPES_ARRAY_LEN);
+    pTileTypes->ClearButLeaveFilepaths();
 
     pTileMap->LastUpdateTime = GetDirWriteTime("tiles");
-    pTileMap->ReadyToReload = false;
-    pTileMap->NumTileTypes = 0;
+    pTileMap->WaitState = NOTHING;
+    pTileMap->WaitedFrames = 0;
 
     buffer OsFilenames;
     OsFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
@@ -492,19 +417,13 @@ LoadTileBitmapsDir(tile_map *pTileMap, scratch_header *pScratchHeader)
         return;
     }
 
-    // TODO(AARON): ARRAY TYPE
     found_filepath *pOsFilepaths = MakeOsFilepathsList(&pScratch->Arena, OsFilenames, NumFilesFound, "tiles");
-    UpdateBitmapList(pTileTypes, TILE_TYPES_ARRAY_LEN, pOsFilepaths, NumFilesFound);
+    pTileTypes->UpdateBitmapList(pOsFilepaths, NumFilesFound);
 
-    for (int Slot = 1;
-        Slot < TILE_TYPES_ARRAY_LEN;
-        ++Slot)
-    {
-        meta_bitmap *pTileType = pTileMap->TileTypes + Slot;
-        if (strlen(pTileType->Filepath) > 0)
-        {
-            LoadBitmap(pTilesArena, pTileType);
-            ++pTileMap->NumTileTypes;
+    for (int Slot = 0; Slot < pTileTypes->Len; ++Slot) {
+        meta_bitmap *pIt = pTileTypes->Get(Slot);
+        if (pIt->IsPresent()) {
+            ActuallyLoadBitmap(pIt);
         }
     }
 
@@ -519,7 +438,7 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
     //      FreeScratchArena whenever any scope containing a 
     //      GetScratchArena call is exited
     arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-    ResetArena(&pMetaBitmaps->Arena);
+    ResetArena(&pMetaBitmaps->BitmapsArena);
     scratch_arena *pScratch = GetScratchArena(pScratchHeader);
 
     // Clear bitmap structs in meta bitmaps but leave the filepaths so that bitmaps
@@ -540,7 +459,7 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
     GetListOfDirContents(&OsFilenames, FacingDirpath, &NumFilesFound);
 
     // If we found no bitmaps or too many, just return
-    if ((NumFilesFound > MAX_TILE_TYPES) || (NumFilesFound == 0))
+    if ((NumFilesFound > MAX_FACING_BITMAPS) || (NumFilesFound == 0))
     {
         FreeScratchArena(pScratch);
         return;
@@ -550,8 +469,8 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, scratch_he
     pMetaBitmaps->UpdateBitmapList(pOsFilepaths, NumFilesFound);
 
     for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-        _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
-        if (!pMetaBitmaps->IsNilBitmap(pIt) && pIt->IsPresent()) {
+        meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
+        if (pIt->IsPresent()) {
             ActuallyLoadBitmap(pIt);
         }
     }
@@ -960,7 +879,7 @@ CountBitmaps(meta_bitmap *pMetaBitmapsList, mem_idx ListLen)
 }
 
 static mem_idx
-SaveProject(tile_map *TileMap, player *pPlayer, scratch_header *ScratchHeader)
+SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
 {
     // If we successfully got a filepath from the OS file dialog and wrote the project to a file,
     //      this function returns the number of bytes written to that file. If we didn't have
@@ -978,96 +897,88 @@ SaveProject(tile_map *TileMap, player *pPlayer, scratch_header *ScratchHeader)
     //              - the user cancels, or
     //              - the user closes the dialog box, or
     //              - an error, such as the file name buffer being too small, occurred.
-    scratch_arena *pScratch = GetScratchArena(ScratchHeader);
+    scratch_arena *pScratch = GetScratchArena(pScratchHeader);
 
-    char *Savepath = PushArray(&pScratch->Arena, char, STRING_LEN);
-    int GetFilepathResult = GetFilepathFromDialog(Savepath, STRING_LEN, true);
+    char *pSavepath = PushArray(&pScratch->Arena, char, STRING_LEN);
+    int GetFilepathResult = GetFilepathFromDialog(pSavepath, STRING_LEN, true);
     if (GetFilepathResult == 0) {FreeScratchArena(pScratch); return(0);}
  
-    scratch_arena *OutfileScratch = GetScratchArena(ScratchHeader);
-    arena *OutfileArena = &OutfileScratch->Arena;
-    saved_project *Header = PushStruct(OutfileArena, saved_project);
+    scratch_arena *pOutfileScratch = GetScratchArena(pScratchHeader);
+    arena *pOutfileArena = &pOutfileScratch->Arena;
+    saved_project *pHeader = PushStruct(pOutfileArena, saved_project);
 
 // Magic number
-    char *MagicNumber = "TUFT";
-    mem_idx MagicNumberSize = strnlen(MagicNumber, STRING_LEN);
+    char *pMagicNumber = "TUFT";
+    mem_idx MagicNumberSize = strnlen(pMagicNumber, STRING_LEN);
     Assert(MagicNumberSize == 4);
-    for (int NthLetter = 0;
-        NthLetter < MagicNumberSize;
-        ++NthLetter)
-    {
-        Header->MagicNumber[NthLetter] = MagicNumber[NthLetter];
+    for (int NthLetter = 0; NthLetter < MagicNumberSize; ++NthLetter) {
+        pHeader->MagicNumber[NthLetter] = pMagicNumber[NthLetter];
     }
 
 // Fields we can just copy    
-    Header->NumTileRows = TileMap->NumRows;
-    Header->NumTileCols = TileMap->NumCols;
-    Header->NumTileTypes = TileMap->NumTileTypes;
+    pHeader->NumTileRows = pTileMap->NumRows;
+    pHeader->NumTileCols = pTileMap->NumCols;
+    pHeader->NumTileTypes = pTileMap->TileTypes.CountNonEmptySlots();
 
 // NumBitmaps per facing
     for (int NthFacing = 0;
         NthFacing < 4;
         ++NthFacing)
     {
-        Header->NumPlayerBitmapsPerFacing[NthFacing] = pPlayer->FacingBitmaps[NthFacing].MetaBitmaps.CountNonEmptySlots();
+        pHeader->NumPlayerBitmapsPerFacing[NthFacing] = 
+            pPlayer->FacingBitmaps[NthFacing].MetaBitmaps.CountNonEmptySlots();
     }
 
-// pPlayer DrawThis.
-// It is slow to do multiple loops like this but it's easier to read the code and understand and don't think
-//      perf is critical here
-    Header->PlayerDrawThisOffset = OutfileArena->Cursor;
-    int *PlayerDrawThisArray = PushArray(OutfileArena, int, 4);
-    for (int NthFacing = 0;
-        NthFacing < 4;
-        ++NthFacing)
-    {
-        PlayerDrawThisArray[NthFacing] = pPlayer->FacingBitmaps[NthFacing].DrawThis;
+// Player DrawThis.
+    pHeader->PlayerDrawThisOffset = pOutfileArena->Cursor;
+    int *pPlayerDrawThisArray = PushArray(pOutfileArena, int, 4);
+    for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
+        pPlayerDrawThisArray[NthFacing] = 
+            pPlayer->FacingBitmaps[NthFacing].DrawThis;
     }
 
-    Header->PlayerFilepathsOffset = OutfileArena->Cursor;
+    pHeader->PlayerFilepathsOffset = pOutfileArena->Cursor;
 
-// pPlayer filepaths
-    for (int NthFacing = 0; NthFacing < 4; ++NthFacing)
-    {
+// Player filepaths
+    for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
         arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFacing].MetaBitmaps;
         for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-            _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
-            if (!pIt->IsEmpty()) {
+            meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
+            if (pIt->IsEmpty() == false) {
                 mem_idx FilepathLen = strlen(pIt->Filepath);
                 ++FilepathLen;
-                char *FilepathBufferInOutfile = PushArray(OutfileArena, char, FilepathLen);
+                char *FilepathBufferInOutfile = PushArray(pOutfileArena, char, FilepathLen);
                 snprintf(FilepathBufferInOutfile, FilepathLen, "%s", pIt->Filepath);
             }
         }
     }
 
 // Tile type filepaths
-    Header->TileTypeFilepathsOffset = OutfileArena->Cursor;
-    for (int NthTileTypeFilepath = 1;
-        NthTileTypeFilepath <= TileMap->NumTileTypes;
-        ++NthTileTypeFilepath)
-    {
-        char *TileTypeFilepath = TileMap->TileTypes[NthTileTypeFilepath].Filepath;
-        mem_idx FilepathLen = strlen(TileTypeFilepath);
-        // Null terminator
-        ++FilepathLen;
-        char *FilepathBufferInOutfile = PushArray(OutfileArena, char, FilepathLen);
-        snprintf(FilepathBufferInOutfile, FilepathLen, "%s", TileTypeFilepath);
+    pHeader->TileTypeFilepathsOffset = pOutfileArena->Cursor;
+    arr_meta_bitmap *pTypes = &pTileMap->TileTypes;
+    for (int Slot = 0; Slot < pTypes->Len; ++Slot) {
+        meta_bitmap *pIt = pTypes->Get(Slot);
+        if (pIt->IsEmpty() == false) {
+            mem_idx FilepathLen = strlen(pIt->Filepath);
+            ++FilepathLen;
+            char *FilepathBufferInOutfile = PushArray(pOutfileArena, char, FilepathLen);
+            snprintf(FilepathBufferInOutfile, FilepathLen, "%s", pIt->Filepath);
+        }
     }
 
 // Tile values
-    Header->TileValuesOffset = OutfileArena->Cursor;
-    mem_idx NumTileValuesToCopy = Header->NumTileRows * Header->NumTileCols;
-    s32 *TileValuesInOutfile = PushArray(OutfileArena, s32, NumTileValuesToCopy);
+    pHeader->TileValuesOffset = pOutfileArena->Cursor;
+    mem_idx NumTileValuesToCopy = pHeader->NumTileRows * pHeader->NumTileCols;
+    s32 *TileValuesInOutfile = PushArray(pOutfileArena, s32, NumTileValuesToCopy);
     mem_idx NumBytesToCopy = NumTileValuesToCopy * sizeof(s32);
-    memcpy(TileValuesInOutfile, TileMap->TileValues, NumBytesToCopy);
+    memcpy(TileValuesInOutfile, pTileMap->TileValues, NumBytesToCopy);
 
 // Write file
-    mem_idx NumBytesToWrite = OutfileArena->Cursor - 1;
+    mem_idx NumBytesToWrite = pOutfileArena->Cursor - 1;
 
     // TODO(AARON): On Windows we have updated WriteEntireFile to return the number of bytes the file wrote,
     //      so that we can return that from this function.
-    mem_idx BytesWritten = WriteEntireFile(Savepath, NumBytesToWrite, OutfileArena->Data);
+    mem_idx BytesWritten = WriteEntireFile(pSavepath, NumBytesToWrite, pOutfileArena->Data);
     if (BytesWritten != NumBytesToWrite)
     {
         Result = 0;
@@ -1077,7 +988,7 @@ SaveProject(tile_map *TileMap, player *pPlayer, scratch_header *ScratchHeader)
         Result = BytesWritten;
     }
 
-    FreeScratchArena(OutfileScratch);
+    FreeScratchArena(pOutfileScratch);
     FreeScratchArena(pScratch);
     return(Result);
 }
@@ -1087,35 +998,34 @@ LoadProject(player *pPlayer, tile_map *pTileMap, scratch_header *pScratchHeader)
 {
     scratch_arena *pScratch = GetScratchArena(pScratchHeader);
 
-    char *LoadedFileFilepath = PushArray(&pScratch->Arena, char, STRING_LEN);
-    int GetFilepathResult = GetFilepathFromDialog(LoadedFileFilepath, STRING_LEN, false);
+    char *pLoadedFileFilepath = PushArray(&pScratch->Arena, char, STRING_LEN);
+    int GetFilepathResult = GetFilepathFromDialog(pLoadedFileFilepath, STRING_LEN, false);
     if (GetFilepathResult == 0) {FreeScratchArena(pScratch); return(0);}
 
-    u32 LoadedFileSize = GetFileSize(LoadedFileFilepath);
+    u32 LoadedFileSize = GetFileSize(pLoadedFileFilepath);
     if (LoadedFileSize == 0) {FreeScratchArena(pScratch); return(0);}
 
     u8 *pLoadedDataStart = PushArray(&pScratch->Arena, u8, LoadedFileSize);
-    mem_idx BytesReadIntoBuffer = ReadFileInto(LoadedFileFilepath, LoadedFileSize, pLoadedDataStart);
+    mem_idx BytesReadIntoBuffer = ReadFileInto(pLoadedFileFilepath, LoadedFileSize, pLoadedDataStart);
     if (BytesReadIntoBuffer == 0) {FreeScratchArena(pScratch); return(0);} 
 
-    saved_project *pHeader = 0;
-    pHeader = (saved_project *)pLoadedDataStart;
+    saved_project *pHeader = (saved_project *)pLoadedDataStart;
 
     // char MagicNumber[4];
-    char *CompareMagicNumber = "TUFT";
-    for (int LetterIdx = 0;
-        LetterIdx < 4;
-        ++LetterIdx)
-    {
-        if (CompareMagicNumber[LetterIdx] != pHeader->MagicNumber[LetterIdx]) {FreeScratchArena(pScratch); return(0);}
+    char *pCompareMagicNumber = "TUFT";
+    for (int LetterIdx = 0; LetterIdx < 4; ++LetterIdx) {
+        if (pCompareMagicNumber[LetterIdx] != pHeader->MagicNumber[LetterIdx]) {
+            FreeScratchArena(pScratch); return(0);
+        }
     }
 
-    if ( (pHeader->NumTileRows == 0) || (pHeader->NumTileCols == 0) ) {FreeScratchArena(pScratch); return(0);}
+    if (pHeader->NumTileRows == 0 || pHeader->NumTileCols == 0) {
+        FreeScratchArena(pScratch); return(0);
+    }
 
     pTileMap->NumRows = pHeader->NumTileRows;
     pTileMap->NumCols = pHeader->NumTileCols;
     pTileMap->NumTilesInWorld = pTileMap->NumRows * pTileMap->NumCols;
-    pTileMap->NumTileTypes = pHeader->NumTileTypes;
 
     // int NumPlayerBitmapsPerFacing[4];
     // mem_idx PlayerDrawThisOffset;
@@ -1127,7 +1037,8 @@ LoadProject(player *pPlayer, tile_map *pTileMap, scratch_header *pScratchHeader)
         arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
         pMetaBitmaps->Clear();
         for (int NthFilepath = 0; pHeader->NumPlayerBitmapsPerFacing[NthFacing]; ++NthFilepath) {
-            pMetaBitmaps->Add(pFilepathToCopyCursor);
+            int AddedToSlotN = pMetaBitmaps->Add(pFilepathToCopyCursor);
+            Assert(AddedToSlotN);
             pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
         }
         LoadPlayerBitmapsDir(pPlayer, pThisFacing, pScratchHeader);
@@ -1136,15 +1047,12 @@ LoadProject(player *pPlayer, tile_map *pTileMap, scratch_header *pScratchHeader)
 
     // Use the same cursor pointer as we used for player filepaths
     pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->TileTypeFilepathsOffset);
-    for (int NthTileType = 0;
-        NthTileType < pTileMap->NumTileTypes;
-        ++NthTileType)
-    {
-        char *pPasteFilepathHere = pTileMap->TileTypes[NthTileType+1].Filepath;
-        mem_idx FilepathLen = strlen(pFilepathToCopyCursor);
-        ++FilepathLen; // Null terminator
-        snprintf(pPasteFilepathHere, FilepathLen, "%s", pFilepathToCopyCursor);
-        pFilepathToCopyCursor += FilepathLen;
+    arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
+    pTileTypes->Clear();
+    for (int NthTileType = 0; NthTileType < pHeader->NumTileTypes; ++NthTileType) {
+        int AddedToSlotN = pTileTypes->Add(pFilepathToCopyCursor);
+        Assert(AddedToSlotN);
+        pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
     }
 
     // Tile values
@@ -1197,7 +1105,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
         f32 XDrawCoord = HeaderTextStart.X;
         for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-            _meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
+            meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
 
             if (pIt->IsEmpty()) {
                 ++pMenuBitmapsCursor;
@@ -1242,7 +1150,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         menu_bitmap *pIt = pMenuBitmaps + NthFace * (MAX_FACING_BITMAPS+1) + 1;
         int HowMany = pMetaBitmaps->CountNonEmptySlots();
         for (int NthMenuBitmap = 0; NthMenuBitmap < HowMany; ++NthMenuBitmap) {
-            _meta_bitmap *pToDraw = pMetaBitmaps->Get(pIt->Slot);
+            meta_bitmap *pToDraw = pMetaBitmaps->Get(pIt->Slot);
             bitmap *pBitmap;
             if (pToDraw->IsMissing()) {
                 pBitmap = &pGlobalBagel->Bitmap;
@@ -1297,11 +1205,11 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
             //      on an actual menu tile
             Assert(pHoveredContainingArr != nullptr);
             if (BagelActive) {
-                _meta_bitmap *pHoveredBitmap = pHoveredContainingArr->Get(pMenuHovered->Slot);
+                meta_bitmap *pHoveredBitmap = pHoveredContainingArr->Get(pMenuHovered->Slot);
                 if (pHoveredBitmap->IsMissing()) {
                     arr_meta_bitmap *pHeldContainingArr = GetArrMetaBitmapPtr(pPlayer, pCursorState->HeldPlayerBitmapFacing);
                     if (pHeldContainingArr != nullptr) {
-                        _meta_bitmap *pHeldTile = pHeldContainingArr->Get(pCursorState->Slot);
+                        meta_bitmap *pHeldTile = pHeldContainingArr->Get(pCursorState->Slot);
                         if (pHeldTile->IsPresent()) {
                             pHoveredContainingArr->ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->Slot);
                             SetHeldBitmapToNil(pCursorState);
@@ -1332,7 +1240,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     // Draw held tile
     arr_meta_bitmap *pHeldContainingArr = GetArrMetaBitmapPtr(pPlayer, pCursorState->HeldPlayerBitmapFacing);
     if (pHeldContainingArr != nullptr) {
-        _meta_bitmap *pIt = pHeldContainingArr->Get(pCursorState->Slot);
+        meta_bitmap *pIt = pHeldContainingArr->Get(pCursorState->Slot);
         if (pIt->IsPresent()) {
             bitmap *pBitmap = &pIt->Bitmap;
             DrawHeldTile(pBackbuf, MouseCoords, pBitmap);
@@ -1344,7 +1252,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     arr_meta_bitmap *pArrForCurrentFacing = GetArrMetaBitmapPtr(pPlayer, pPlayer->IsFacing);
     if (pArrForCurrentFacing->CountNonEmptySlots() > 0)
     {
-        _meta_bitmap *pToDraw = pArrForCurrentFacing->Get(pCurrentFacing->DrawThis);
+        meta_bitmap *pToDraw = pArrForCurrentFacing->Get(pCurrentFacing->DrawThis);
         if (pToDraw->IsPresent()) {
             bitmap *pBitmap = &pToDraw->Bitmap;
         
@@ -1714,7 +1622,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     scratch_header *ScratchHeader = (scratch_header *)TransientRegion.Data;
 
     // Convenience pointers
-    tile_map *TileMap = &GameState->TileMap;
+    tile_map *pTileMap = &GameState->TileMap;
     player *pPlayer = &GameState->Player;
 
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
@@ -1746,13 +1654,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         mem_idx GameRegionOffset = sizeof(game_state);
 
         // Tiles
-        InitializeArena(&GameState->TileMap.TilesArena, GameRegion.Data + GameRegionOffset, 
-                        Megabytes(4) );
-        GameRegionOffset += GameState->TileMap.TilesArena.Size;
+        InitializeArena(&GameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
+        GameRegionOffset += GameState->TileMap.TileTypes.BitmapsArena.Size;
 
         // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
-            arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.Arena;
+            arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
             InitializeArena(pArena, GameRegion.Data + GameRegionOffset, Megabytes(1));
             GameRegionOffset += Megabytes(1);
         }
@@ -1762,8 +1669,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         InitializeArena(pWorldArena, GameRegion.Data + GameRegionOffset, (GameRegion.Size - GameRegionOffset));
 
         mem_idx GameRegionMemoryUsed = sizeof(game_state) + 
-                                        GameState->TileMap.TilesArena.Size + 
-                                        (pPlayer->FacingBitmaps[0].MetaBitmaps.Arena.Size * 4) + 
+                                        GameState->TileMap.TileTypes.BitmapsArena.Size + 
+                                        (pPlayer->FacingBitmaps[0].MetaBitmaps.BitmapsArena.Size * 4) + 
                                         GameState->WorldArena.Size;
         Assert(GameRegion.Size == GameRegionMemoryUsed);
 
@@ -1781,22 +1688,40 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                             SCRATCH_SIZE);
         }
 
+#if 0
+struct tile_map
+{
+    arena TilesArena;
+    wait_state WaitState;
+    int WaitedFrames;
+    u64 LastUpdateTime;
+    int NumRows;
+    int NumCols;
+    int NumTileTypes;
+    arr_meta_bitmap TileTypes;
+    f32 TileSideInPixels;
+    s32 *TileValues;
+};
+#endif
 // Tiles        
         // TileMap dimensions
-        TileMap->TileSideInPixels = 64.0f;
-        TileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / TileMap->TileSideInPixels);
-        TileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / TileMap->TileSideInPixels);
-        TileMap->NumTilesInWorld = TileMap->NumRows * TileMap->NumCols;
-        TileMap->TileTypes = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES);
-        TileMap->TileValues = PushArray(pWorldArena, s32, TileMap->NumTilesInWorld); 
+        pTileMap->TileSideInPixels = 64.0f;
+        pTileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / pTileMap->TileSideInPixels);
+        pTileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / pTileMap->TileSideInPixels);
+        pTileMap->NumTilesInWorld = pTileMap->NumRows * pTileMap->NumCols;
 
-        LoadTileBitmapsDir(TileMap, ScratchHeader);
+        arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
+        pTileTypes->Data = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES+1);
+        pTileTypes->Len = MAX_TILE_TYPES+1;
+        pTileTypes->NextEmptySlot = 1;
+        LoadTileBitmapsDir(pTileMap, ScratchHeader);
+        pTileMap->TileValues = PushArray(pWorldArena, s32, pTileMap->NumTilesInWorld); 
 
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             facing_bitmaps *pFacingBitmaps = pPlayer->FacingBitmaps + FacingIdx;
             arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-            pMetaBitmaps->Data = PushArray(&GameState->WorldArena, _meta_bitmap, MAX_FACING_BITMAPS+1);
+            pMetaBitmaps->Data = PushArray(&GameState->WorldArena, meta_bitmap, MAX_FACING_BITMAPS+1);
             pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
             pMetaBitmaps->NextEmptySlot = 1;
             LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, ScratchHeader);
@@ -1811,19 +1736,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 // Bagel
         // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
         //      so we know when we called it with nullptr
-        pGlobalBagel = PushStruct(&DebugState->FailBitmapsArena, meta_bitmap);
-        char *BagelFilepath = "bagel1.bmp";
-        snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
-        LoadBitmap(&DebugState->FailBitmapsArena, pGlobalBagel);
 
-        _pGlobalBagel = PushStruct(&DebugState->FailBitmapsArena, _meta_bitmap);
-        snprintf(_pGlobalBagel->Filepath, sizeof(_pGlobalBagel->Filepath), "%s", BagelFilepath);
-        mem_idx BagelSize = GetFileSize(_pGlobalBagel->Filepath);
+        char *BagelFilepath = "bagel1.bmp";
+        pGlobalBagel = PushStruct(&DebugState->FailBitmapsArena, meta_bitmap);
+        snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
+        mem_idx BagelSize = GetFileSize(pGlobalBagel->Filepath);
         if (BagelSize) {
-            _pGlobalBagel->Bitmap.Buffer.Size = BagelSize;
-            _pGlobalBagel->Bitmap.Buffer.Data = PushArray(&DebugState->FailBitmapsArena, u8, BagelSize);
+            pGlobalBagel->Bitmap.Buffer.Size = BagelSize;
+            pGlobalBagel->Bitmap.Buffer.Data = PushArray(&DebugState->FailBitmapsArena, u8, BagelSize);
         }
-        ActuallyLoadBitmap(_pGlobalBagel);
+        ActuallyLoadBitmap(pGlobalBagel);
         
         Memory->IsInitialized = true;
     }
@@ -1847,43 +1769,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //
 
     // If we set ReadyToReload on the last frame, reload the tiles dir and set ReadyToReload back to false
-    if (TileMap->ReadyToReload)
-    {
-        TileMap->ReadyToReload = false;
-        LoadTileBitmapsDir(TileMap, ScratchHeader);
+    if (pTileMap->WaitState == READY_TO_RELOAD) {
+        LoadTileBitmapsDir(pTileMap, ScratchHeader);
     }
-    else
-    {
+    else if (pTileMap->WaitState == WAITING) {
+        ++pTileMap->WaitedFrames;
+        if (pTileMap->WaitedFrames >= 3) {
+            pTileMap->WaitedFrames = 0;
+            pTileMap->WaitState = READY_TO_RELOAD;
+        }
+    }
+    else {
         // Check dir write time and compare
         u64 CheckUpdateTime = GetDirWriteTime("tiles");
-        if (TileMap->LastUpdateTime != CheckUpdateTime)
-        {
-            TileMap->ReadyToReload = true;
+        if (pTileMap->LastUpdateTime != CheckUpdateTime) {
+            pTileMap->WaitState = WAITING;
+            pTileMap->WaitedFrames = 0;
         }
-        else
-        {
+        else {
             // If we're not planning to reload all bitmaps on the next frame, check each bitmap
             //      individually to see if that bitmap has been updated.
-            for (int TileIdx = 1;
-                TileIdx < TILE_TYPES_ARRAY_LEN;
-                ++TileIdx)
-            {
-                meta_bitmap *TileType = TileMap->TileTypes + TileIdx;
-                if (TileType->Filepath[0])
-                {
-                    // DEBUGReloadBitmap reloads the bitmap if the size of the one to load
-                    //      is the same as the current one, and returns that size. 
-                    //      If the sizes are different, it returns the new size, so the if check
-                    //      below will fail, signaling that we need to reload the entire dir
-                    //      because we might not have room for the new bitmap to load in the arena
-                    mem_idx CurrentBitmapSize = TileType->Bitmap.Buffer.Size;
-                    mem_idx BitmapToLoadSize = DEBUGReloadBitmapIfChanged(TileType);
-                    if (CurrentBitmapSize != BitmapToLoadSize)
-                    {
-                        LoadTileBitmapsDir(TileMap, ScratchHeader);
-                    }
-                }
+            arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
+            for (int Slot = 0; Slot < pTileTypes->Len; ++Slot) {
+                ReloadBitmapIfChanged(pTileTypes, Slot);
             }
+
         }
     }
 
@@ -2003,24 +1913,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // RENDER
 
     // Tiles
-    for (int Row = 0; 
-        Row < TileMap->NumRows;
-        ++Row)
-    {
-        for (int Col = 0;
-            Col < TileMap->NumCols; 
-            ++Col)
-        {
-            s32 TileOneDimensionalIndex = Row * TileMap->NumCols + Col;
-            s32 TileValue = TileMap->TileValues[TileOneDimensionalIndex];
-            v2 TileMin = {Col * TileMap->TileSideInPixels, Row * TileMap->TileSideInPixels};
-            v2 TileMax = TileMin + (v2){TileMap->TileSideInPixels, TileMap->TileSideInPixels};
+    for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
+        for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
+            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap, v2{(f32)Col, (f32)Row});
+            s32 TileValue = GetTileValueFrom1DCoord(pTileMap, OneDimensionalIdx);
+            v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
+            v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
 
-            if (TileValue > 0)
-            {
-                meta_bitmap *TileType = TileMap->TileTypes + TileValue;
-                bitmap *TileBitmap = &TileMap->TileTypes[TileValue].Bitmap;
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, TileBitmap);
+            if (TileValue > 0) {
+                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
+                bitmap *pBitmap = &pToDraw->Bitmap;
+                // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
+                //      but if we change the tile size from 64x64 then we will
+                if (pToDraw->IsPresent() == false) {
+                    pBitmap = &pGlobalBagel->Bitmap;
+                }
+                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
             }
             if (DebugState->EditorState.WhichEditor == TILE)
             {
@@ -2041,9 +1949,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         // Player
         facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
-        _meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
+        meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
         if (!pToDraw->IsPresent()) {
-            pToDraw = _pGlobalBagel;
+            pToDraw = pGlobalBagel;
         }
         f32 PlayerWidth = pToDraw->Bitmap.Width;
         f32 PlayerHeight = pToDraw->Bitmap.Height;
@@ -2064,13 +1972,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Note MoveDown is the "S" key
     if (GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        SaveProject(TileMap, pPlayer, ScratchHeader);
+        SaveProject(pTileMap, pPlayer, ScratchHeader);
     }
 
     // and ActionRight is the "L" key
     if (GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown)
     {
-        LoadProject(pPlayer, TileMap, ScratchHeader);
+        LoadProject(pPlayer, pTileMap, ScratchHeader);
     }
 
     if (GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1)
