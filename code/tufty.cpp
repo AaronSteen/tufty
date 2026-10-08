@@ -1142,7 +1142,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
     for (int NthFace = 0; NthFace < 4; ++NthFace) {
         arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFace].MetaBitmaps;
-        
+
         // We have to increment pIt by 1 even after moving to the correct row
         //      since we have set up pMenuBitmaps to correspond to arr_meta_bitmaps
         //      exactly, and arr_meta_bitmaps are 1-indexed since the 0th
@@ -1270,267 +1270,268 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     FreeScratchArena(pScratch);
 }
 
-#if 0
 static void
 DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, debug_state *pDebugState, tile_map *pTileMap)
 {
+    editor_state *pEditorState = &pDebugState->EditorState;
+    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
+    arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
     v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(pBackbuf->Width), (f32)(pBackbuf->Height)};
-    b32 AlreadyClickedSecondary = false;
-    scratch_arena *pScratch = 0;
-    menu_tile *pMenuTiles = 0;
-    f32 Y = 160;
-    f32 InnerPadding = 40;
-    f32 OuterPadding = 56;
-    f32 StartX = BrowserMin.X + OuterPadding;
-    f32 X = StartX;
-    int TilesDrawnInThisRow = 0;
-    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
-    meta_bitmap **ppHeldTile = &pCursorState->HeldMetaBitmap; 
+    scratch_arena *pScratch = GetScratchArena(pScratchHeader);
+    b32 BagelActive = false;
+
+    menu_tile *pMenuTiles = PushArray(&pScratch->Arena, menu_tile, pTileTypes->Len);
 
     // Panel
     DrawSpecialRect(pBackbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{});
 
     DEBUGDrawText(pBackbuf, BrowserMin.X + 120, 80, "Tile Menu", &pDebugState->DebugTextArena, color{1, 1, 1, 1}, 3.5);
 
-    // Draw tiles in menu unless there are no tiles 
-    if (pTileMap->NumTileTypes > 0)
+    /***********MAKE ARRAY OF TILES TO DRAW**************/
+    f32 Y = 160;
+    f32 InnerPadding = 40;
+    f32 OuterPadding = 56;
+    f32 StartX = BrowserMin.X + OuterPadding;
+    f32 X = StartX;
+    int TilesDrawnInThisRow = 0;
+    menu_bitmap *pMenuTileCursor = pMenuTiles;
+    menu_bitmap *pMenuHovered = nullptr; 
+    for (int Slot = 0; Slot < pTileTypes->Len; ++Slot) {
+        meta_bitmap *pIt = pTileTypes->Get(Slot);
+        // Unlike with drawing the player bitmaps in the editor, we do not
+        //      we do not align the slots in the the menu_tiles array with
+        //      those in the TileTypes array and just add them as we find them.
+        //      So we don't increment the menu tile cursor even if pIt is empty.
+        if (pIt->IsEmpty) { continue; }
+
+        pMenuBitmapsCursor->Slot = Slot;
+        f32 Width, Height;
+        if (pIt->IsMissing()) {
+            BagelActive = true;
+            Width = pGlobalBagel->Bitmap.Width;
+            Height = pGlobalBagel->Bitmap.Height;
+        }
+        else {
+            Width = pIt->Bitmap.Width;
+            Height = pIt->Bitmap.Height;
+        }
+
+        pMenuTileCursor->TileMin = {X, Y};
+        // Store the max coordinate of where the tile will be drawn in the menu
+        pMenuTileCursor->TileMax = pThisMenuTile->TileMin + v2{pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
+
+        if (IsInRect(MouseCoords, pMenuTileCursor->TileMin, pMenuTileCursor->TileMax)) {
+            pMenuHovered = pMenuTileCursor;
+        }
+
+        // Compute the min coordinate of the next tile to be drawn
+        ++TilesDrawnInThisRow;
+        if (TilesDrawnInThisRow == 3)
+        {
+            TilesDrawnInThisRow = 0;
+            X = StartX;
+            Y += pTileMap->TileSideInPixels + InnerPadding;
+        }
+        else
+        {
+            X += pTileMap->TileSideInPixels + InnerPadding;
+        }
+
+        ++pMenuTileCursor;
+    }
+
+    /*********** DRAW THE MENU TILES AND DRAW BOXES AROUND THEM **************/
+    menu_bitmap *pIt = pMenuTiles;
+    for (int NthMenuTile = 0; NthMenuTile < pTileTypes->CountEmptySlots(); ++NthMenuTile) {
+        meta_bitmap *pToDraw = pTileTypes->Get(pIt->Slot);
+        bitmap *pBitmap = pBitmap;
+        if (pToDraw->IsMissing()) {
+            pBitmap = &pGlobalBagel->Bitmap;
+        }
+        else {
+            pBitmap = &pIt->Bitmap;
+        }
+        ScaleAndBlitBitmap(pBackbuf, pIt->TileMin, pIt->TileMax, pBitmap);
+        v2 OutlineMin = {pIt->TileMin.X-1, pIt->TileMin.Y-1};
+        v2 OutlineMax = {pIt->TileMax.X+1, pIt->TileMax.Y+1};
+        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{}, color{0, 0, 0, 1});
+        
+        ++pIt;
+    }
+
+    /*********** UPDATE CURSOR STATE **************/
+    b32 InBackbuf = IsInRect(MouseCoords, 
+                             v2{0, 0}, 
+                             v2{(f32)pBackbuf->Width, (f32)pBackbuf->Height});
+    b32 InBrowser = IsInRect(MouseCoords, BrowserMin, BrowserMax);
+    int MenuIdxMouseIsOver = -1;
+    int MapIdxMouseIsOver = -1;
+    // Determine where mouse is and whether it is hovering over a map tile or menu tile
+    if (InBackbuf) {
+        if (InBrowser) {
+            for (int NthMenuTile = 0; NthMenuTile < pTileMap->NumTileTypes; ++NthMenuTile) {
+                menu_tile *pThisMenuTile = pMenuTiles + NthMenuTile;
+                if (IsInRect(MouseCoords, pThisMenuTile->TileMin, pThisMenuTile->TileMax)) {
+                    MenuIdxMouseIsOver = NthMenuTile;
+                    break;
+                }
+            }
+        }
+        else {
+            v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
+            MapIdxMouseIsOver = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
+        }
+    }
+
+    if (!pGlobalMouse->Primary.EndedDown)
     {
-        pScratch = GetScratchArena(pScratchHeader);
-        pMenuTiles = PushArray(&pScratch->Arena, menu_tile, pTileMap->NumTileTypes);
-        meta_bitmap *pNextTileType = pTileMap->TileTypes + 1;
-
-        // Record whether bagel is active because if so we have to
-        //      handle it after setting CursorState->PrimaryMode
-        int BagelIdx = -1;
-
-        /***********MAKE ARRAY OF TILES TO DRAW**************/
-        for (int NthTileType = 0;
-            NthTileType < pTileMap->NumTileTypes;
-            ++NthTileType)
+        pCursorState->PrimaryMode = IDLE;
+    }
+    else if (pCursorState->PrimaryMode==IDLE && 
+             pGlobalMouse->Primary.EndedDown &&
+             pGlobalMouse->Primary.HalfTransitionCount==1)
+    {
+        if (InBackbuf)
         {
-            // Scan for the next tile type that does not have an empty filepath
-            while(pNextTileType->Filepath[0] == 0)
+            if (InBrowser)
             {
-                ++pNextTileType;
-            }
-            meta_bitmap *pThisTileType = pNextTileType;
-            pNextTileType += 1;
-
-            menu_tile *pThisMenuTile = pMenuTiles + NthTileType;
-
-            // Store the min coordinate of where the tile will be drawn in the menu
-            pThisMenuTile->TileMin = {X, Y};
-
-            // Store the max coordinate of where the tile will be drawn in the menu
-            pThisMenuTile->TileMax = pThisMenuTile->TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
-
-            // Store the bitmap of the tile to be drawn
-            pThisMenuTile->MetaBitmap = pThisTileType;
-            if (IsBagel(pThisTileType))
-            {
-                BagelIdx = NthTileType;
-            }
-
-            // Compute the min coordinate of the next tile to be drawn
-            ++TilesDrawnInThisRow;
-            if (TilesDrawnInThisRow == 3)
-            {
-                TilesDrawnInThisRow = 0;
-                X = StartX;
-                Y += pTileMap->TileSideInPixels + InnerPadding;
-            }
-            else
-            {
-                X += pTileMap->TileSideInPixels + InnerPadding;
-            }
-        }
-
-        /*********** DRAW THE MENU TILES AND DRAW BOXES AROUND THEM **************/
-        for (int NthMenuTile = 0;
-            NthMenuTile < pTileMap->NumTileTypes;
-            ++NthMenuTile)
-        {
-            menu_tile *pThisMenuTile = pMenuTiles + NthMenuTile;
-            ScaleAndBlitBitmap(pBackbuf, pThisMenuTile->TileMin, pThisMenuTile->TileMax, &pThisMenuTile->MetaBitmap->Bitmap);
-            v2 OutlineMin = {pThisMenuTile->TileMin.X-1, pThisMenuTile->TileMin.Y-1};
-            v2 OutlineMax = {pThisMenuTile->TileMax.X+1, pThisMenuTile->TileMax.Y+1};
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{}, color{0, 0, 0, 1});
-        }
-
-        /*********** UPDATE CURSOR STATE **************/
-        b32 InBackbuf = IsInRect(MouseCoords, 
-                                 v2{0, 0}, 
-                                 v2{(f32)pBackbuf->Width, (f32)pBackbuf->Height});
-        b32 InBrowser = IsInRect(MouseCoords, BrowserMin, BrowserMax);
-        int MenuIdxMouseIsOver = -1;
-        int MapIdxMouseIsOver = -1;
-        // Determine where mouse is and whether it is hovering over a map tile or menu tile
-        if (InBackbuf) {
-            if (InBrowser) {
-                for (int NthMenuTile = 0; NthMenuTile < pTileMap->NumTileTypes; ++NthMenuTile) {
-                    menu_tile *pThisMenuTile = pMenuTiles + NthMenuTile;
-                    if (IsInRect(MouseCoords, pThisMenuTile->TileMin, pThisMenuTile->TileMax)) {
-                        MenuIdxMouseIsOver = NthMenuTile;
-                        break;
-                    }
+                // The user has primary-clicked in the browser.
+                //      Consume the click and check if it was over a tile.
+                pCursorState->PrimaryMode = CONSUMED;
+                if ((MenuIdxMouseIsOver > -1) && (MenuIdxMouseIsOver != BagelIdx))
+                {
+                    ChangeHeldMetaBitmap(ppHeldTile, 
+                                         pMenuTiles[MenuIdxMouseIsOver].MetaBitmap);
                 }
             }
-            else {
-                v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-                MapIdxMouseIsOver = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
-            }
-        }
-
-        if (!pGlobalMouse->Primary.EndedDown)
-        {
-            pCursorState->PrimaryMode = IDLE;
-        }
-        else if (pCursorState->PrimaryMode==IDLE && 
-                pGlobalMouse->Primary.EndedDown &&
-                pGlobalMouse->Primary.HalfTransitionCount==1)
-        {
-            if (InBackbuf)
+            else // The user primary-clicked in the tile map
             {
-                if (InBrowser)
+                s32 TileValue = GetTileValueFrom1DCoord(pTileMap, MapIdxMouseIsOver);
+                meta_bitmap *ClickedTileBitmap = GetMetaBitmapPtrFromTileValue(pTileMap, TileValue);
+                if (IsTheZeroTile(pTileMap, ClickedTileBitmap)) // If the user clicked an empty tile
                 {
-                    // The user has primary-clicked in the browser.
-                    //      Consume the click and check if it was over a tile.
-                    pCursorState->PrimaryMode = CONSUMED;
-                    if ((MenuIdxMouseIsOver > -1) && (MenuIdxMouseIsOver != BagelIdx))
+                    if (*ppHeldTile != nullptr) // And they are holding a tile
                     {
-                        ChangeHeldMetaBitmap(ppHeldTile, 
-                                             pMenuTiles[MenuIdxMouseIsOver].MetaBitmap);
-                    }
-                }
-                else // The user primary-clicked in the tile map
-                {
-                    s32 TileValue = GetTileValueFrom1DCoord(pTileMap, MapIdxMouseIsOver);
-                    meta_bitmap *ClickedTileBitmap = GetMetaBitmapPtrFromTileValue(pTileMap, TileValue);
-                    if (IsTheZeroTile(pTileMap, ClickedTileBitmap)) // If the user clicked an empty tile
-                    {
-                        if (*ppHeldTile != nullptr) // And they are holding a tile
+                        // Don't start primary painting
+                        //      if user is secondary painting
+                        if (pCursorState->SecondaryMode!=PAINTING)
                         {
-                            // Don't start primary painting
-                            //      if user is secondary painting
-                            if (pCursorState->SecondaryMode!=PAINTING)
-                            {
-                                pCursorState->PrimaryMode = PAINTING;
-                            }
-                        }
-                    }
-                    else // If the user primary-clicked a tile with a bitmap
-                    {
-                        if (*ppHeldTile != nullptr) // And they are holding a tile
-                        {
-                            pCursorState->PrimaryMode = CONSUMED;
-                            // Change held tile to the clicked tile value
-                            s32 ClickedTileValue = GetTileValueFrom1DCoord(pTileMap, MapIdxMouseIsOver);
-                            meta_bitmap *pClickedMetaBitmap = GetMetaBitmapPtrFromTileValue(pTileMap, ClickedTileValue);
-                            ChangeHeldMetaBitmap(ppHeldTile, pClickedMetaBitmap);
+                            pCursorState->PrimaryMode = PAINTING;
                         }
                     }
                 }
+                else // If the user primary-clicked a tile with a bitmap
+                {
+                    if (*ppHeldTile != nullptr) // And they are holding a tile
+                    {
+                        pCursorState->PrimaryMode = CONSUMED;
+                        // Change held tile to the clicked tile value
+                        s32 ClickedTileValue = GetTileValueFrom1DCoord(pTileMap, MapIdxMouseIsOver);
+                        meta_bitmap *pClickedMetaBitmap = GetMetaBitmapPtrFromTileValue(pTileMap, ClickedTileValue);
+                        ChangeHeldMetaBitmap(ppHeldTile, pClickedMetaBitmap);
+                    }
+                }
             }
         }
+    }
 
-        // Secondary cursor state
-        if (!pGlobalMouse->Secondary.EndedDown)
+    // Secondary cursor state
+    if (!pGlobalMouse->Secondary.EndedDown)
+    {
+        pCursorState->SecondaryMode = IDLE;
+    }
+    if (pCursorState->SecondaryMode==IDLE &&
+        pGlobalMouse->Secondary.EndedDown &&
+        pGlobalMouse->Secondary.HalfTransitionCount==1)
+    {
+        if (InBackbuf)
         {
-            pCursorState->SecondaryMode = IDLE;
-        }
-        if (pCursorState->SecondaryMode==IDLE &&
-           pGlobalMouse->Secondary.EndedDown &&
-           pGlobalMouse->Secondary.HalfTransitionCount==1)
-        {
-            if (InBackbuf)
+            if (InBrowser) // The user secondary-clicked in the browser
             {
-                if (InBrowser) // The user secondary-clicked in the browser
+                pCursorState->SecondaryMode = CONSUMED;
+                ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)0);
+            }
+            else // The user secondary-clicked in the tile map
+            {
+                // If they are holding a tile, drop it
+                if (*ppHeldTile != nullptr)
                 {
                     pCursorState->SecondaryMode = CONSUMED;
                     ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)0);
                 }
-                else // The user secondary-clicked in the tile map
+                else
                 {
-                    // If they are holding a tile, drop it
-                    if (*ppHeldTile != nullptr)
+                    // Otherwise, begin painting, unless user
+                    //      is already primary painting
+                    if (pCursorState->PrimaryMode!=PAINTING)
                     {
-                        pCursorState->SecondaryMode = CONSUMED;
-                        ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)0);
-                    }
-                    else
-                    {
-                        // Otherwise, begin painting, unless user
-                        //      is already primary painting
-                        if (pCursorState->PrimaryMode!=PAINTING)
-                        {
-                            pCursorState->SecondaryMode = PAINTING;
-                        }
+                        pCursorState->SecondaryMode = PAINTING;
                     }
                 }
             }
         }
+    }
 
-        // If the user clicked on the bagel
-        if (pCursorState->PrimaryMode==CONSUMED && 
-           (BagelIdx > -1) &&
-           BagelIdx==MenuIdxMouseIsOver)
-        {
-            meta_bitmap *pGetsReplaced = pMenuTiles[BagelIdx].MetaBitmap;
-            int GetsReplacedIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, pGetsReplaced);
-            int ReplaceWithIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, *ppHeldTile);
-            ReplaceBagel(pTileMap->TileTypes, GetsReplacedIdx, ReplaceWithIdx);
+    // If the user clicked on the bagel
+    if (pCursorState->PrimaryMode==CONSUMED && 
+        (BagelIdx > -1) &&
+        BagelIdx==MenuIdxMouseIsOver)
+    {
+        meta_bitmap *pGetsReplaced = pMenuTiles[BagelIdx].MetaBitmap;
+        int GetsReplacedIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, pGetsReplaced);
+        int ReplaceWithIdx = GetTileValueIdxFromMetaBitmapPtr(pTileMap, *ppHeldTile);
+        ReplaceBagel(pTileMap->TileTypes, GetsReplacedIdx, ReplaceWithIdx);
 
-            // MUST recompute at call site after replacing bagel
-            pTileMap->NumTileTypes = CountBitmaps(pTileMap->TileTypes, MAX_TILE_TYPES);
+        // MUST recompute at call site after replacing bagel
+        pTileMap->NumTileTypes = CountBitmaps(pTileMap->TileTypes, MAX_TILE_TYPES);
 
-            // Bitmap B's slot in the bitmap list has changed, so we need to find
-            //      all tiles still referencing that old slot and replace them with
-            //      the new one
-            SearchAndReplaceTileValue(pTileMap, ReplaceWithIdx, GetsReplacedIdx);
+        // Bitmap B's slot in the bitmap list has changed, so we need to find
+        //      all tiles still referencing that old slot and replace them with
+        //      the new one
+        SearchAndReplaceTileValue(pTileMap, ReplaceWithIdx, GetsReplacedIdx);
 
-            ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)nullptr);
-        }
+        ChangeHeldMetaBitmap(ppHeldTile, (meta_bitmap *)nullptr);
+    }
 
-        if (pCursorState->PrimaryMode==PAINTING)
-        {
-            SetTileValue(pTileMap, MapIdxMouseIsOver, 
-                         GetTileValueIdxFromMetaBitmapPtr(pTileMap, *ppHeldTile));
-        }
-        else if (pCursorState->SecondaryMode==PAINTING)
-        {
-            SetTileValue(pTileMap, MapIdxMouseIsOver, 0);
+    if (pCursorState->PrimaryMode==PAINTING)
+    {
+        SetTileValue(pTileMap, MapIdxMouseIsOver, 
+                     GetTileValueIdxFromMetaBitmapPtr(pTileMap, *ppHeldTile));
+    }
+    else if (pCursorState->SecondaryMode==PAINTING)
+    {
+        SetTileValue(pTileMap, MapIdxMouseIsOver, 0);
 
-        }
+    }
 
-        // Highlight tile in map or menu if user is hovering over one
-        if (MenuIdxMouseIsOver > -1)
-        {
-            menu_tile *pThisMenuTile = pMenuTiles + MenuIdxMouseIsOver;
-            v2 OutlineMin = {pThisMenuTile->TileMin.X-1, pThisMenuTile->TileMin.Y-1};
-            v2 OutlineMax = {pThisMenuTile->TileMax.X+1, pThisMenuTile->TileMax.Y+1};
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0.75, 0.75, 0.75, 0.5}, color{1, 1, 1, 1});
-        }
-        else if (MapIdxMouseIsOver > -1)
-        {
-            v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-            v2 OutlineMin = {TileAsV2.X * pTileMap->TileSideInPixels + 1, TileAsV2.Y * pTileMap->TileSideInPixels + 1};
-            v2 OutlineMax = OutlineMin + v2{pTileMap->TileSideInPixels - 2, pTileMap->TileSideInPixels - 2};
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0.9, 0.9, 0.9, 0.5}, color{});
-        }
+    // Highlight tile in map or menu if user is hovering over one
+    if (MenuIdxMouseIsOver > -1)
+    {
+        menu_tile *pThisMenuTile = pMenuTiles + MenuIdxMouseIsOver;
+        v2 OutlineMin = {pThisMenuTile->TileMin.X-1, pThisMenuTile->TileMin.Y-1};
+        v2 OutlineMax = {pThisMenuTile->TileMax.X+1, pThisMenuTile->TileMax.Y+1};
+        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0.75, 0.75, 0.75, 0.5}, color{1, 1, 1, 1});
+    }
+    else if (MapIdxMouseIsOver > -1)
+    {
+        v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
+        v2 OutlineMin = {TileAsV2.X * pTileMap->TileSideInPixels + 1, TileAsV2.Y * pTileMap->TileSideInPixels + 1};
+        v2 OutlineMax = OutlineMin + v2{pTileMap->TileSideInPixels - 2, pTileMap->TileSideInPixels - 2};
+        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0.9, 0.9, 0.9, 0.5}, color{});
+    }
 
-        // Draw a tiny version of the held tile
-        if (*ppHeldTile!=nullptr)
-        {
-            v2 TinyTileMin = MouseCoords + v2{20.0f, 20.0f};
-            DrawTinyMenuTile(pBackbuf, TinyTileMin, &(*ppHeldTile)->Bitmap);
-        }
+    // Draw a tiny version of the held tile
+    if (*ppHeldTile!=nullptr)
+    {
+        v2 TinyTileMin = MouseCoords + v2{20.0f, 20.0f};
+        DrawTinyMenuTile(pBackbuf, TinyTileMin, &(*ppHeldTile)->Bitmap);
+    }
 
-        if (pScratch)
-        {
-            FreeScratchArena(pScratch);
-        }
+    if (pScratch)
+    {
+        FreeScratchArena(pScratch);
     }
     // If there are no tiles, set HeldTileType to nullptr so we don't try to draw it and crash
     else
@@ -1600,7 +1601,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         DEBUGPrintRowsCols(pBackbuf, &pDebugState->DebugTextArena, pTileMap);
     }
 }
-#endif
+
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
@@ -1939,7 +1940,7 @@ struct tile_map
 
     if (DebugState->EditorState.WhichEditor==TILE)
     {
-        // DrawTileEditor(Buffer, ScratchHeader, DebugState, TileMap);
+        DrawTileEditor(Buffer, ScratchHeader, DebugState, TileMap);
     }
     else if (DebugState->EditorState.WhichEditor==PLAYER)
     {
