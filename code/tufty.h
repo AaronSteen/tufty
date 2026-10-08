@@ -426,6 +426,7 @@ struct menu_bitmap
     meta_bitmap *pMetaBitmap;
     int FacingIdx;
     int Slot;
+    b32 DrawThis;
 };
 
 

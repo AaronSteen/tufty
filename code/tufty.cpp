@@ -1109,10 +1109,14 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
             if (pIt->IsEmpty()) { continue; }
 
+            pMenuBitmapsCursor->pMetaBitmap = pIt;
             pMenuBitmapsCursor->FacingIdx = NthFace;
             pMenuBitmapsCursor->Slot = Slot;
+            if (pPlayer->FacingBitmaps[NthFace].DrawThis == Slot) {
+                pMenuBitmapsCursor->DrawThis = true;
+            }
+
             f32 Width, Height;
-            
             if (pIt->IsMissing()) {
                 BagelActive = true;
                 Width = pGlobalBagel->Bitmap.Width;
@@ -1137,39 +1141,26 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         CenterAroundThisVerticalLine = HeaderTextStart.Y + VerticalSpaceBetweenSections * 0.5f;
     }
 
-    for (int NthFace = 0; NthFace < 4; ++NthFace) {
-        arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFace].MetaBitmaps;
-
-        // We have to increment pIt by 1 even after moving to the correct row
-        //      since we have set up pMenuBitmaps to correspond to arr_meta_bitmaps
-        //      exactly, and arr_meta_bitmaps are 1-indexed since the 0th
-        //      bitmap in arr_meta_bitmaps is the nil bitmap
-        menu_bitmap *pIt = pMenuBitmaps + NthFace * (MAX_FACING_BITMAPS+1) + 1;
-        int HowMany = pMetaBitmaps->CountNonEmptySlots();
-        for (int NthMenuBitmap = 0; NthMenuBitmap < HowMany; ++NthMenuBitmap) {
-            meta_bitmap *pToDraw = pMetaBitmaps->Get(pIt->Slot);
-            bitmap *pBitmap;
-            if (pToDraw->IsMissing()) {
-                pBitmap = &pGlobalBagel->Bitmap;
-            }
-            else {
-                pBitmap = &pToDraw->Bitmap;
-            }
-            ScaleAndBlitBitmap(pBackbuf, pIt->TileMin, pIt->TileMax, pBitmap);
-            v2 OutlineMin = {pIt->TileMin.X-1, pIt->TileMin.Y-1};
-            v2 OutlineMax = {pIt->TileMax.X+1, pIt->TileMax.Y+1};
-
-            // Draw generic box around all of them
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
-            ++pIt;
+    int NumMenuBitmaps = pMenuBitmapsCursor - pMenuBitmaps;
+    pMenuBitmapsCursor = pMenuBitmaps;
+    for (int NthBitmap = 0; NthBitmap - NumMenuBitmaps; ++NthBitmap, ++pMenuBitmapsCursor) {
+        meta_bitmap *pToDraw = pMenuBitmapsCursor->pMetaBitmap;
+        bitmap *pBitmap;
+        if (pToDraw->IsMissing()) {
+            pBitmap = &pGlobalBagel->Bitmap;
         }
-        // Highlight DrawThis if one is selected
-        int DrawThis = pPlayer->FacingBitmaps[NthFace].DrawThis;
-        if (DrawThis) {
-            menu_bitmap *pToOutline = pMenuBitmaps + NthFace * (MAX_FACING_BITMAPS+1) + DrawThis;
-            v2 OutlineMin = {pToOutline->TileMin.X-1, pToOutline->TileMin.Y-1};
-            v2 OutlineMax = {pToOutline->TileMax.X+1, pToOutline->TileMax.Y+1};
+        else {
+            pBitmap = &pToDraw->Bitmap;
+        }
+        ScaleAndBlitBitmap(pBackbuf, pMenuBitmapsCursor->TileMin, pMenuBitmapsCursor->TileMax, pBitmap);
+        v2 OutlineMin = {pMenuBitmapsCursor->TileMin.X-1, pMenuBitmapsCursor->TileMin.Y-1};
+        v2 OutlineMax = {pMenuBitmapsCursor->TileMax.X+1, pMenuBitmapsCursor->TileMax.Y+1};
+
+        if (pMenuBitmapsCursor->DrawThis) {
             DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.7, 0.5, 0.8});
+        }
+        else {
+            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
         }
     }
 
@@ -1267,6 +1258,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     FreeScratchArena(pScratch);
 }
 
+#if 0
 static void
 DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, debug_state *pDebugState, tile_map *pTileMap)
 {
@@ -1598,6 +1590,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         DEBUGPrintRowsCols(pBackbuf, &pDebugState->DebugTextArena, pTileMap);
     }
 }
+#endif
 
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
@@ -1937,7 +1930,7 @@ struct tile_map
 
     if (DebugState->EditorState.WhichEditor==TILE)
     {
-        DrawTileEditor(Buffer, ScratchHeader, DebugState, TileMap);
+        // DrawTileEditor(Buffer, ScratchHeader, DebugState, TileMap);
     }
     else if (DebugState->EditorState.WhichEditor==PLAYER)
     {
