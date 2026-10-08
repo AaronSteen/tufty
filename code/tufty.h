@@ -508,6 +508,7 @@ struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
+    meta_bitmap *pHeldMetaBitmap;
     int HeldPlayerBitmapFacing;
     int Slot;
 };
