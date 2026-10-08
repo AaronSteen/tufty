@@ -268,7 +268,7 @@ struct arr_meta_bitmap
     }
 
     meta_bitmap *
-    Get(int Idx) 
+    Get(int Idx) const
     {
         if(Idx > 0 && Idx < Len) {
             return(Data + Idx);
@@ -298,7 +298,7 @@ struct arr_meta_bitmap
     }
 
     int
-    FindByFilepath(char *SearchFilepath) 
+    FindByFilepath(char *SearchFilepath) const
     {
         if(SearchFilepath[0] != 0) {
             for(int Idx = 1; Idx < Len; ++Idx) {
@@ -311,7 +311,7 @@ struct arr_meta_bitmap
     }
 
     int
-    CountNonEmptySlots(void) 
+    CountNonEmptySlots(void) const
     {
         int Count = 0;
         for(int Idx = 1; Idx < Len; ++Idx) {
@@ -389,7 +389,7 @@ struct arr_meta_bitmap
     }   
 
     bool
-    IsNilBitmap(meta_bitmap *pToCheck)
+    IsNilBitmap(meta_bitmap *pToCheck) const
     {
         bool Result = (pToCheck - Data == 0);
         return(Result);
@@ -423,13 +423,10 @@ struct menu_bitmap
 {
     v2 TileMin;
     v2 TileMax;
-    meta_bitmap *pMetaBitmap;
     int FacingIdx;
     int Slot;
     b32 DrawThis;
 };
-
-
 
 #pragma pack(push, 1)
 struct bitmap_header
@@ -508,9 +505,8 @@ struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
-    meta_bitmap *pHeldMetaBitmap;
-    int HeldPlayerBitmapFacing;
-    int Slot;
+    int HeldFacingIdx;
+    int HeldSlot;
 };
 
 struct game_state

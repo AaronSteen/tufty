@@ -106,9 +106,8 @@ IsInRect(v2 Point, v2 RectMin, v2 RectMax)
 static void
 SetHeldBitmapToNil(cursor_state *pCursorState)
 {
-    pCursorState->pHeldMetaBitmap = nullptr;
-    pCursorState->HeldPlayerBitmapFacing = -1;
-    pCursorState->Slot = 0;
+    pCursorState->HeldFacingIdx = -1;
+    pCursorState->HeldSlot = 0;
 }
 
 static void
@@ -119,7 +118,7 @@ InitializeCursorState(cursor_state *pCursorState)
 }
 
 static arr_meta_bitmap *
-GetArrMetaBitmapPtr(player *pPlayer, int FacingIdx)
+GetPlayerArrMetaBitmapPtr(player *pPlayer, int FacingIdx)
 {
     arr_meta_bitmap *pResult = nullptr;
     if (FacingIdx >= 0 && FacingIdx < 4) {
@@ -911,12 +910,10 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
     // TODO(AARON): On Windows we have updated WriteEntireFile to return the number of bytes the file wrote,
     //      so that we can return that from this function.
     mem_idx BytesWritten = WriteEntireFile(pSavepath, NumBytesToWrite, pOutfileArena->Data);
-    if (BytesWritten != NumBytesToWrite)
-    {
+    if (BytesWritten != NumBytesToWrite) {
         Result = 0;
     }
-    else
-    {
+    else {
         Result = BytesWritten;
     }
 
@@ -1003,9 +1000,8 @@ ChangeHeldPlayerMetaBitmap(player *pPlayer, cursor_state *pCursorState,
 {
     if (NewFacingIdx >= 0 && NewFacingIdx < 4) {
         arr_meta_bitmap *pNewFacingBitmaps = &pPlayer->FacingBitmaps[NewFacingIdx].MetaBitmaps;
-        pCursorState->pHeldMetaBitmap = pNewFacingBitmaps->Get(NewSlot);
-        pCursorState->HeldPlayerBitmapFacing = NewFacingIdx;
-        pCursorState->Slot = NewSlot;
+        pCursorState->HeldFacingIdx = NewFacingIdx;
+        pCursorState->HeldSlot = NewSlot;
     }
 }
 
@@ -1013,8 +1009,23 @@ static void
 ChangeHeldTileType(tile_map *pTileMap, cursor_state *pCursorState, 
                    int NewSlot)
 {
-    pCursorState->pHeldMetaBitmap = pTileMap->TileTypes.Get(NewSlot);
-    pCursorState->Slot = NewSlot;
+    pCursorState->HeldSlot = NewSlot;
+}
+
+static meta_bitmap *
+GetPlayerMetaBitmapPointer(player *pPlayer, int FacingIdx, int Slot)
+{
+    Assert(FacingIdx >= 0);
+    Assert(FacingIdx < 4);
+    meta_bitmap *pResult = pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.Get(Slot);
+    return(pResult);
+}
+
+static meta_bitmap *
+GetTileTypePointer(const tile_map *pTileMap, int Slot)
+{
+    meta_bitmap *pResult = pTileMap->TileTypes.Get(Slot);
+    return(pResult);
 }
 
 static void
@@ -1054,7 +1065,6 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
             if (pIt->IsEmpty()) { continue; }
 
-            pMenuBitmapsCursor->pMetaBitmap = pIt;
             pMenuBitmapsCursor->FacingIdx = NthFace;
             pMenuBitmapsCursor->Slot = Slot;
             if (pPlayer->FacingBitmaps[NthFace].DrawThis == Slot) {
@@ -1088,8 +1098,9 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
     int NumMenuBitmaps = pMenuBitmapsCursor - pMenuBitmaps;
     pMenuBitmapsCursor = pMenuBitmaps;
-    for (int NthBitmap = 0; NthBitmap - NumMenuBitmaps; ++NthBitmap, ++pMenuBitmapsCursor) {
-        meta_bitmap *pToDraw = pMenuBitmapsCursor->pMetaBitmap;
+    for (int NthBitmap = 0; NthBitmap < NumMenuBitmaps; ++NthBitmap, ++pMenuBitmapsCursor) {
+        meta_bitmap *pToDraw = 
+            GetPlayerMetaBitmapPointer(pPlayer, pMenuBitmapsCursor->FacingIdx, pMenuBitmapsCursor->Slot);
         bitmap *pBitmap;
         if (pToDraw->IsMissing()) {
             pBitmap = &pGlobalBagel->Bitmap;
@@ -1100,7 +1111,6 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         ScaleAndBlitBitmap(pBackbuf, pMenuBitmapsCursor->TileMin, pMenuBitmapsCursor->TileMax, pBitmap);
         v2 OutlineMin = {pMenuBitmapsCursor->TileMin.X-1, pMenuBitmapsCursor->TileMin.Y-1};
         v2 OutlineMax = {pMenuBitmapsCursor->TileMax.X+1, pMenuBitmapsCursor->TileMax.Y+1};
-
         if (pMenuBitmapsCursor->DrawThis) {
             DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.7, 0.5, 0.8});
         }
@@ -1138,17 +1148,19 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
             //      holding a valid bmp, replace the clicked
             //      bmp with the held one, and set held bmp to nil
             if (BagelActive) {
-                if (pMenuHovered->pMetaBitmap->IsMissing() &&
-                    pCursorState->pHeldMetaBitmap != nullptr &&
-                    pCursorState->pHeldMetaBitmap->IsPresent()) {
-                        arr_meta_bitmap *pHoveredContainingArr = GetArrMetaBitmapPtr(pPlayer, pMenuHovered->FacingIdx);
+                meta_bitmap *pHoveredBitmap = 
+                    GetPlayerMetaBitmapPointer(pPlayer, pMenuHovered->FacingIdx, pMenuHovered->Slot);
+                meta_bitmap *pHeldBitmap =
+                    GetPlayerMetaBitmapPointer(pPlayer, pCursorState->HeldFacingIdx, pCursorState->HeldSlot);
+                if (pHoveredBitmap->IsMissing() && pHeldBitmap->IsPresent()) {
+                        arr_meta_bitmap *pHoveredContainingArr = GetPlayerArrMetaBitmapPtr(pPlayer, pMenuHovered->FacingIdx);
                         Assert(pHoveredContainingArr != nullptr);
-                        pHoveredContainingArr->ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->Slot);
+                        pHoveredContainingArr->ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->HeldSlot);
                         SetHeldBitmapToNil(pCursorState);
                 }
                 // Else if the tile they clicked on is valid, replace
                 //      current held tile with clicked bmp
-                else if (pMenuHovered->pMetaBitmap->IsPresent()) {
+                else if (pHoveredBitmap->IsPresent()) {
                     ChangeHeldPlayerMetaBitmap(pPlayer, pCursorState, pMenuHovered->FacingIdx, pMenuHovered->Slot);
                 }
             }
@@ -1173,9 +1185,9 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     }
 
     // Draw held bmp
-    arr_meta_bitmap *pHeldContainingArr = GetArrMetaBitmapPtr(pPlayer, pCursorState->HeldPlayerBitmapFacing);
+    arr_meta_bitmap *pHeldContainingArr = GetPlayerArrMetaBitmapPtr(pPlayer, pCursorState->HeldFacingIdx);
     if (pHeldContainingArr != nullptr) {
-        meta_bitmap *pIt = pHeldContainingArr->Get(pCursorState->Slot);
+        meta_bitmap *pIt = pHeldContainingArr->Get(pCursorState->HeldSlot);
         if (pIt->IsPresent()) {
             bitmap *pBitmap = &pIt->Bitmap;
             DrawHeldTile(pBackbuf, MouseCoords, pBitmap);
@@ -1185,7 +1197,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     // Draw player to left of browser if player editor is active, selecting
     //      whichever bmp matches the DrawThis index for the current facing
     facing_bitmaps *pCurrentFacing = pPlayer->FacingBitmaps + pPlayer->IsFacing;
-    arr_meta_bitmap *pArrForCurrentFacing = GetArrMetaBitmapPtr(pPlayer, pPlayer->IsFacing);
+    arr_meta_bitmap *pArrForCurrentFacing = GetPlayerArrMetaBitmapPtr(pPlayer, pPlayer->IsFacing);
     if (pArrForCurrentFacing->CountNonEmptySlots() > 0)
     {
         meta_bitmap *pToDraw = pArrForCurrentFacing->Get(pCurrentFacing->DrawThis);
@@ -1203,6 +1215,14 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     }
 
     FreeScratchArena(pScratch);
+}
+
+b32
+IsHeldTileTypePresent(const tile_map *pTileMap, const cursor_state *pCursorState)
+{
+    meta_bitmap *pHeld = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
+    b32 Result = pHeld->IsPresent();
+    return(Result);
 }
 
 static void
@@ -1237,7 +1257,6 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         if (pIt->IsEmpty()) { continue; }
 
         pMenuTilesCursor->Slot = Slot;
-        pMenuTilesCursor->pMetaBitmap = pIt;
         f32 Width, Height;
         if (pIt->IsMissing()) {
             Width = pGlobalBagel->Bitmap.Width;
@@ -1274,7 +1293,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
     int NumToDraw = pMenuTilesCursor - pMenuTiles;
     pMenuTilesCursor = pMenuTiles;
     for (int NthMenuTile = 0; NthMenuTile < NumToDraw; ++NthMenuTile, ++pMenuTilesCursor) {
-        meta_bitmap *pToDraw = pMenuTilesCursor->pMetaBitmap;
+        meta_bitmap *pToDraw = GetTileTypePointer(pTileMap, pMenuTilesCursor->Slot);
         bitmap *pBitmap = pBitmap;
         if (pToDraw->IsMissing()) {
             pBitmap = &pGlobalBagel->Bitmap;
@@ -1314,16 +1333,16 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
             //      If they are holding a valid tile, replace
             //      the missing tile with the held one, and
             //      set held tile to nil.
-            if(pMenuHovered->pMetaBitmap->IsMissing() &&
-               pCursorState->pHeldMetaBitmap != nullptr &&
-               pCursorState->pHeldMetaBitmap->IsPresent()) {
-                    pTileMap->TileTypes.ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->Slot);
-                    SearchAndReplaceTileValue(pTileMap, pMenuHovered->Slot, pCursorState->Slot);
+            meta_bitmap *pHoveredBitmap = GetTileTypePointer(pTileMap, pMenuHovered->Slot);
+            meta_bitmap *pHeldBitmap = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
+            if(pHoveredBitmap->IsMissing() && pHeldBitmap->IsPresent()) {
+                    pTileMap->TileTypes.ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->HeldSlot);
+                    SearchAndReplaceTileValue(pTileMap, pMenuHovered->Slot, pCursorState->HeldSlot);
                     SetHeldBitmapToNil(pCursorState);
             }
             // Else if the tile they clicked on is valid, replace current held tile
             //      with clicked tile
-            else if (pMenuHovered->pMetaBitmap->IsPresent()) {
+            else if (pHoveredBitmap->IsPresent()) {
                 ChangeHeldTileType(pTileMap, pCursorState, pMenuHovered->Slot);
             }
         }
@@ -1336,8 +1355,9 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
             s32 TileValue = GetTileValueFrom1DCoord(pTileMap, HoveredIdx);
             // If they clicked on an empty tile
             if (TileValue == 0) {
+                meta_bitmap *pHeldTile = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
                 // And they are holding a valid tile
-                if (pCursorState->pHeldMetaBitmap->IsPresent()) {
+                if (pHeldTile->IsPresent()) {
                     // Start painting, unless user is already secondary painting
                     if (pCursorState->SecondaryMode != PAINTING) {
                         pCursorState->PrimaryMode = PAINTING;
@@ -1362,7 +1382,8 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         pCursorState->SecondaryMode = CONSUMED;
         b32 InBackbuf = IsInRect(MouseCoords, v2{0,0}, v2{(f32)pBackbuf->Width, (f32)pBackbuf->Height});
         b32 InBrowser = IsInRect(MouseCoords, BrowserMin, BrowserMax);
-        if (pCursorState->pHeldMetaBitmap != nullptr) {
+        meta_bitmap *pHeldTileType = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
+        if (pHeldTileType->IsPresent()) {
             SetHeldBitmapToNil(pCursorState);
         }
         else {
@@ -1375,15 +1396,25 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
     }
 
     // Drawing
-    if (pCursorState->pHeldMetaBitmap != nullptr)
-    {
-        DrawHeldTile(pBackbuf, MouseCoords, &pCursorState->pHeldMetaBitmap->Bitmap);
+
+    if (InBackbuf == true && InBrowser == false) {
+        v2 TileCoords = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
+        v2 TileMin = {TileCoords.X *pTileMap->TileSideInPixels, TileCoords.Y *pTileMap->TileSideInPixels};
+        v2 TileMax = TileMin + v2{pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
+        v2 OutlineMin = {TileMin.X+1, TileMin.Y+1};
+        v2 OutlineMax = {TileMax.X-1, TileMax.Y-1};
+        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
     }
 
-    if (pCursorState->PrimaryMode == PAINTING && InBrowser == false) {
+    meta_bitmap *pHeldTile = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
+    if (pHeldTile->IsPresent())
+    {
+        DrawHeldTile(pBackbuf, MouseCoords, &pHeldTile->Bitmap);
+    }
+    if (pCursorState->PrimaryMode == PAINTING && InBrowser == false && pHeldTile->IsPresent()) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
         int HoveredIdx = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
-        SetTileValue(pTileMap, HoveredIdx, pCursorState->Slot);
+        SetTileValue(pTileMap, HoveredIdx, pCursorState->HeldSlot);
     }
     else if (pCursorState->SecondaryMode == PAINTING && InBrowser == false) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
