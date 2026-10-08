@@ -323,8 +323,9 @@ struct arr_meta_bitmap
     }
 
     void
-    Clear(void)
+    FullClear(void)
     {
+        NextEmptySlot = 1;
         for (int Slot = 1; Slot < Len; ++Slot) {
             Data[Slot] = {};
         }
@@ -505,6 +506,9 @@ struct cursor_state
 {
     mouse_mode PrimaryMode;
     mouse_mode SecondaryMode;
+    v2 ThisFrameCoords;
+    v2 LastFrameCoords;
+    u64 HoveredFrames;
     int HeldFacingIdx;
     int HeldSlot;
 };

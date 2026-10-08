@@ -106,7 +106,8 @@ IsInRect(v2 Point, v2 RectMin, v2 RectMax)
 static void
 SetHeldBitmapToNil(cursor_state *pCursorState)
 {
-    pCursorState->HeldFacingIdx = -1;
+    // As a default, the cursor holds the nil bitmap of the east facing bitmaps array
+    pCursorState->HeldFacingIdx = 0;
     pCursorState->HeldSlot = 0;
 }
 
@@ -115,6 +116,19 @@ InitializeCursorState(cursor_state *pCursorState)
 {
     *pCursorState = {};
     SetHeldBitmapToNil(pCursorState);
+}
+
+static void
+UpdateCursorStateHoveredFrames(cursor_state *pCursorState)
+{
+    pCursorState->LastFrameCoords = pCursorState->ThisFrameCoords;
+    pCursorState->ThisFrameCoords = v2{(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
+    if (pCursorState->ThisFrameCoords == pCursorState->LastFrameCoords) {
+        ++pCursorState->HoveredFrames;
+    }
+    else {
+        pCursorState->HoveredFrames = 0;
+    }
 }
 
 static arr_meta_bitmap *
@@ -905,7 +919,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
     memcpy(TileValuesInOutfile, pTileMap->TileValues, NumBytesToCopy);
 
 // Write file
-    mem_idx NumBytesToWrite = pOutfileArena->Cursor - 1;
+    mem_idx NumBytesToWrite = pOutfileArena->Cursor;
 
     // TODO(AARON): On Windows we have updated WriteEntireFile to return the number of bytes the file wrote,
     //      so that we can return that from this function.
@@ -964,8 +978,8 @@ LoadProject(player *pPlayer, tile_map *pTileMap, scratch_header *pScratchHeader)
     for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
         facing_bitmaps *pThisFacing = pPlayer->FacingBitmaps + NthFacing;
         arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
-        pMetaBitmaps->Clear();
-        for (int NthFilepath = 0; pHeader->NumPlayerBitmapsPerFacing[NthFacing]; ++NthFilepath) {
+        pMetaBitmaps->FullClear();
+        for (int NthFilepath = 0; NthFilepath < pHeader->NumPlayerBitmapsPerFacing[NthFacing]; ++NthFilepath) {
             int AddedToSlotN = pMetaBitmaps->Add(pFilepathToCopyCursor);
             Assert(AddedToSlotN);
             pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
@@ -977,7 +991,7 @@ LoadProject(player *pPlayer, tile_map *pTileMap, scratch_header *pScratchHeader)
     // Use the same cursor pointer as we used for player filepaths
     pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->TileTypeFilepathsOffset);
     arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
-    pTileTypes->Clear();
+    pTileTypes->FullClear();
     for (int NthTileType = 0; NthTileType < pHeader->NumTileTypes; ++NthTileType) {
         int AddedToSlotN = pTileTypes->Add(pFilepathToCopyCursor);
         Assert(AddedToSlotN);
@@ -1013,11 +1027,15 @@ ChangeHeldTileType(tile_map *pTileMap, cursor_state *pCursorState,
 }
 
 static meta_bitmap *
-GetPlayerMetaBitmapPointer(player *pPlayer, int FacingIdx, int Slot)
+GetPlayerMetaBitmapPointer(player *pPlayer, int FacingIdx, int Slot) 
 {
-    Assert(FacingIdx >= 0);
-    Assert(FacingIdx < 4);
-    meta_bitmap *pResult = pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.Get(Slot);
+    meta_bitmap *pResult;
+    if (FacingIdx < 0 || FacingIdx >= 4) {
+        pResult = &pPlayer->FacingBitmaps[0].MetaBitmaps.Data[0];
+    }
+    else {
+        pResult = pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.Get(Slot);
+    }
     return(pResult);
 }
 
@@ -1026,6 +1044,21 @@ GetTileTypePointer(const tile_map *pTileMap, int Slot)
 {
     meta_bitmap *pResult = pTileMap->TileTypes.Get(Slot);
     return(pResult);
+}
+
+static void
+DrawFilepathTooltip(game_offscreen_buffer *pBackbuf, arena *pDebugTextArena, 
+                    v2 MouseCoords, meta_bitmap *pHoveredBitmap)
+{
+    f32 TooltipWidth = ((f32)strlen(pHoveredBitmap->Filepath)) * 11.5f;
+    v2 TooltipMin = MouseCoords + v2{20.0f, -30.0f};
+    if (TooltipMin.X + TooltipWidth >= pBackbuf->Width) {
+        TooltipMin.X -= TooltipWidth;
+    }
+    v2 TooltipMax = TooltipMin + v2{TooltipWidth, 30.0f};
+    DrawSimpleRect(pBackbuf, TooltipMin, TooltipMax, 1, 1, 0.88f, 0.75f);
+    DEBUGDrawText(pBackbuf, TooltipMin.X + 5.0f, TooltipMin.Y + 6.0f, 
+                  pHoveredBitmap->Filepath, pDebugTextArena, color{0, 0, 0, 1}, 2.0f);
 }
 
 static void
@@ -1119,16 +1152,28 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
         }
     }
 
-    // Highlight hovered tile
+    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
+    UpdateCursorStateHoveredFrames(pCursorState);
+    // Highlight hovered tile and draw tooltip filepath text
     if (pMenuHovered != nullptr) {
         v2 OutlineMin = {pMenuHovered->TileMin.X-1, pMenuHovered->TileMin.Y-1};
         v2 OutlineMax = {pMenuHovered->TileMax.X+1, pMenuHovered->TileMax.Y+1};
         DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
+        if (pCursorState->HoveredFrames >= 30) {
+            meta_bitmap *pHoveredBitmap = 
+                GetPlayerMetaBitmapPointer(pPlayer, pMenuHovered->FacingIdx, pMenuHovered->Slot);
+            DrawFilepathTooltip(pBackbuf, &pDebugState->DebugTextArena, MouseCoords, pHoveredBitmap);
+            // char *Filepath = pHoveredBitmap->Filepath;
+            // f32 TooltipWidth = ((f32)strlen(Filepath)) * 11.5f;
+            // v2 TooltipMin = MouseCoords + v2{20.0f, -30.0f};
+            // v2 TooltipMax = TooltipMin + v2{TooltipWidth, 30.0f};
+            // DrawSimpleRect(pBackbuf, TooltipMin, TooltipMax, 1, 1, 0.88f, 0.75f);
+            // DEBUGDrawText(pBackbuf, TooltipMin.X + 5.0f, TooltipMin.Y + 6.0f, Filepath, &pDebugState->DebugTextArena, color{0, 0, 0, 1}, 2.0f);
+        }
     }
 
     /*********** UPDATE CURSOR STATE **************/
 
-    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
 
     // If ended up always go to idle
     if (pGlobalMouse->Primary.EndedDown == false) {
@@ -1144,24 +1189,24 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
 
         // If the user clicked on an actual bmp
         if (pMenuHovered != nullptr) {
-            // If they clicked a bagel, a bmp was missing. If they are
-            //      holding a valid bmp, replace the clicked
-            //      bmp with the held one, and set held bmp to nil
             if (BagelActive) {
+                // If the tile they clicked on is valid, replace
+                //      current held tile with clicked bmp
                 meta_bitmap *pHoveredBitmap = 
                     GetPlayerMetaBitmapPointer(pPlayer, pMenuHovered->FacingIdx, pMenuHovered->Slot);
-                meta_bitmap *pHeldBitmap =
-                    GetPlayerMetaBitmapPointer(pPlayer, pCursorState->HeldFacingIdx, pCursorState->HeldSlot);
-                if (pHoveredBitmap->IsMissing() && pHeldBitmap->IsPresent()) {
+                if (pHoveredBitmap->IsPresent()) {
+                    ChangeHeldPlayerMetaBitmap(pPlayer, pCursorState, pMenuHovered->FacingIdx, pMenuHovered->Slot);
+                }
+                // If they clicked a bagel, a bmp was missing. If they are
+                //      holding a valid bmp, replace the clicked
+                //      bmp with the held one, and set held bmp to nil
+                if (pHoveredBitmap->IsMissing() && pCursorState->HeldFacingIdx == pMenuHovered->FacingIdx) {
+                    meta_bitmap *pHeldBitmap =
+                        GetPlayerMetaBitmapPointer(pPlayer, pCursorState->HeldFacingIdx, pCursorState->HeldSlot);
                         arr_meta_bitmap *pHoveredContainingArr = GetPlayerArrMetaBitmapPtr(pPlayer, pMenuHovered->FacingIdx);
                         Assert(pHoveredContainingArr != nullptr);
                         pHoveredContainingArr->ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->HeldSlot);
                         SetHeldBitmapToNil(pCursorState);
-                }
-                // Else if the tile they clicked on is valid, replace
-                //      current held tile with clicked bmp
-                else if (pHoveredBitmap->IsPresent()) {
-                    ChangeHeldPlayerMetaBitmap(pPlayer, pCursorState, pMenuHovered->FacingIdx, pMenuHovered->Slot);
                 }
             }
             // Else if no bagel is active, all tiles are present, and clicking one
@@ -1217,7 +1262,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     FreeScratchArena(pScratch);
 }
 
-b32
+static b32
 IsHeldTileTypePresent(const tile_map *pTileMap, const cursor_state *pCursorState)
 {
     meta_bitmap *pHeld = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
@@ -1229,7 +1274,6 @@ static void
 DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, debug_state *pDebugState, tile_map *pTileMap)
 {
     editor_state *pEditorState = &pDebugState->EditorState;
-    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
     arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
     v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.8f), 0};
@@ -1307,10 +1351,16 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{}, color{0, 0, 0, 1});
     }
 
+    cursor_state *pCursorState = &pDebugState->EditorState.CursorState;
+    UpdateCursorStateHoveredFrames(pCursorState);
     if (pMenuHovered != nullptr) {
         v2 OutlineMin = {pMenuHovered->TileMin.X-1, pMenuHovered->TileMin.Y-1};
         v2 OutlineMax = {pMenuHovered->TileMax.X+1, pMenuHovered->TileMax.Y+1};
         DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
+        if (pCursorState->HoveredFrames >= 30) {
+            meta_bitmap *pHoveredBitmap = GetTileTypePointer(pTileMap, pMenuHovered->Slot);
+            DrawFilepathTooltip(pBackbuf, &pDebugState->DebugTextArena, MouseCoords, pHoveredBitmap);
+        }
     }
 
     /*********** UPDATE CURSOR STATE **************/
@@ -1582,6 +1632,7 @@ struct tile_map
     
     ///////////////////////////////////////// INIT END, MAIN LOOP START ////////////////////////////////////////////
 
+    // Reset the debug text arena. This has nothing to do with the mouse cursor.
     DebugState->DebugTextArena.Cursor = 0;
 
     // Bitmap reloading notes:
