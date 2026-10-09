@@ -36,6 +36,7 @@ struct quad
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
+
 static void
 ZeroArena(arena *Arena)
 {
@@ -1481,6 +1482,57 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
     }
 }
 
+static void
+RecordUndoState(undo_step *pRecordHere, )
+{
+    pRecordHere->
+}
+
+static void
+RecordLastFrameUndoState(tile_map *pTileMap, editor_state *pEditorState)
+{
+    ResetArena(pEditorState->LastFrameUndoArena);
+    pEditorState->LastFrameUndoState.TileValuesLen = pTileMap->NumTilesInWorld;
+    pEditorState->LastFrameUndoState.TileValues = 
+        PushArray(&pEditorState->LastFrameUndoArena, s32, pTileMap->NumTilesInWorld);
+    mem_idx NumBytesToCopy = pTileMap->NumTilesInWorld * sizeof(s32);
+    memcpy(pEditorState->LastFrameUndoState.TileValues, pTileMap->TileValues, NumBytesToCopy);
+}
+
+
+static void
+ShouldRecordNewUndoState(tile_map *pTileMap, editor_state *pEditorState)
+{
+    undo_step *pLast = &EditorState->LastFrameUndoState;
+    if (pLast->TileValuesLen != pTileMap->NumTilesInWorld) {
+        return(true);
+    }
+    for (int TileIdx = 0; TileIdx < pTileMap->NumTilesInWorld; ++TileIdx) {
+        if (pLast->TileValues[TileIdx] != pTileMap->TileValues[TileIdx]) {
+            return(true);
+        }
+    }
+    return(false);
+}
+
+static void
+UpdateUndoState(tile_map *pTileMap, editor_state *pEditorState)
+{
+    undo_step *pLast = &EditorState->LastFrameUndoState;
+    if (ShouldRecordNewUndoState(pTileMap, pEditorState)) {
+        undo_step *pRecordHere = pEditorState->UndoSteps + UndoStepIdx;
+        pRecordHere->TileValuesLen = pLast->TileValuesLen;
+        memcpypRecordHere->TileValues
+        
+
+
+        ++pEditorState->UndoStepIdx;
+        pEditorState->UndoStepIdx %= MAX_UNDO_STEPS;
+
+    }
+
+}
+
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
@@ -1497,13 +1549,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     mem_region TransientRegion;
     TransientRegion.Data = (u8 *)Memory->TransientStorage;
 
-    debug_state *DebugState = (debug_state *)DebugRegion.Data;
-    game_state *GameState = (game_state *)GameRegion.Data;
-    scratch_header *ScratchHeader = (scratch_header *)TransientRegion.Data;
+    debug_state *pDebugState = (debug_state *)DebugRegion.Data;
+    editor_state *pEditorState = &pDebugState->EditorState;
+    game_state *pGameState = (game_state *)GameRegion.Data;
+    scratch_header *pScratchHeader = (scratch_header *)TransientRegion.Data;
 
     // Convenience pointers
-    tile_map *pTileMap = &GameState->TileMap;
-    player *pPlayer = &GameState->Player;
+    tile_map *pTileMap = &pGameState->TileMap;
+    player *pPlayer = &pGameState->Player;
 
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
     FreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
@@ -1525,17 +1578,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if (!Memory->IsInitialized)
     {
         // Random
-        GameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
+        pGameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
         // Debug
-        InitializeArena(&DebugState->DebugTextArena, (DebugRegion.Data + sizeof(debug_state)), Megabytes(1));
-        InitializeArena(&DebugState->FailBitmapsArena, (DebugRegion.Data + sizeof(debug_state) + DebugState->DebugTextArena.Size), Megabytes(1));
+        mem_idx DebugRegionOffset = sizeof(debug_state);
+        InitializeArena(&pDebugState->DebugTextArena, (DebugRegion.Data + DebugRegionOffset), Megabytes(1));
+        DebugRegionOffset += Megabytes(1);
+        InitializeArena(&pDebugState->FailBitmapsArena, (DebugRegion.Data + DebugRegionOffset), Megabytes(1));
+        DebugRegionOffset += Megabytes(1);
 
         mem_idx GameRegionOffset = sizeof(game_state);
 
         // Tiles
-        InitializeArena(&GameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
-        GameRegionOffset += GameState->TileMap.TileTypes.BitmapsArena.Size;
+        InitializeArena(&pGameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
+        GameRegionOffset += pGameState->TileMap.TileTypes.BitmapsArena.Size;
 
         // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
@@ -1545,44 +1601,43 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
 
         // World
-        arena *pWorldArena = &GameState->WorldArena;
+        arena *pWorldArena = &pGameState->WorldArena;
         InitializeArena(pWorldArena, GameRegion.Data + GameRegionOffset, (GameRegion.Size - GameRegionOffset));
 
         mem_idx GameRegionMemoryUsed = sizeof(game_state) + 
-                                        GameState->TileMap.TileTypes.BitmapsArena.Size + 
+                                        pGameState->TileMap.TileTypes.BitmapsArena.Size + 
                                         (pPlayer->FacingBitmaps[0].MetaBitmaps.BitmapsArena.Size * 4) + 
-                                        GameState->WorldArena.Size;
+                                        pGameState->WorldArena.Size;
         Assert(GameRegion.Size == GameRegionMemoryUsed);
 
-        // Scratch
-        ScratchHeader->Count = NUM_SCRATCHES;
-        scratch_arena *ScratchArenas = ScratchHeader->ScratchArenas;
+        // TODO: figure out some sub-arena model so we can wipe all transient storage at once
+        // Transient storage
+        mem_idx TransientRegionOffset = sizeof(scratch_header);
+            // Scratch
+        pScratchHeader->Count = NUM_SCRATCHES;
+        scratch_arena *ScratchArenas = pScratchHeader->ScratchArenas;
         for (int ScratchIdx = 0;
-            ScratchIdx < ScratchHeader->Count;
+            ScratchIdx < pScratchHeader->Count;
             ++ScratchIdx)
         {
             scratch_arena *It = ScratchArenas + ScratchIdx;
             It->IsFree = true;
-            InitializeArena(&It->Arena, 
-                            (u8 *)Memory->TransientStorage + sizeof(scratch_header) + (ScratchIdx * SCRATCH_SIZE), 
-                            SCRATCH_SIZE);
+            InitializeArena(&It->Arena, TransientRegion.Data + TransientRegionOffset, SCRATCH_SIZE);
+            TransientRegionOffset += SCRATCH_SIZE;
         }
 
-#if 0
-struct tile_map
-{
-    arena TilesArena;
-    wait_state WaitState;
-    int WaitedFrames;
-    u64 LastUpdateTime;
-    int NumRows;
-    int NumCols;
-    int NumTileTypes;
-    arr_meta_bitmap TileTypes;
-    f32 TileSideInPixels;
-    s32 *TileValues;
-};
-#endif
+        // Last frame undo arena
+        InitializeArena(&pDebugState->EditorState.LastFrameUndoArena, 
+                        TransientRegion.Data + TransientRegionOffset, Kilobytes(100));
+        TransientRegionOffset += Kilobytes(100);
+
+        // Undo steps arena
+        mem_idx UndoStepsBytesNeeded = Kilobytes(100) * MAX_UNDO_STEPS;
+        InitializeArena(&pDebugState->EditorState.UndoStepsArena, 
+                        TransientRegion.Data + TransientRegionOffset, UndoStepsBytesNeeded);
+        TransientRegionOffset += UndoStepsBytesNeeded;
+
+
 // Tiles        
         // TileMap dimensions
         pTileMap->TileSideInPixels = 64.0f;
@@ -1594,17 +1649,17 @@ struct tile_map
         pTileTypes->Data = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES+1);
         pTileTypes->Len = MAX_TILE_TYPES+1;
         pTileTypes->NextEmptySlot = 1;
-        LoadTileBitmapsDir(pTileMap, ScratchHeader);
+        LoadTileBitmapsDir(pTileMap, pScratchHeader);
         pTileMap->TileValues = PushArray(pWorldArena, s32, pTileMap->NumTilesInWorld); 
 
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             facing_bitmaps *pFacingBitmaps = pPlayer->FacingBitmaps + FacingIdx;
             arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-            pMetaBitmaps->Data = PushArray(&GameState->WorldArena, meta_bitmap, MAX_FACING_BITMAPS+1);
+            pMetaBitmaps->Data = PushArray(&pGameState->WorldArena, meta_bitmap, MAX_FACING_BITMAPS+1);
             pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
             pMetaBitmaps->NextEmptySlot = 1;
-            LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, ScratchHeader);
+            LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, pScratchHeader);
             if(pMetaBitmaps->Data[1].IsPresent()) {
                 pFacingBitmaps->DrawThis = 1;
             }
@@ -1618,12 +1673,12 @@ struct tile_map
         //      so we know when we called it with nullptr
 
         char *BagelFilepath = "bagel1.bmp";
-        pGlobalBagel = PushStruct(&DebugState->FailBitmapsArena, meta_bitmap);
+        pGlobalBagel = PushStruct(&pDebugState->FailBitmapsArena, meta_bitmap);
         snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
         mem_idx BagelSize = GetFileSize(pGlobalBagel->Filepath);
         if (BagelSize) {
             pGlobalBagel->Bitmap.Buffer.Size = BagelSize;
-            pGlobalBagel->Bitmap.Buffer.Data = PushArray(&DebugState->FailBitmapsArena, u8, BagelSize);
+            pGlobalBagel->Bitmap.Buffer.Data = PushArray(&pDebugState->FailBitmapsArena, u8, BagelSize);
         }
         ActuallyLoadBitmap(pGlobalBagel);
         
@@ -1633,7 +1688,13 @@ struct tile_map
     ///////////////////////////////////////// INIT END, MAIN LOOP START ////////////////////////////////////////////
 
     // Reset the debug text arena. This has nothing to do with the mouse cursor.
-    DebugState->DebugTextArena.Cursor = 0;
+    pDebugState->DebugTextArena.Cursor = 0;
+
+
+
+    RecordLastFrameUndoState(pTileMap, pDebugState);
+    
+
 
     // Bitmap reloading notes:
     //      We have the following objectives:
@@ -1651,7 +1712,7 @@ struct tile_map
 
     // If we set ReadyToReload on the last frame, reload the tiles dir and set ReadyToReload back to false
     if (pTileMap->WaitState == READY_TO_RELOAD) {
-        LoadTileBitmapsDir(pTileMap, ScratchHeader);
+        LoadTileBitmapsDir(pTileMap, pScratchHeader);
     }
     else if (pTileMap->WaitState == WAITING) {
         ++pTileMap->WaitedFrames;
@@ -1682,7 +1743,7 @@ struct tile_map
         facing_bitmaps *pThisFacing = &pPlayer->FacingBitmaps[FacingIdx];
         if (pThisFacing->WaitState == READY_TO_RELOAD)
         {
-            LoadPlayerBitmapsDir(pPlayer, pThisFacing, ScratchHeader);
+            LoadPlayerBitmapsDir(pPlayer, pThisFacing, pScratchHeader);
         }
         else if (pThisFacing->WaitState == WAITING) {
             ++pThisFacing->WaitedFrames;
@@ -1750,7 +1811,7 @@ struct tile_map
             }
             f32 PlayerSpeed = 600.0f;
             
-            if (DebugState->EditorState.WhichEditor == NO_EDITOR)
+            if (pDebugState->EditorState.WhichEditor == NO_EDITOR)
             {
                 v2 NewPlayerP = pPlayer->Position;
                 NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
@@ -1763,26 +1824,26 @@ struct tile_map
     if (GlobalDevKeys->F1.EndedDown && GlobalDevKeys->F1.HalfTransitionCount == 1)
     {
         // Zero cursor state before changing editor
-        InitializeCursorState(&DebugState->EditorState.CursorState);
-        if (DebugState->EditorState.WhichEditor == TILE)
+        InitializeCursorState(&pDebugState->EditorState.CursorState);
+        if (pDebugState->EditorState.WhichEditor == TILE)
         {
-            DebugState->EditorState.WhichEditor = NO_EDITOR;
+            pDebugState->EditorState.WhichEditor = NO_EDITOR;
         }
         else
         {
-            DebugState->EditorState.WhichEditor = TILE;
+            pDebugState->EditorState.WhichEditor = TILE;
         }
     }
     if (GlobalDevKeys->F6.EndedDown && GlobalDevKeys->F6.HalfTransitionCount == 1)
     {
-        InitializeCursorState(&DebugState->EditorState.CursorState);
-        if (DebugState->EditorState.WhichEditor == PLAYER)
+        InitializeCursorState(&pDebugState->EditorState.CursorState);
+        if (pDebugState->EditorState.WhichEditor == PLAYER)
         {
-            DebugState->EditorState.WhichEditor = NO_EDITOR;
+            pDebugState->EditorState.WhichEditor = NO_EDITOR;
         }
         else
         {
-            DebugState->EditorState.WhichEditor = PLAYER;
+            pDebugState->EditorState.WhichEditor = PLAYER;
         }
     }
 
@@ -1811,20 +1872,20 @@ struct tile_map
                 }
                 ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
             }
-            if (DebugState->EditorState.WhichEditor == TILE)
+            if (pDebugState->EditorState.WhichEditor == TILE)
             {
                 DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
             }
         }
     }
 
-    if (DebugState->EditorState.WhichEditor==TILE)
+    if (pDebugState->EditorState.WhichEditor==TILE)
     {
-        DrawTileEditor(Buffer, ScratchHeader, DebugState, pTileMap);
+        DrawTileEditor(Buffer, pScratchHeader, pDebugState, pTileMap);
     }
-    else if (DebugState->EditorState.WhichEditor==PLAYER)
+    else if (pDebugState->EditorState.WhichEditor==PLAYER)
     {
-        DrawPlayerEditor(Buffer, ScratchHeader, DebugState, &GameState->Player);
+        DrawPlayerEditor(Buffer, pScratchHeader, pDebugState, &pGameState->Player);
     }
     else
     {
@@ -1852,19 +1913,21 @@ struct tile_map
     //
     // Note MoveDown is the "S" key
     if (GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown) {
-        SaveProject(pTileMap, pPlayer, ScratchHeader);
+        SaveProject(pTileMap, pPlayer, pScratchHeader);
     }
 
     // and ActionRight is the "L" key
     if (GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown) {
-        LoadProject(pPlayer, pTileMap, ScratchHeader);
+        LoadProject(pPlayer, pTileMap, pScratchHeader);
     }
 
     if (GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1) {
-        DebugState->EditorState.PrintRowsCols = !DebugState->EditorState.PrintRowsCols;
+        pDebugState->EditorState.PrintRowsCols = !pDebugState->EditorState.PrintRowsCols;
     }
 
-    DEBUGPrintFps(Buffer, Input->Fps, &DebugState->DebugTextArena);
+    UpdateUndoState(pTileMap);
+
+    DEBUGPrintFps(Buffer, Input->Fps, &pDebugState->DebugTextArena);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

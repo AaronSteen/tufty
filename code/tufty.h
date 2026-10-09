@@ -12,6 +12,7 @@
 #define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
 #define MAX_FACING_BITMAPS 10
 #define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
+#define MAX_UNDO_STEPS 100
 
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
@@ -528,11 +529,22 @@ enum which_editor
     PLAYER
 };
 
+struct undo_step
+{
+    int TileValuesLen;
+    s32 *TileValues;
+};
+
 struct editor_state
 {
+    arena UndoStepsArena;
+    arena LastFrameUndoArena;
     which_editor WhichEditor;
     cursor_state CursorState;
     b32 PrintRowsCols;
+    undo_step LastFrameUndoState;
+    undo_step UndoSteps[MAX_UNDO_STEPS];
+    int UndoStepIdx;
 };
 
 struct debug_state
