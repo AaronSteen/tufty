@@ -1,12 +1,4 @@
 undo:
-    data structures:
-        struct undo_step
-        {
-            u64 NthFrame;
-            int NumTileRows;
-            int NumTileCols;
-            s32 *TileValues;
-        };
         
         editor_state contains LastFrameUndoState:
             - LastFrameUndoState->TileValues lives in TransientStorage
@@ -78,10 +70,12 @@ Head points to most recent undo state that represents net-new changes.
     At start of frame:
         WriteUndoState(pTileMap, &pEditorState->LastFrameUndoState);
 
-    If in tile editor:
-        And receive undo/redo command:
+    Read input and see if user wants to undo.
+    If editor is active and receive undo/redo command:
             IsUndoRedoStepValid();
         If so, allow.
+
+    If in tile editor:
 
     At end of frame:
         if (ShouldPushUndoStep(pEditorState->LastFrameUndoState, pTileMap) {
@@ -133,10 +127,8 @@ Head points to most recent undo state that represents net-new changes.
 24 hours in a day.
 365 days in a year.
 
-
-
-
-eg User is at UndoStep 47 and makes 100 steps and then tries to undo 101 times.
+What happens when the user presses undo?
+We want to decrement the undo step.
 
 [99]
 [98]

@@ -244,6 +244,8 @@ typedef struct dev_keys
             game_button_state F8;
             game_button_state F9;
             game_button_state F10;
+            game_button_state Z;
+            game_button_state Y;
             // On Mac we sub in the Command key for Control, and ignore presses on
             //      the literal Control key on the Mac keyboard.
             game_button_state Ctrl;

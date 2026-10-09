@@ -932,10 +932,8 @@ static void
 Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardController, dev_keys *DevKeys, game_mouse_input *Mouse)
 {
     MSG Message;
-    while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
-    {
-        switch(Message.message)
-        {
+    while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE)) {
+        switch(Message.message) {
             case WM_QUIT:
             {
                 GlobalRunning = false;
@@ -955,59 +953,45 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                 b32 IsDown = ((Message.lParam & (1 << 31)) == 0);
                 if(WasDown != IsDown)
                 {
-                    if(VKCode == 'W')
-                    {
+                    if (VKCode == 'W') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveUp, IsDown);
                     }
-                    else if(VKCode == 'A')
-                    {
+                    else if (VKCode == 'A') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveLeft, IsDown);
                     }
-                    else if(VKCode == 'S')
-                    {
+                    else if (VKCode == 'S') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveDown, IsDown);
                     }
-                    else if(VKCode == 'D')
-                    {
+                    else if (VKCode == 'D') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->MoveRight, IsDown);
                     }
-                    else if(VKCode == 'Q')
-                    {
+                    else if (VKCode == 'Q') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->LeftShoulder, IsDown);
                     }
-                    else if(VKCode == 'E')
-                    {
+                    else if (VKCode == 'E') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->RightShoulder, IsDown);
                     }
-                    else if(VKCode == 'I')
-                    {
+                    else if (VKCode == 'I') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionUp, IsDown);
                     }
-                    else if(VKCode == 'J')
-                    {
+                    else if (VKCode == 'J') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionLeft, IsDown);
                     }
-                    else if(VKCode == 'K')
-                    {
+                    else if (VKCode == 'K') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionDown, IsDown);
                     }
-                    else if(VKCode == 'L')
-                    {
+                    else if (VKCode == 'L') {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ActionRight, IsDown);
                     }
-                    else if(VKCode == VK_ESCAPE)
-                    {
+                    else if (VKCode == VK_ESCAPE) {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->Start, IsDown);
                     }
-                    else if(VKCode == VK_SPACE)
-                    {
+                    else if (VKCode == VK_SPACE) {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->Back, IsDown);
                     }
 #if TUFTY_INTERNAL
-                    else if(VKCode == 'P')
-                    {
-                        if(IsDown)
-                        {
+                    else if (VKCode == 'P') {
+                        if (IsDown) {
                             GlobalPause = !GlobalPause;
                         }
                     }
@@ -1043,48 +1027,43 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                     //     VK_F9 	0x78 	F9 key
                     //     VK_F10 	0x79 	F10 key
                 // Dev keys
-                    else if(VKCode == VK_F1)
-                    {
+                    else if (VKCode == VK_F1) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F1, IsDown);
                     }
-                    else if(VKCode == VK_F2)
-                    {
+                    else if (VKCode == VK_F2) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F2, IsDown);
                     }
-                    else if(VKCode == VK_F3)
-                    {
+                    else if (VKCode == VK_F3) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F3, IsDown);
                     }
-                    else if(VKCode == VK_F4)
-                    {
+                    else if (VKCode == VK_F4) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F4, IsDown);
                     }
-                    else if(VKCode == VK_F5)
-                    {
+                    else if (VKCode == VK_F5) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F5, IsDown);
                     }
-                    else if(VKCode == VK_F6)
-                    {
+                    else if (VKCode == VK_F6) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F6, IsDown);
                     }
-                    else if(VKCode == VK_F7)
-                    {
+                    else if (VKCode == VK_F7) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F7, IsDown);
                     }
-                    else if(VKCode == VK_F8)
-                    {
+                    else if (VKCode == VK_F8) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F8, IsDown);
                     }
-                    else if(VKCode == VK_F9)
-                    {
+                    else if (VKCode == VK_F9) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F9, IsDown);
                     }
-                    else if(VKCode == VK_F10)
-                    {
+                    else if (VKCode == VK_F10) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->F10, IsDown);
                     }
-                    else if(VKCode == VK_CONTROL)
-                    {
+                    else if (VKCode == 'Z') {
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->Z, IsDown);
+                    }
+                    else if (VKCode == 'Y') {
+                        Win32ProcessKeyboardAndMouseMessage(&DevKeys->Y, IsDown);
+                    }
+                    else if (VKCode == VK_CONTROL) {
                         Win32ProcessKeyboardAndMouseMessage(&DevKeys->Ctrl, IsDown);
                     }
 #endif

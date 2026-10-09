@@ -531,7 +531,6 @@ enum which_editor
 
 struct undo_step
 {
-    u64 FrameNumber;
     int NumTileRows;
     int NumTileCols;
     int TileValuesLen;
@@ -540,19 +539,17 @@ struct undo_step
 
 struct undo_state
 {
-    u64 FrameCounter;
-    arena UndoStepsArena;
     arena LastFrameUndoArena;
-    int HeadUndoIdx;
-    int CurrUndoIdx;
+    arena UndoStepsArena;
+    int HeadIdx;
+    int CurrIdx;
     undo_step LastFrameUndoStep;
-    undo_step UndoSteps[MAX_UNDO_STEPS];
+    undo_step UndoStepsArr[MAX_UNDO_STEPS];
 };
 
 
 struct editor_state
 {
-    u64 FrameCounter;
     which_editor WhichEditor;
     cursor_state CursorState;
     b32 PrintRowsCols;
