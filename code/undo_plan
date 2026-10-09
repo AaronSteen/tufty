@@ -1,0 +1,258 @@
+undo:
+    data structures:
+        struct undo_step
+        {
+            u64 NthFrame;
+            int NumTileRows;
+            int NumTileCols;
+            s32 *TileValues;
+        };
+        
+        editor_state contains LastFrameUndoState:
+            - LastFrameUndoState->TileValues lives in TransientStorage
+            - At frame start, write the state of the pTileMap->TileValues array to LastFrameUndoState->TileValues
+            - And write pTileMap->NumRows and NumCols to LastFrameUndoState->NumTileRows and NumTileCols
+
+        static void
+        WriteUndoState(const tile_map *pTileMap, undo_step *pWriteHere)
+        {
+            pWriteHere->NumTileRows = pTileMap->NumRows;
+            pWriteHere->NumTileCols = pTileMap->NumCols;
+            int NumBytesToCopy = pTileMap->NumRows * pTileMap->NumCols * sizeof(s32);
+            memcpy(pWriteHere->TileValues, pTileMap->TileValues, NumBytesToCopy);
+            pWriteHere->FrameNum = CurrentFrameNum;
+        }
+
+        static b32
+        ShouldPushUndoStep(int HeadStateFrameNum, int CurrentStateFrameNum, undo_state LastFrameUndo, const tile_map *pTileMap)
+        {
+            if (CurrentStateFrameNum < HeadStateFrameNum) {
+                return(false);
+            }
+            if (pTileMap->NumRows != LastFrameUndo.NumTileRows) {
+                return(true);
+            }
+            if (pTileMap->NumCols != LastFrameUndo.NumTileCols) {
+                return(true);
+            }
+            for (int TileIdx = 0; TileIdx < LastFrameUndo.NumTileRows * LastFrameUndo.NumTileCols; ++TileIdx) {
+                if (pTileMap->TileValues[TileIdx] != LastFrameUndo.TileValues[TileIdx]) {
+                    return(true);
+                }
+            }
+            return(false);
+        }
+
+        static b32
+        IsUndoRedoStepValid(int HeadIdx, int CurrIndex, int NewStep)
+        {
+            if(CurrIndex + NewStep == HeadIdx || CurrIdx + NewStep == HeadIdx+1) {
+                    return(false);
+            }
+            else {
+                return(true);
+            }
+        }
+
+
+int 
+GetCanonicalUndoIdx(int CurrIdx, int Step)
+{
+    // Passing a step further to the left of zero than
+    //      the additive inverse of max undo steps is an error.
+    // Realistically, we don't expect this function to be called 
+    //      with step values that are not positive 1 or negative 1.
+    Assert(Step >= -MAX_UNDO_STEPS);
+
+    int Result = ((CurrIdx + Step) % MAX_UNDO_STEPS;
+      // Mod takes sign of left operand, so if CurrIdx + step 
+      //      evals to negative, we add max undo steps again to make it positive
+      Result += MAX_UNDO_STEPS;
+      // And lastly mod one more time to cover large positive step values.
+      Result %= MAX_UNDO_STEPS;
+}
+
+Head points to most recent undo state that represents net-new changes.
+
+
+    At start of frame:
+        WriteUndoState(pTileMap, &pEditorState->LastFrameUndoState);
+
+    If in tile editor:
+        And receive undo/redo command:
+            IsUndoRedoStepValid();
+        If so, allow.
+
+    At end of frame:
+        if (ShouldPushUndoStep(pEditorState->LastFrameUndoState, pTileMap) {
+            WriteUndoState(pTileMap, &pEditorState->UndoSteps[pEditorState->UndoStepIdx]);
+            pEditorState->UndoStepIdx = GetCanonicalUndoIdx(pEditorState->UndoIdx, 1);
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(index + step + 100) % 100
+(0 + -150 + 100) % 100
+(-150 + 100) % 100
+-50 % 100
+-50 // bad
+
+
+
+((index + step) % 100 + 100) % 100
+((0 + -150) % 100 + 100) % 100
+(-150 % 100 + 100) % 100
+(-50 + 100) % 100
+50 % 100
+50 // good
+
+((99 + 150 + 100) % 100
+349 % 100 = 49
+
+18,446,744,073,709,551,615 in u64
+60 frames in a second.
+60 seconds in a minute.
+60 minutes in an hour.
+24 hours in a day.
+365 days in a year.
+
+
+
+
+eg User is at UndoStep 47 and makes 100 steps and then tries to undo 101 times.
+
+[99]
+[98]
+[97]
+[96]
+[95]
+[94]
+[93]
+[92]
+[91]
+[90]
+[89]
+[88]
+[87]
+[86]
+[85]
+[84]
+[83]
+[82]
+[81]
+[80]
+[79]
+[78]
+[77]
+[76]
+[75]
+[74]
+[73]
+[72]
+[71]
+[70]
+[69]
+[68]
+[67]
+[66]
+[65]
+[64]
+[63]
+[62]
+[61]
+[60]
+[59]
+[58]
+[57]
+[56]
+[55]
+[54]
+[53]
+[52]
+[51]
+[50]
+[49]
+[48]
+[47] <- Head
+[46] 
+[45] 
+[44] 
+[43] 
+[42] 
+[41] 
+[40] 
+[39] 
+[38] 
+[37] 
+[36] 
+[35] 
+[34] 
+[33] 
+[32] 
+[31] 
+[30] 
+[29] 
+[28] 
+[27] 
+[26] 
+[25] 
+[24] 
+[23] 
+[22] 
+[21] 
+[20] 
+[19] 
+[18] 
+[17] 
+[16] 
+[15] 
+[14] 
+[13] 
+[12] 
+[11] 
+[10] 
+[9] 
+[8] 
+[7] 
+[6] 
+[5] 
+[4] 
+[3] 
+[2] 
+[1] 
+[0] 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

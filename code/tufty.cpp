@@ -1482,6 +1482,21 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
     }
 }
 
+static int 
+GetNewUndoIdx(int CurrIdx, int Step)
+{
+    // (index + step + MAX_UNDO_STEPS) % MAX_UNDO_STEPS
+    // Note that this wouldn't support step that are larger
+    //      than MAX_UNDO_STEPS. e.g., a step of -150
+    //      would evaluate to -50, an invalid undo idx,
+    //      with a MAX_UNDO_STEPS of 100. But I can't imagine
+    //      why we'd ever be handling a step of larger than 1
+    //      in either direction, so we don't worry about handling
+    //      that case.
+    int Result = (CurrIdx + Step + MAX_UNDO_STEPS) % MAX_UNDO_STEPS;
+    return(Result);
+}
+
 static void
 RecordUndoState(undo_step *pRecordHere, )
 {
@@ -1925,9 +1940,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pDebugState->EditorState.PrintRowsCols = !pDebugState->EditorState.PrintRowsCols;
     }
 
-    UpdateUndoState(pTileMap);
-
     DEBUGPrintFps(Buffer, Input->Fps, &pDebugState->DebugTextArena);
+    ++pEditorState->UndoState.FrameCounter;
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
