@@ -1102,12 +1102,13 @@ PushNewUndoStep(undo_state *pUndoState, tile_map *pTileMap)
     WriteUndoStep(pTileMap, pWriteHere);
     pUndoState->HeadIdx = NewIdx;
     pUndoState->CurrIdx = NewIdx;
+    pUndoState->Active = true;
 }
 
 static b32
 IsUndoStepValid(int HeadIdx, int ProspectiveStep)
 {
-    if (ProspectiveStep <= HeadIdx) {
+    if (ActiveState == false || ProspectiveStep == HeadIdx) {
         return(false);
     }
     else {
@@ -1118,7 +1119,7 @@ IsUndoStepValid(int HeadIdx, int ProspectiveStep)
 static b32
 IsRedoStepValid(int HeadIdx, int ProspectiveStep)
 {
-    if (ProspectiveStep > HeadIdx) {
+    if (ProspectiveStep == HeadIdx+1) {
         return(false);
     }
     else {
@@ -1587,7 +1588,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
              GlobalDevKeys->Y.EndedDown && 
              GlobalDevKeys->Y.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, 1);
-            if (IsRedoStepValid(ProspectiveStep, pUndoState->HeadIdx)) {
+            if (IsRedoStepValid(pUndoState->HeadIdx, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;
                 UndoRedo(pUndoState, pTileMap, NewStep);
                 Redo.FrameCount = 0;
@@ -1597,7 +1598,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         GlobalDevKeys->Z.EndedDown && 
         GlobalDevKeys->Z.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, -1);
-            if (IsUndoStepValid(ProspectiveStep, pUndoState->HeadIdx)) {
+            if (IsUndoStepValid(pUndoState->HeadIdx, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;
                 UndoRedo(pUndoState, pTileMap, NewStep);
                 Undo.FrameCount = 0;
