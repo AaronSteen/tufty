@@ -231,7 +231,7 @@ typedef struct dev_keys
     //
     union
     {
-        game_button_state Keys[11];
+        game_button_state Keys[13];
         struct
         {
             game_button_state F1;

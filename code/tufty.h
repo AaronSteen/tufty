@@ -153,6 +153,13 @@ struct color
     f32 R, G, B, A;
 };
 
+struct fading_text
+{
+    char *Text;
+    f32 X, Y;
+    u64 FrameCount, FrameDuration;
+};
+
 struct bitmap
 {
     // This is the entire bitmap file, including the header
@@ -415,7 +422,6 @@ struct tile_map
     u64 LastUpdateTime;
     int NumRows;
     int NumCols;
-    int NumTilesInWorld;
     arr_meta_bitmap TileTypes;
     f32 TileSideInPixels;
     s32 *TileValues;
@@ -533,7 +539,6 @@ struct undo_step
 {
     int NumTileRows;
     int NumTileCols;
-    int TileValuesLen;
     s32 *TileValues;
 };
 

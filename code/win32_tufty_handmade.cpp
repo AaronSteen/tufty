@@ -1467,11 +1467,11 @@ WinMain(HINSTANCE Instance,
                     dev_keys *OldDevKeys = &OldInput->DevKeys;
                     dev_keys *NewDevKeys = &NewInput->DevKeys;
                     *NewDevKeys = {};
-                    for(int FnKeyIdx = 0;
-                        FnKeyIdx < ArrayCount(NewDevKeys->Keys);
-                        ++FnKeyIdx)
+                    for(int DevKeyIdx = 0;
+                        DevKeyIdx < ArrayCount(NewDevKeys->Keys);
+                        ++DevKeyIdx)
                     {
-                        NewDevKeys->Keys[FnKeyIdx].EndedDown = OldDevKeys->Keys[FnKeyIdx].EndedDown;
+                        NewDevKeys->Keys[DevKeyIdx].EndedDown = OldDevKeys->Keys[DevKeyIdx].EndedDown;
                     }
 
                     // NOTE(Aaron): We hoist these to globals so that we can clean them up
