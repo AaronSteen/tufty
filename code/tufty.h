@@ -9,6 +9,7 @@
 
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
+#define MAX_TILE_VALUES (100 * 100)
 #define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
 #define MAX_FACING_BITMAPS 10
 #define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
@@ -106,6 +107,8 @@ ArenaPush_(arena *Arena, mem_idx NumBytes)
 
 #define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count))
 #define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type))
+#define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
+
 
 struct v2
 {
@@ -549,7 +552,6 @@ struct undo_state
     arena UndoStepsArena;
     int HeadIdx;
     int CurrIdx;
-    undo_step LastFrameUndoStep;
     undo_step *UndoStepsArr[MAX_UNDO_STEPS];
 };
 
