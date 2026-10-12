@@ -160,10 +160,9 @@ ComputeByteOffset(void *Start, void *Offset)
 }
 
 static void
-SetTileValue(tile_map *pTileMap, s32 IdxToChange, s32 NewValue)
+SetTileValue(s32 *TileValues, s32 IdxToChange, s32 NewValue)
 {
-    pTileMap->TileValues[IdxToChange] = NewValue;
-    return;
+    TileValues[IdxToChange] = NewValue;
 }
 
 static int
@@ -186,9 +185,9 @@ SearchAndReplaceTileValue(tile_map *pTileMap, s32 GetsReplaced, s32 ReplaceWith)
 }
 
 static int
-Get1DTileCoordFrom2DCoord(tile_map *pTileMap, v2 CoordIn2D)
+Get1DTileCoordFrom2DCoord(int NumCols, v2 CoordIn2D)
 {
-    int Result = CoordIn2D.Y * pTileMap->NumCols + CoordIn2D.X;
+    int Result = CoordIn2D.Y * NumCols + CoordIn2D.X;
     return(Result);
 }
 
@@ -202,9 +201,9 @@ GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
 }
 
 static s32
-GetTileValueFrom1DCoord(tile_map *pTileMap, int CoordIn1D)
+GetTileValueFrom1DCoord(s32 *pTileValues, int CoordIn1D)
 {
-    s32 Result = pTileMap->TileValues[CoordIn1D];
+    s32 Result = pTileValues[CoordIn1D];
     return(Result);
 }
 
@@ -1064,15 +1063,6 @@ DrawFilepathTooltip(game_offscreen_buffer *pBackbuf, arena *pDebugTextArena,
                   pHoveredBitmap->Filepath, pDebugTextArena, color{0, 0, 0, 1}, 2.0f);
 }
 
-static void
-WriteUndoStep(const tile_map *pTileMap, undo_step *pWriteHere)
-{
-    pWriteHere->NumTileRows = pTileMap->NumRows;
-    pWriteHere->NumTileCols = pTileMap->NumCols;
-    int NumBytesToCopy = pTileMap->NumRows * pTileMap->NumCols * sizeof(s32);
-    memcpy(pWriteHere->TileValues, pTileMap->TileValues, NumBytesToCopy);
-}
-
 static int
 GetCanonUndoIndex(int OriginIdx, int Step)
 {
@@ -1094,22 +1084,48 @@ GetCanonUndoIndex(int OriginIdx, int Step)
     return(Result);
 }
 
+static undo_step *
+GetUndoStep(const undo_state *pUndoState, int Idx)
+{
+    undo_step *Result = pUndoState->UndoStepsArr[Idx];
+    return(Result);
+}
+
+#define GetByteCountForTypedArray(Num, Type) ((Num) * sizeof(Type))
+
 static void
-PushNewUndoStep(undo_state *pUndoState, tile_map *pTileMap)
+WriteUndoStep(undo_step *pWriteHere, int Rows, int Cols, const s32 *pTileValues)
+{
+    pWriteHere->NumTileRows = Rows;
+    pWriteHere->NumTileCols = Cols;
+    int NumTileValues = Rows * Cols;
+    memcpy(pWriteHere->TileValues, pTileValues, GetByteCountForTypedArray(NumTileValues, s32));
+}
+
+
+static void
+PushNewUndoStep(undo_state *pUndoState, undo_step ToPush)
 {
     int NewIdx = GetCanonUndoIndex(pUndoState->HeadIdx, 1);
-    undo_step *pWriteHere = &pUndoState->UndoStepsArr[NewIdx];
-    WriteUndoStep(pTileMap, pWriteHere);
+    undo_step *pPushHere = pUndoState->UndoStepsArr[NewIdx];
+    int NumTileValues = ToPush.NumTileRows * ToPush.NumTileCols;
+
+    if (pPushHere == nullptr) {
+        pPushHere = PushStruct(&pUndoState->UndoStepsArena, undo_step);
+        pPushHere->TileValues = PushArray(&pUndoState->UndoStepsArena, s32, NumTileValues);
+    }
+    WriteUndoStep(pPushHere, ToPush.NumTileRows, ToPush.NumTileCols, ToPush.TileValues);
     pUndoState->HeadIdx = NewIdx;
     pUndoState->CurrIdx = NewIdx;
-    pUndoState->Active = true;
 }
 
 static b32
-IsUndoStepValid(int HeadIdx, int ProspectiveStep)
+IsUndoStepValid(undo_state *pUndoState, int ProspectiveStep)
 {
-    if (ActiveState == false || ProspectiveStep == HeadIdx) {
-        return(false);
+    undo_step *pCheck = GetUndoStep(pUndoState, ProspectiveStep);
+    if (pCheck == nullptr || 
+        ProspectiveStep == pUndoState->HeadIdx) {
+            return(false);
     }
     else {
         return(true);
@@ -1117,10 +1133,12 @@ IsUndoStepValid(int HeadIdx, int ProspectiveStep)
 }
 
 static b32
-IsRedoStepValid(int HeadIdx, int ProspectiveStep)
+IsRedoStepValid(undo_state *pUndoState, int ProspectiveStep)
 {
-    if (ProspectiveStep == HeadIdx+1) {
-        return(false);
+    undo_step *pCheck = GetUndoStep(pUndoState, ProspectiveStep);
+    if (pCheck == nullptr || 
+        ProspectiveStep == (pUndoState->HeadIdx)+1 ) {
+            return(false);
     }
     else {
         return(true);
@@ -1128,27 +1146,27 @@ IsRedoStepValid(int HeadIdx, int ProspectiveStep)
 }
 
 static b32
-ShouldPushUndoStep(undo_step LastFrameUndo, const tile_map *pTileMap)
+ShouldPushUndoStep(undo_step LastFrameState, undo_step ThisFrameState)
 {
-    if (pTileMap->NumRows != LastFrameUndo.NumTileRows) {
+    if (LastFrameState.NumTileRows != ThisFrameState.NumTileRows) {
         return(true);
     }
-    if (pTileMap->NumCols != LastFrameUndo.NumTileCols) {
+    if (LastFrameState.NumTileCols != ThisFrameState.NumTileCols) {
         return(true);
     }
-    for (int TileIdx = 0; TileIdx < LastFrameUndo.NumTileRows * LastFrameUndo.NumTileCols; ++TileIdx) {
-        if (pTileMap->TileValues[TileIdx] != LastFrameUndo.TileValues[TileIdx]) {
+    for (int TileIdx = 0; TileIdx < LastFrameState.NumTileRows * LastFrameState.NumTileCols; ++TileIdx) {
+        if (LastFrameState.TileValues[TileIdx] != ThisFrameState.TileValues[TileIdx]) {
             return(true);
         }
     }
     return(false);
 }
 
-static void
-UndoRedo(undo_state *pUndoState, tile_map *pTileMap, int NewUndoStepIdx)
+static undo_step *
+UndoRedoAndGetTheStep(undo_state *pUndoState, int NewUndoStepIdx)
 {
     pUndoState->CurrIdx = NewUndoStepIdx;
-    pTileMap->TileValues = pUndoState->UndoStepsArr[NewUndoStepIdx].TileValues;
+    return(pUndoState->UndoStepsArray[NewUndoStepIdx]);
 }
 
 static void
@@ -1367,11 +1385,15 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader
     FreeScratchArena(pScratch);
 }
 
-static void
+static undo_step
 DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, debug_state *pDebugState, tile_map *pTileMap)
 {
     undo_state *pUndoState = &pDebugState->EditorState.UndoState;
-    WriteUndoStep(pTileMap, &pUndoState->LastFrameUndoStep);
+    ResetArena(&pUndoState->SingleFrameUndoArena);
+    undo_step *pLastFrameState = PushStruct(&pUndoState->SingleFrameUndoArena, undo_step);
+    WriteUndoStep(pLastFrameState, pTileMap->NumRows, pTileMap->NumCols, pTileMap->TileValues);
+    undo_step *pThisFrameState = PushStruct(&pUndoState->SingleFrameUndoArena, undo_step);
+    WriteUndoStep(pThisFrameState, pTileMap->NumRows, pTileMap->NumCols, pTileMap->TileValues);
 
     editor_state *pEditorState = &pDebugState->EditorState;
     arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
@@ -1501,8 +1523,9 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
         else if (InBackbuf && !InBrowser) {
             // Figure out which tile they clicked on
             v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-            int HoveredIdx = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
-            s32 TileValue = GetTileValueFrom1DCoord(pTileMap, HoveredIdx);
+            // NOTE: We are getting these from the temp this frame state struct instead of the tilemap. don't forget!!!
+            int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumTileCols, TileAsV2);
+            s32 TileValue = GetTileValueFrom1DCoord(pThisFrameState->TileValues, HoveredIdx);
             // If they clicked on an empty tile
             if (TileValue == 0) {
                 meta_bitmap *pHeldTile = GetTileTypePointer(pTileMap, pCursorState->HeldSlot);
@@ -1562,46 +1585,47 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
     }
     if (pCursorState->PrimaryMode == PAINTING && InBrowser == false && pHeldTile->IsPresent()) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
-        SetTileValue(pTileMap, HoveredIdx, pCursorState->HeldSlot);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumCols, TileAsV2);
+        SetTileValue(pThisFrameState->TileValues, HoveredIdx, pCursorState->HeldSlot);
     }
     else if (pCursorState->SecondaryMode == PAINTING && InBrowser == false) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(pTileMap, TileAsV2);
-        SetTileValue(pTileMap, HoveredIdx, 0);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumCols, TileAsV2);
+        SetTileValue(pThisFrameState->TileValues, HoveredIdx, 0);
     }
 
     arena *pDebugTextArena = &pDebugState->DebugTextArena;
     
-    static fading_text Pushed = {"Pushed", 1300.0f, pBackbuf->Height - 360.0f, 100, 100};
+    static fading_text PushedText = {"Pushed", 1300.0f, pBackbuf->Height - 360.0f, 100, 100};
     DEBUGDrawFadingText(pBackbuf, &Pushed, pDebugTextArena);
-    static fading_text Undo = {"Undo", 1300.0f, pBackbuf->Height - 210.0f, 100, 100};
+    static fading_text UndoText = {"Undo", 1300.0f, pBackbuf->Height - 210.0f, 100, 100};
     DEBUGDrawFadingText(pBackbuf, &Undo, pDebugTextArena);
-    static fading_text Redo = {"Redo", 1300.0f, pBackbuf->Height - 60.0f, 100, 100};
+    static fading_text RedoText = {"Redo", 1300.0f, pBackbuf->Height - 60.0f, 100, 100};
     DEBUGDrawFadingText(pBackbuf, &Redo, pDebugTextArena);
 
     if (ShouldPushUndoStep(pUndoState->LastFrameUndoStep, pTileMap)) {
         PushNewUndoStep(pUndoState, pTileMap);
-        Pushed.FrameCount = 0;
+        PushedText.FrameCount = 0;
     }
     else if (GlobalDevKeys->Ctrl.EndedDown && 
              GlobalDevKeys->Y.EndedDown && 
              GlobalDevKeys->Y.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, 1);
-            if (IsRedoStepValid(pUndoState->HeadIdx, ProspectiveStep)) {
+            if (IsRedoStepValid(pUndoState, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;
-                UndoRedo(pUndoState, pTileMap, NewStep);
-                Redo.FrameCount = 0;
+                pThisFrameUndoState = UndoRedoAndGetTheStep(pUndoState, NewStep);
+                RedoText.FrameCount = 0;
             }
     }
     else if (GlobalDevKeys->Ctrl.EndedDown && 
         GlobalDevKeys->Z.EndedDown && 
         GlobalDevKeys->Z.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, -1);
-            if (IsUndoStepValid(pUndoState->HeadIdx, ProspectiveStep)) {
+            undo_state *pProspectiveState = GetUndoStep(pUndoState, ProspectiveStep);
+            if (IsUndoStepValid(pUndoState, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;
-                UndoRedo(pUndoState, pTileMap, NewStep);
-                Undo.FrameCount = 0;
+                pThisFrameUndoState = UndoRedoAndGetTheStep(pUndoState, NewStep);
+                UndoText.FrameCount = 0;
             }
     }
 
@@ -1625,7 +1649,18 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, scratch_header *pScratchHeader, 
             X += 200.0f;
         }
     }
+
+    return(*pThisFrameUndoState);
 }
+
+static void
+UpdateTileMapAfterEditorExit(tile_map *pTileMap, undo_state UndoStateToCopy)
+{
+    pTileMap->NumRows = UndoStateToCopy.NumTileRows;
+    pTileMap->NumCols = UndoStateToCopy.NumTileCols;
+    memcpy(pTileMap->TileValues, UndoStateToCopy.TileValues, pTileMap->NumRows * pTileMap->NumCols);
+}
+
 
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
@@ -1693,6 +1728,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Tiles
         InitializeArena(&pGameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
         GameRegionOffset += pGameState->TileMap.TileTypes.BitmapsArena.Size;
+        // 40 kb since i think the most tile values we would want is 100 x 100 = 10000 tiles at 4 bytes per = 40000 bytes
+        InitializeArena(&pGameState->TileMap.TileValuesArena, GameRegion.Data + GameRegionOffset, Kilobytes(40));
+        GameRegionOffset += pGameState->TileMap.TileTypes.BitmapsArena.Size;
 
         // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
@@ -1729,17 +1767,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 // Undo
         // Last frame undo arena
-        InitializeArena(&pDebugState->EditorState.UndoState.LastFrameUndoArena, 
-                        TransientRegion.Data + TransientRegionOffset, Kilobytes(100));
-        TransientRegionOffset += Kilobytes(100);
+        InitializeArena(&pDebugState->EditorState.UndoState.SingleFrameUndoArena, 
+                        TransientRegion.Data + TransientRegionOffset, Kilobytes(200));
+        TransientRegionOffset += Kilobytes(200);
 
 // DATA STRUCTURES
-        // store up to 100x100 = 10,000 tile world
-        mem_idx TileValuesLimit = 100 * 100;
-        for (int Step = 0; Step < MAX_UNDO_STEPS; ++Step) {
-            pUndoState->UndoStepsArr[Step].TileValues = PushArray(&pUndoState->UndoStepsArena, s32, TileValuesLimit);
-        }
-        pUndoState->LastFrameUndoStep.TileValues = PushArray(&pUndoState->LastFrameUndoArena, s32, TileValuesLimit);
 
 // Tiles        
         // TileMap dimensions
@@ -1749,15 +1781,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pTileTypes->Data = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES+1);
         pTileTypes->Len = MAX_TILE_TYPES+1;
         pTileTypes->NextEmptySlot = 1;
+        pTileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / pTileMap->TileSideInPixels);        
+        pTileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / pTileMap->TileSideInPixels);        
+        int MaxTileValues = 100 * 100;
+        pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, MaxTileValues);
+
         LoadTileBitmapsDir(pTileMap, pScratchHeader);
-
-        undo_step *pZerothUndoStep = &pUndoState->UndoStepsArr[0];
-        pZerothUndoStep->NumTileRows = CeilingF32ToS32((f32)Buffer->Height / pTileMap->TileSideInPixels);
-        pZerothUndoStep->NumTileCols = CeilingF32ToS32((f32)Buffer->Width / pTileMap->TileSideInPixels);
-
-        pTileMap->NumRows = pZerothUndoStep->NumTileRows;
-        pTileMap->NumCols = pZerothUndoStep->NumTileCols;
-        pTileMap->TileValues = pZerothUndoStep->TileValues;
 
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
@@ -1978,11 +2007,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    if (pDebugState->EditorState.WhichEditor==TILE)
+    if (pDebugState->EditorState.WhichEditor == TILE)
     {
-        DrawTileEditor(Buffer, pScratchHeader, pDebugState, pTileMap);
+        undo_step Result = DrawTileEditor(Buffer, pScratchHeader, pDebugState, pTileMap);
+        UpdateTileMapAfterEditorExit(pTileMap, Result);
     }
-    else if (pDebugState->EditorState.WhichEditor==PLAYER)
+    else if (pDebugState->EditorState.WhichEditor == PLAYER)
     {
         DrawPlayerEditor(Buffer, pScratchHeader, pDebugState, &pGameState->Player);
     }

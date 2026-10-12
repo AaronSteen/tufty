@@ -424,6 +424,7 @@ struct tile_map
     int NumCols;
     arr_meta_bitmap TileTypes;
     f32 TileSideInPixels;
+    arena TileValuesArena;
     s32 *TileValues;
 };
 
@@ -544,12 +545,12 @@ struct undo_step
 
 struct undo_state
 {
-    arena LastFrameUndoArena;
+    arena SingleFrameUndoArena;
     arena UndoStepsArena;
     int HeadIdx;
     int CurrIdx;
     undo_step LastFrameUndoStep;
-    undo_step UndoStepsArr[MAX_UNDO_STEPS];
+    undo_step *UndoStepsArr[MAX_UNDO_STEPS];
 };
 
 
