@@ -1,0 +1,8 @@
+// raddbg 0.9.29 project file
+
+target:
+{
+  executable: "build/win32_tufty_handmade.exe"
+  working_directory: "data/"
+  enabled: 1
+}

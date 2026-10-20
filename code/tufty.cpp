@@ -1,6 +1,11 @@
 #include "tufty.h"
 #include "stb_easy_font.h"
 
+#define PROFILE_ANCHORS_BASE 2048
+#define PROFILE_ANCHORS_LIMIT MAX_ANCHORS
+#define PROFILER 1
+#include "prof.h"
+
 #define SCRATCH_SIZE Megabytes(1)
 
 // DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
@@ -1689,6 +1694,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     player *pPlayer = &pGameState->Player;
     undo_state *pUndoState = &pDebugState->EditorState.UndoState;
 
+    pgSharedProfData = Memory->pgSharedProfData;
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
     FreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
     ReadEntireFile = Memory->DEBUGPlatformReadEntireFile;
@@ -1698,7 +1704,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     GetListOfDirContents = Memory->DEBUGPlatformGetListOfDirContents;
     ReadFileInto = Memory->DEBUGPlatformReadFileInto;
     GetFilepathFromDialog = Memory->DEBUGPlatformGetFilepathFromDialog;
-    DebugOutput = Memory->DEBUGOutput;
+    DebugOutput = Memory->DebugOutput;
+    ReadCpuTimer = Memory->DEBUGReadCpuTimer;
 
     // Global input pointers
     GlobalKeyboardController = GetController(Input, 0);
@@ -1989,27 +1996,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // RENDER
 
-    // Tiles
-    for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
-        for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
-            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap->NumCols, v2{(f32)Col, (f32)Row});
-            s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
-            v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
-            v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
+    {
+        TimeBlock("RenderTiles");
+        // Tiles
+        for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
+            for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
+                int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap->NumCols, v2{(f32)Col, (f32)Row});
+                s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
+                v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
+                v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
 
-            if (TileValue > 0) {
-                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
-                bitmap *pBitmap = &pToDraw->Bitmap;
-                // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
-                //      but if we change the tile size from 64x64 then we will
-                if (pToDraw->IsPresent() == false) {
-                    pBitmap = &pGlobalBagel->Bitmap;
+                if (TileValue > 0) {
+                    meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
+                    bitmap *pBitmap = &pToDraw->Bitmap;
+                    // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
+                    //      but if we change the tile size from 64x64 then we will
+                    if (pToDraw->IsPresent() == false) {
+                        pBitmap = &pGlobalBagel->Bitmap;
+                    }
+                    ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
                 }
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
-            }
-            if (pDebugState->EditorState.WhichEditor == TILE)
-            {
-                DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
+                if (pDebugState->EditorState.WhichEditor == TILE)
+                {
+                    DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
+                }
             }
         }
     }
@@ -2067,5 +2077,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
+    pgSharedProfData = Memory->pgSharedProfData;
+    ReadCpuTimer = Memory->DEBUGReadCpuTimer;
     GameOutputSound(SoundBuffer, 400);
 }
+ProfilerEndOfCompilationUnit;

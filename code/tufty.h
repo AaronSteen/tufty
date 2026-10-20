@@ -26,6 +26,7 @@ static debug_platform_get_list_of_dir_contents *GetListOfDirContents;
 static debug_platform_read_file_into *ReadFileInto;
 static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
 static debug_output *DebugOutput;
+static debug_read_cpu_timer *ReadCpuTimer;
 
 static u32
 RoundF32ToU32(f32 Real)

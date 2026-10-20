@@ -64,6 +64,8 @@ typedef size_t mem_idx;
 #define Gigabytes(N) (Megabytes(N) * 1024)
 #define Terabytes(N) (Gigabytes(N) * 1024)
 
+#define MAX_ANCHORS 4096
+
 u32
 SafeTruncateU64ToU32(u64 SixtyFour)
 {
@@ -116,6 +118,7 @@ typedef struct debug_read_file_result
     void *Contents;
 } debug_read_file_result;
 
+
 #define DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filepath)
 typedef DEBUG_PLATFORM_GET_FILE_SIZE(debug_platform_get_file_size);
 
@@ -147,6 +150,9 @@ typedef DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(debug_platform_get_file_path_fr
 
 #define DEBUG_OUTPUT(name) void name(const char *Format, ...)
 typedef DEBUG_OUTPUT(debug_output);
+
+#define DEBUG_READ_CPU_TIMER(name) u64 name(void)
+typedef DEBUG_READ_CPU_TIMER(debug_read_cpu_timer);
 
 #endif
 
@@ -275,6 +281,20 @@ GetController(game_input *Input, int ControllerIdx)
     return(Result);
 }
 
+struct profile_anchor
+{
+    u64 TscElapsedExclusive;
+    u64 TscElapsedInclusive;
+    u64 HitCount;
+    const char *Label;
+};
+
+struct global_shared_prof_data
+{
+    u32 gProfilerParent;
+    profile_anchor gProfileAnchors[MAX_ANCHORS];
+};
+
 typedef struct game_memory
 {
     b32 IsInitialized;
@@ -285,6 +305,8 @@ typedef struct game_memory
     mem_idx TransientStorageSize;
     void *TransientStorage; // platform must clear to zero at startup
 
+    global_shared_prof_data *pgSharedProfData;
+
     debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
     debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
     debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
@@ -294,14 +316,15 @@ typedef struct game_memory
     debug_platform_get_dir_write_time *DEBUGPlatformGetDirWriteTime;
     debug_platform_get_list_of_dir_contents *DEBUGPlatformGetListOfDirContents;
     debug_platform_get_file_path_from_dialog *DEBUGPlatformGetFilepathFromDialog;
-    debug_output *DEBUGOutput;
+    debug_output *DebugOutput;
+    debug_read_cpu_timer *DEBUGReadCpuTimer;
 } game_memory;
-
 
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 
 #define GAME_GET_SOUND_SAMPLES(name) void name(game_memory *Memory, game_sound_output_buffer *SoundBuffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+
 }
 

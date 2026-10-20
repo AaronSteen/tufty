@@ -27,7 +27,6 @@
   Just a partial list of stuff!!
 */
 
-#include "tufty_platform.h"
 
 #include <windows.h>
 #include <sys/stat.h>
@@ -52,6 +51,36 @@ DEFINE_GUID(IID_IAudioRenderClient,   0xf294acfc, 0x3146, 0x4483, 0xa7, 0xbf, 0x
 #define HR(stmt) do { HRESULT _hr = stmt; Assert(SUCCEEDED(_hr)); } while (0)
 
 #pragma comment(lib, "ole32")
+
+#include "tufty_platform.h"
+
+DEBUG_OUTPUT(DebugOutput)
+{
+    char PrintBuffer[512];
+    int PrintBufferSize = sizeof(PrintBuffer);
+
+    va_list Args;
+    va_start(Args, Format);
+    int BytesWritten = vsnprintf(PrintBuffer, PrintBufferSize, Format, Args);
+    va_end(Args);
+
+    if(BytesWritten > PrintBufferSize)
+    {
+        OutputDebugStringA("\n\nERROR: DebugOutput function format string did not fit in print buffer\n\n");
+    }
+    OutputDebugStringA(PrintBuffer);
+    OutputDebugStringA("\n");
+
+    return;
+}
+
+#include "platform_metrics.c"
+#define PROFILE_ANCHORS_BASE 0
+#define PROFILE_ANCHORS_LIMIT 2047
+#define PROFILER 1
+#include "prof.h"
+#include "prof_report.h"
+global_shared_prof_data gSharedProfData = {};
 
 #include "win32_tufty_handmade.h"
 
@@ -124,26 +153,6 @@ Win32BuildEXEPathFileName(win32_state *State, char *FileName,
     CatStrings(State->OnePastLastEXEFileNameSlash - State->EXEFileName, State->EXEFileName,
                StringLength(FileName), FileName,
                DestCount, Dest);
-}
-
-DEBUG_OUTPUT(DEBUGOutput)
-{
-    char PrintBuffer[512];
-    int PrintBufferSize = sizeof(PrintBuffer);
-
-    va_list Args;
-    va_start(Args, Format);
-    int BytesWritten = vsnprintf(PrintBuffer, PrintBufferSize, Format, Args);
-    va_end(Args);
-
-    if(BytesWritten > PrintBufferSize)
-    {
-        OutputDebugStringA("\n\nERROR: DebugOutput function format string did not fit in print buffer\n\n");
-    }
-    OutputDebugStringA(PrintBuffer);
-    OutputDebugStringA("\n");
-
-    return;
 }
 
 DEBUG_PLATFORM_GET_FILE_SIZE(DEBUGPlatformGetFileSize)
@@ -440,57 +449,6 @@ DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(DEBUGPlatformGetFilepathFromDialog)
     *GlobalDevKeys = {};
     *GlobalMouse = {};
     
-    return(Result);
-}
-
-static u64
-GetOsTimerFreq(void)
-{
-    LARGE_INTEGER Freq;
-    QueryPerformanceFrequency(&Freq);
-    return(Freq.QuadPart);
-}
-
-static u64
-ReadOsTimer(void)
-{
-    LARGE_INTEGER Counter;
-    QueryPerformanceCounter(&Counter);
-    return(Counter.QuadPart);
-}
-
-static u64
-ReadCpuTimer(void)
-{
-    u64 Result = __rdtsc();
-    return(Result);
-}
-
-static u64
-GuessCpuTimerFreq(void)
-{
-    u64 Result = 0;
-    u64 OsTimerFreq = GetOsTimerFreq();
-    u64 OsWaitTime = 0.1f * OsTimerFreq;
-
-    u64 CpuStart = ReadCpuTimer();
-    u64 OsStart = ReadOsTimer();
-    u64 OsEnd = 0;
-    u64 OsElapsed = 0;
-
-    while(OsElapsed < OsWaitTime)
-    {
-        OsEnd = ReadOsTimer();
-        OsElapsed = OsEnd - OsStart;
-    }
-    u64 CpuEnd = ReadCpuTimer();
-    u64 CpuElapsed = CpuEnd - CpuStart;
-
-    if(OsElapsed)
-    {
-        Result = CpuElapsed * OsTimerFreq / OsElapsed;
-    }
-
     return(Result);
 }
 
@@ -1241,10 +1199,13 @@ WinMain(HINSTANCE Instance,
         LPSTR CommandLine,
         int ShowCode)
 {
+    pgSharedProfData = &gSharedProfData;
+    BeginProfile();
+
     win32_state Win32State = {};
     GlobalWin32State = &Win32State;
 
-    GlobalCpuFreq = GuessCpuTimerFreq();
+    GlobalCpuFreq = GuessCpuFreq();
 
     Win32GetEXEFileName(&Win32State);
 
@@ -1351,6 +1312,7 @@ WinMain(HINSTANCE Instance,
             game_memory GameMemory = {};
             GameMemory.PermanentStorageSize = Megabytes(64);
             GameMemory.TransientStorageSize = Gigabytes(1);
+            GameMemory.pgSharedProfData = &gSharedProfData;
             GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
             GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
             GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
@@ -1360,7 +1322,8 @@ WinMain(HINSTANCE Instance,
             GameMemory.DEBUGPlatformGetDirWriteTime = DEBUGPlatformGetDirWriteTime;
             GameMemory.DEBUGPlatformGetListOfDirContents = DEBUGPlatformGetListOfDirContents;
             GameMemory.DEBUGPlatformGetFilepathFromDialog = DEBUGPlatformGetFilepathFromDialog;
-            GameMemory.DEBUGOutput = DEBUGOutput;
+            GameMemory.DebugOutput = DebugOutput;
+            GameMemory.DEBUGReadCpuTimer = ReadCpuTimer;
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
             // TODO(casey): Use MEM_LARGE_PAGES and call adjust token
@@ -1733,6 +1696,7 @@ WinMain(HINSTANCE Instance,
     {
         // TODO(casey): Logging
     }
-
+    EndAndPrintProfile();
     return(0);
 }
+ProfilerEndOfCompilationUnit;
