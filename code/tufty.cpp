@@ -856,7 +856,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
  
     scratch_arena *pOutfileScratch = GetScratchArena(pScratchHeader);
     arena *pOutfileArena = &pOutfileScratch->Arena;
-    saved_project *pHeader = PushStruct(pOutfileArena, saved_project);
+    saved_project *pHeader = PushPackedStruct(pOutfileArena, saved_project);
 
 // Magic number
     char *pMagicNumber = "TUFT";
@@ -882,7 +882,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
 
 // Player DrawThis.
     pHeader->PlayerDrawThisOffset = pOutfileArena->Cursor;
-    int *pPlayerDrawThisArray = PushArray(pOutfileArena, int, 4);
+    int *pPlayerDrawThisArray = PushPackedArray(pOutfileArena, int, 4);
     for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
         pPlayerDrawThisArray[NthFacing] = 
             pPlayer->FacingBitmaps[NthFacing].DrawThis;
@@ -898,7 +898,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
             if (pIt->IsEmpty() == false) {
                 mem_idx FilepathLen = strlen(pIt->Filepath);
                 ++FilepathLen;
-                char *FilepathBufferInOutfile = PushArray(pOutfileArena, char, FilepathLen);
+                char *FilepathBufferInOutfile = PushPackedArray(pOutfileArena, char, FilepathLen);
                 snprintf(FilepathBufferInOutfile, FilepathLen, "%s", pIt->Filepath);
             }
         }
@@ -912,7 +912,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
         if (pIt->IsEmpty() == false) {
             mem_idx FilepathLen = strlen(pIt->Filepath);
             ++FilepathLen;
-            char *FilepathBufferInOutfile = PushArray(pOutfileArena, char, FilepathLen);
+            char *FilepathBufferInOutfile = PushPackedArray(pOutfileArena, char, FilepathLen);
             snprintf(FilepathBufferInOutfile, FilepathLen, "%s", pIt->Filepath);
         }
     }
@@ -920,7 +920,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
 // Tile values
     pHeader->TileValuesOffset = pOutfileArena->Cursor;
     mem_idx NumTileValuesToCopy = pHeader->NumTileRows * pHeader->NumTileCols;
-    s32 *TileValuesInOutfile = PushArray(pOutfileArena, s32, NumTileValuesToCopy);
+    s32 *TileValuesInOutfile = PushPackedArray(pOutfileArena, s32, NumTileValuesToCopy);
     memcpy(TileValuesInOutfile, pTileMap->TileValues, GetByteCountForTypedArray(s32, NumTileValuesToCopy));
 
 // Write file
@@ -1715,6 +1715,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // @init
     if (!Memory->IsInitialized)
     {
+
         // Random
         pGameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 // ARENA
@@ -1736,6 +1737,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         // Tiles
         InitializeArena(&pGameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
+        PushArray(&pGameState->TileMap.TileTypes.BitmapsArena, u8, 3);
+        PushArray(&pGameState->TileMap.TileTypes.BitmapsArena, u8, 5);
         GameRegionOffset += pGameState->TileMap.TileTypes.BitmapsArena.Size;
         // 40 kb since i think the most tile values we would want is 100 x 100 = 10000 tiles at 4 bytes per = 40000 bytes
         InitializeArena(&pGameState->TileMap.TileValuesArena, GameRegion.Data + GameRegionOffset, Kilobytes(40));

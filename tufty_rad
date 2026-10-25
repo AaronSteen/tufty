@@ -3,6 +3,6 @@
 target:
 {
   executable: "build/win32_tufty_handmade.exe"
-  working_directory: "data/"
+  working_directory: data
   enabled: 1
 }

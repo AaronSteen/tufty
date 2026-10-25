@@ -40,7 +40,7 @@ static void
 EndAndPrintProfile(void)
 {
     gProfiler.EndTsc = ReadCpuTimer();
-    u64 CpuFreq = GuessCpuFreq();
+    u64 CpuFreq = EstimateCpuTimerFreq();
 
     u64 TotalCpuElapsed = gProfiler.EndTsc - gProfiler.StartTsc;
 

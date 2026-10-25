@@ -1205,7 +1205,7 @@ WinMain(HINSTANCE Instance,
     win32_state Win32State = {};
     GlobalWin32State = &Win32State;
 
-    GlobalCpuFreq = GuessCpuFreq();
+    GlobalCpuFreq = EstimateCpuTimerFreq();
 
     Win32GetEXEFileName(&Win32State);
 

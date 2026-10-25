@@ -23,7 +23,7 @@ ReadCpuTimer(void)
 }
 
 static u64
-GuessCpuFreq(void)
+EstimateCpuTimerFreq(void)
 {
     u64 Result = 0;
 

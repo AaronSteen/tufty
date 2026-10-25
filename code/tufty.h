@@ -71,6 +71,7 @@ struct arena
     u8 *Data;
     mem_idx Size;
     mem_idx Cursor;
+    int TempCount;
 };
 
 #define NUM_SCRATCHES 10
@@ -95,21 +96,39 @@ InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
     Arena->Cursor = 0;
 }
 
-static void *
-ArenaPush_(arena *Arena, mem_idx NumBytes)
+static mem_idx
+GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
 {
-    Assert(Arena->Cursor+NumBytes < Arena->Size);
+    mem_idx BytesToNextAlignment = 0;
+    mem_idx ResultPointer = (mem_idx)Arena.Data + Arena.Cursor;
+    mem_idx AlignmentMask = Alignment-1;
+    
+    if (ResultPointer & AlignmentMask) {
+        BytesToNextAlignment = Alignment - (ResultPointer & AlignmentMask);
+    }
 
-    void *Result = Arena->Data + Arena->Cursor;
-    Arena->Cursor += NumBytes;
+    Assert(BytesToNextAlignment < Alignment);
+
+    return BytesToNextAlignment;
+}
+
+static void *
+ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment = 4)
+{
+    mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
+    mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
+    Assert(Arena->Cursor+NumBytesWithAlignment <= Arena->Size);
+    void *Result = Arena->Data + Arena->Cursor + BytesToNextAlignment;
+    Arena->Cursor += NumBytesWithAlignment;
 
     return(Result);
 }
 
-#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count))
-#define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type))
+#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), alignof(Type))
+#define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), alignof(Type))
+#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 1)
+#define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 1)
 #define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
-
 
 struct v2
 {
