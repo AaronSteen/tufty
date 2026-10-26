@@ -45,7 +45,7 @@ static void
 ResetArena(arena *Arena)
 {
     memset(Arena->Data, 0, Arena->Size);
-    Arena->Cursor = 0;
+    Arena->Used = 0;
 }
 
 static scratch_arena *
@@ -874,14 +874,14 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
     }
 
 // Player DrawThis.
-    pHeader->PlayerDrawThisOffset = pOutfileArena->Cursor;
+    pHeader->PlayerDrawThisOffset = pOutfileArena->Used;
     int *pPlayerDrawThisArray = PushPackedArray(pOutfileArena, int, 4);
     for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
         pPlayerDrawThisArray[NthFacing] = 
             pPlayer->FacingBitmaps[NthFacing].DrawThis;
     }
 
-    pHeader->PlayerFilepathsOffset = pOutfileArena->Cursor;
+    pHeader->PlayerFilepathsOffset = pOutfileArena->Used;
 
 // Player filepaths
     for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
@@ -898,7 +898,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
     }
 
 // Tile type filepaths
-    pHeader->TileTypeFilepathsOffset = pOutfileArena->Cursor;
+    pHeader->TileTypeFilepathsOffset = pOutfileArena->Used;
     arr_meta_bitmap *pTypes = &pTileMap->TileTypes;
     for (int Slot = 0; Slot < pTypes->Len; ++Slot) {
         meta_bitmap *pIt = pTypes->Get(Slot);
@@ -911,13 +911,13 @@ SaveProject(tile_map *pTileMap, player *pPlayer, scratch_header *pScratchHeader)
     }
 
 // Tile values
-    pHeader->TileValuesOffset = pOutfileArena->Cursor;
+    pHeader->TileValuesOffset = pOutfileArena->Used;
     mem_idx NumTileValuesToCopy = pHeader->NumTileRows * pHeader->NumTileCols;
     s32 *TileValuesInOutfile = PushPackedArray(pOutfileArena, s32, NumTileValuesToCopy);
     memcpy(TileValuesInOutfile, pTileMap->TileValues, GetByteCountForTypedArray(s32, NumTileValuesToCopy));
 
 // Write file
-    mem_idx NumBytesToWrite = pOutfileArena->Cursor;
+    mem_idx NumBytesToWrite = pOutfileArena->Used;
 
     // TODO(AARON): On Windows we have updated WriteEntireFile to return the number of bytes the file wrote,
     //      so that we can return that from this function.
@@ -1667,25 +1667,11 @@ UpdateTileMapAfterEditorExit(tile_map *pTileMap, undo_step UndoStepToCopy)
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-    mem_region DebugRegion;
-    DebugRegion.Size = Megabytes(16);
-    DebugRegion.Data = (u8 *)Memory->PermanentStorage;
-
-    mem_region GameRegion;
-    GameRegion.Size = Memory->PermanentStorageSize - DebugRegion.Size;
-    GameRegion.Data = (u8 *)Memory->PermanentStorage + DebugRegion.Size;
-
-    mem_region TransientRegion;
-    TransientRegion.Data = (u8 *)Memory->TransientStorage;
-
     // Convenience pointers
-    debug_state *pDebugState = (debug_state *)DebugRegion.Data;
-    editor_state *pEditorState = &pDebugState->EditorState;
     game_state *pGameState = (game_state *)GameRegion.Data;
-    scratch_header *pScratchHeader = (scratch_header *)TransientRegion.Data;
     tile_map *pTileMap = &pGameState->TileMap;
     player *pPlayer = &pGameState->Player;
-    undo_state *pUndoState = &pDebugState->EditorState.UndoState;
+    undo_state *pUndoState = &pGameState->EditorState.UndoState;
 
     pgSharedProfData = Memory->pgSharedProfData;
     GetFileSize = Memory->DEBUGPlatformGetFileSize;
@@ -1708,10 +1694,61 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // @init
     if (!Memory->IsInitialized)
     {
-
         // Random
         pGameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
-// ARENA
+// ARENAS
+        arena *pWorldArena = &pGameState->WorldArena;
+        InitSubArena(&pGameState->FailBitmapsArena, pWorldArena, Megabytes(1));
+        InitSubArena(&pGameState->EditorState->UndoState.UndoStepsArena, pWorldArena, Megabytes(4));
+        InitSubArena(&pGameState->TileMap.TileTypes.BitmapsArena, pWorldArena, Megabytes(4));
+        // 40 kb since i think the most tile values we would want is 100 x 100 = 10000 tiles at 4 bytes per = 40000 bytes
+        InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(40));
+        for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
+            arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
+            InitSubArena(&pGameState->Player->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena, pWorldArena, Megabytes(1));
+        }
+
+        
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         // Debug
         mem_idx DebugRegionOffset = sizeof(debug_state);
         InitializeArena(&pDebugState->DebugTextArena, (DebugRegion.Data + DebugRegionOffset), Megabytes(2));
@@ -1832,7 +1869,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // @Main
 
     // Reset the debug text arena. This has nothing to do with the mouse cursor.
-    pDebugState->DebugTextArena.Cursor = 0;
+    pDebugState->DebugTextArena.Used = 0;
     
     // Bitmap reloading notes:
     //      We have the following objectives:

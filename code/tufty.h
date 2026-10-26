@@ -68,39 +68,38 @@ LerpS32(s32 A, s32 B, f32 T)
 
 struct arena
 {
-    u8 *Data;
+    u8 *pBase;
     mem_idx Size;
-    mem_idx Cursor;
-    int TempCount;
+    mem_idx Used;
 };
 
-#define NUM_SCRATCHES 10
-
-struct scratch_arena
-{
-    b32 IsFree;
-    arena Arena;
-};
-
-struct scratch_header
-{
-    u32 Count;
-    scratch_arena ScratchArenas[NUM_SCRATCHES];
-};
+// #define NUM_SCRATCHES 10
+//
+// struct scratch_arena
+// {
+//     b32 IsFree;
+//     arena Arena;
+// };
+//
+// struct scratch_header
+// {
+//     u32 Count;
+//     scratch_arena ScratchArenas[NUM_SCRATCHES];
+// };
 
 static void
 InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 {
-    Arena->Data = Start;
+    Arena->pBase = Start;
     Arena->Size = Size;
-    Arena->Cursor = 0;
+    Arena->Used = 0;
 }
 
 static mem_idx
 GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
 {
     mem_idx BytesToNextAlignment = 0;
-    mem_idx ResultPointer = (mem_idx)Arena.Data + Arena.Cursor;
+    mem_idx ResultPointer = (mem_idx)Arena.pBase + Arena.Used;
     mem_idx AlignmentMask = Alignment-1;
     
     if (ResultPointer & AlignmentMask) {
@@ -120,17 +119,40 @@ ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
     }
     mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
     mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
-    Assert(Arena->Cursor+NumBytesWithAlignment <= Arena->Size);
-    void *Result = Arena->Data + Arena->Cursor + BytesToNextAlignment;
-    Arena->Cursor += NumBytesWithAlignment;
+    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
+    void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
+    Arena->Used += NumBytesWithAlignment;
 
     return(Result);
 }
 
+static void *
+ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
+{
+    if (Alignment > 0 && Alignment < 4) {
+        Alignment = 16;
+    }
+    mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
+    mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
+    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
+    void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
+    Arena->Used += NumBytesWithAlignment;
+
+    return(Result);
+}
+
+static void
+InitSubArena(arena *pSubArena, arena *pSourceArena, mem_idx Size)
+{
+    pSubArena->Size = Size;
+    pSubArena->pBase = PushArray(pSourceArena, u8, Size);
+    pSubArena->Used = 0;
+}
+
 #define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), alignof(Type))
 #define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), alignof(Type))
-#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 1)
-#define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 1)
+#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 0)
+#define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 0)
 #define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
 
 struct v2
@@ -203,12 +225,6 @@ enum facing
     NORTH,
     WEST,
     SOUTH
-};
-
-struct mem_region
-{
-    mem_idx Size;
-    u8 *Data;
 };
 
 enum wait_state
@@ -550,6 +566,8 @@ struct cursor_state
 struct game_state
 {
     arena WorldArena;
+    arena FailBitmapsArena;
+    editor_state EditorState;
     tile_map TileMap;
     random_series RandomSeries;
     player Player;
@@ -585,12 +603,5 @@ struct editor_state
     cursor_state CursorState;
     b32 PrintRowsCols;
     undo_state UndoState;
-};
-
-struct debug_state
-{
-    arena DebugTextArena;
-    arena FailBitmapsArena;
-    editor_state EditorState;
 };
 
