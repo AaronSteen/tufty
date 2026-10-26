@@ -113,8 +113,11 @@ GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
 }
 
 static void *
-ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment = 4)
+ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
 {
+    if (Alignment < 4) {
+        Alignment = 16;
+    }
     mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
     mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
     Assert(Arena->Cursor+NumBytesWithAlignment <= Arena->Size);

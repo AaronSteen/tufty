@@ -41,17 +41,10 @@ struct quad
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
-
-static void
-ZeroArena(arena *Arena)
-{
-    memset(Arena->Data, 0, Arena->Size);
-}
-
 static void
 ResetArena(arena *Arena)
 {
-    ZeroArena(Arena);
+    memset(Arena->Data, 0, Arena->Size);
     Arena->Cursor = 0;
 }
 
@@ -1737,8 +1730,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         // Tiles
         InitializeArena(&pGameState->TileMap.TileTypes.BitmapsArena, GameRegion.Data + GameRegionOffset, Megabytes(4));
-        PushArray(&pGameState->TileMap.TileTypes.BitmapsArena, u8, 3);
-        PushArray(&pGameState->TileMap.TileTypes.BitmapsArena, u8, 5);
+        arena *pBitmapsArena = &pGameState->TileMap.TileTypes.BitmapsArena;
         GameRegionOffset += pGameState->TileMap.TileTypes.BitmapsArena.Size;
         // 40 kb since i think the most tile values we would want is 100 x 100 = 10000 tiles at 4 bytes per = 40000 bytes
         InitializeArena(&pGameState->TileMap.TileValuesArena, GameRegion.Data + GameRegionOffset, Kilobytes(40));
