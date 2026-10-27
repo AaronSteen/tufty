@@ -114,21 +114,6 @@ GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
 static void *
 ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
 {
-    if (Alignment < 4) {
-        Alignment = 16;
-    }
-    mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
-    mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
-    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
-    void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
-    Arena->Used += NumBytesWithAlignment;
-
-    return(Result);
-}
-
-static void *
-ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
-{
     if (Alignment > 0 && Alignment < 4) {
         Alignment = 16;
     }
@@ -141,6 +126,12 @@ ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
     return(Result);
 }
 
+#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), alignof(Type))
+#define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), alignof(Type))
+#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 0)
+#define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 0)
+#define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
+
 static void
 InitSubArena(arena *pSubArena, arena *pSourceArena, mem_idx Size)
 {
@@ -148,12 +139,6 @@ InitSubArena(arena *pSubArena, arena *pSourceArena, mem_idx Size)
     pSubArena->pBase = PushArray(pSourceArena, u8, Size);
     pSubArena->Used = 0;
 }
-
-#define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), alignof(Type))
-#define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), alignof(Type))
-#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 0)
-#define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 0)
-#define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
 
 struct v2
 {
@@ -563,16 +548,6 @@ struct cursor_state
     int HeldSlot;
 };
 
-struct game_state
-{
-    arena WorldArena;
-    arena FailBitmapsArena;
-    editor_state EditorState;
-    tile_map TileMap;
-    random_series RandomSeries;
-    player Player;
-};
-
 enum which_editor
 {
     NO_EDITOR = 0,
@@ -596,12 +571,21 @@ struct undo_state
     undo_step *UndoStepsArr[MAX_UNDO_STEPS];
 };
 
-
 struct editor_state
 {
     which_editor WhichEditor;
     cursor_state CursorState;
     b32 PrintRowsCols;
     undo_state UndoState;
+};
+
+struct game_state
+{
+    random_series RandomSeries;
+    arena WorldArena;
+    arena FailBitmapsArena;
+    editor_state EditorState;
+    tile_map TileMap;
+    player Player;
 };
 
