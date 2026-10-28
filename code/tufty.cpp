@@ -179,19 +179,46 @@ ActuallyLoadBitmap(meta_bitmap *pIt)
     Assert(pIt->IsPresent());
     ReadFileInto(pIt->Filepath, (u32)pIt->Bitmap.Buffer.Size, pIt->Bitmap.Buffer.Data);
     ParseBitmapHeader(&pIt->Bitmap);
-    pIt->LastWriteTime = GetFileWriteTime(pIt->Filepath);
-    pIt->WaitState = NOTHING;
-    pIt->WaitedFrames = 0;
+    pIt->ReloadState.LastWriteTime = GetFileWriteTime(pIt->Filepath);
 }
+
+static reload_state
+GetUpdatedReloadState(u64 const CheckOsWriteTime, const reload_state ReloadState)
+{
+    reload_state Result = ReloadState;
+    if (ReloadState.WaitState == NOTHING) {
+        if (CheckOsWriteTime && CheckOsWriteTime != ReloadState.LastWriteTime) {
+            Result.WaitState = WAITING;
+            Result.WaitedFrames = 0;
+        }
+    }
+    else if (ReloadState.WaitState == WAITING) {
+        ++Result.WaitedFrames;
+        if (Result.WaitedFrames >= 3) {
+            Result.WaitState = READY_TO_RELOAD;
+        }
+    }
+    else if (ReloadState.WaitState == READY_TO_RELOAD) {
+        if (CheckOsWriteTime && CheckOsWriteTime == ReloadState.LastWriteTime) {
+            Result.WaitState = RELOADED;
+        }
+    }
+    else {
+        Assert(ReloadState.WaitState == RELOADED);
+        Result.WaitState = NOTHING;
+    }
+    return Result;
+}
+
 
 static void
 ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
 {
     meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
     if (!pMetaBitmaps->IsNilBitmap(pIt) && pIt->IsPresent()) {
-        if (pIt->WaitState == READY_TO_RELOAD) {
-            pIt->WaitState = NOTHING;
-            pIt->LastWriteTime = GetFileWriteTime(pIt->Filepath);
+        u64 OsWriteTime = GetFileWriteTime(pIt->Filepath);
+        pIt->ReloadState = GetUpdatedReloadState(OsWriteTime, pIt->ReloadState);
+        if (pIt->ReloadState.WaitState == READY_TO_RELOAD) {
             mem_idx NewBitmapSize = GetFileSize(pIt->Filepath);
             bitmap *pItsBitmap = &pIt->Bitmap;
             if (NewBitmapSize != pItsBitmap->Buffer.Size) {
@@ -199,20 +226,6 @@ ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
                 pItsBitmap->Buffer.Size = NewBitmapSize;
             }
             ActuallyLoadBitmap(pIt);
-        }
-        else if (pIt->WaitState == WAITING) {
-            ++pIt->WaitedFrames;
-            if (pIt->WaitedFrames >= 3) {
-                pIt->WaitedFrames = 0;
-                pIt->WaitState = READY_TO_RELOAD;
-            }
-        }
-        else {
-            u64 OsWriteTime = GetFileWriteTime(pIt->Filepath);
-            if (OsWriteTime && OsWriteTime != pIt->LastWriteTime) {
-                pIt->WaitState = WAITING;
-                pIt->WaitedFrames = 0;
-            }
         }
     }
 }
@@ -308,9 +321,6 @@ LoadTileBitmapsDir(tile_map *pTileMap, arena *pTransArena)
     // Clear bitmap structs in tile types array
     pTileTypes->ClearButLeaveFilepaths();
 
-    pTileMap->LastUpdateTime = GetDirWriteTime("tiles");
-    pTileMap->WaitState = NOTHING;
-    pTileMap->WaitedFrames = 0;
 
     buffer OsFilenames;
     OsFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
@@ -333,6 +343,8 @@ LoadTileBitmapsDir(tile_map *pTileMap, arena *pTransArena)
             ActuallyLoadBitmap(pIt);
         }
     }
+
+    pTileMap->LastUpdateTime = GetDirWriteTime("tiles");
 }
 
 
@@ -349,9 +361,6 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, arena *pTr
 
     char FacingDirpath[STRING_LEN];
     WriteFacingBitmapsDirpathToBuffer(pPlayer, pFacingBitmaps, FacingDirpath);
-    pFacingBitmaps->LastUpdateTime = GetDirWriteTime(FacingDirpath);
-    pFacingBitmaps->WaitState = NOTHING;
-    pFacingBitmaps->WaitedFrames = 0;
 
     buffer OsFilenames;
     OsFilenames.Size = MAX_FACING_BITMAPS * STRING_LEN;
@@ -374,6 +383,8 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, arena *pTr
             ActuallyLoadBitmap(pIt);
         }
     }
+
+    pFacingBitmaps->ReloadState.LastWriteTime = GetDirWriteTime(FacingDirpath);
 }
 
 static void
@@ -1539,7 +1550,6 @@ UpdateTileMapAfterEditorExit(tile_map *pTileMap, undo_step UndoStepToCopy)
     memcpy(pTileMap->TileValues, UndoStepToCopy.TileValues, GetByteCountForTypedArray(s32, UndoStepToCopy.NumTileRows * UndoStepToCopy.NumTileCols));
 }
 
-
 // Resolution of bacbkuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
@@ -1615,6 +1625,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, MAX_TILE_VALUES);
 
+        pTileMap->ReloadState.WaitState = READY_TO_RELOAD;
         LoadTileBitmapsDir(pTileMap, pTransArena);
 
 // Undo
@@ -1629,6 +1640,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pMetaBitmaps->Data = PushArray(&pGameState->WorldArena, meta_bitmap, MAX_FACING_BITMAPS+1);
             pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
             pMetaBitmaps->NextEmptySlot = 1;
+            pFacingBitmaps->ReloadState.WaitState = READY_TO_RELOAD;
             LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, pTransArena);
             if(pMetaBitmaps->Data[1].IsPresent()) {
                 pFacingBitmaps->DrawThis = 1;
@@ -1668,67 +1680,37 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     //      In each case, the simplest way to avoid bugs that result from trying to read a file while
     //          it's still being updated by the OS is to simply wait a few (we wait 3) frames after a change has been detected.
     //          Therefore, we store the write times for dirs and files of interest locally, and, once per frame,
-    //          we compare these with the OS's write times. If the times match, no update has been made.
+    //          we compare these with the OS's write times (in GetUpdatedReloadState). If the times match, no update has been made.
     //          If the times differ, we store the new time and set a ReadyToReload variable to true.
     //          Then we reload after three frames have elapsed.
-
-    // If we set ReadyToReload on the last frame, reload the tiles dir and set ReadyToReload back to false
-    if (pTileMap->WaitState == READY_TO_RELOAD) {
+    u64 CheckTilesUpdateTime = GetDirWriteTime("tiles");
+    pTileMap->ReloadState = GetUpdatedReloadState(CheckTilesUpdateTime, pTileMap->ReloadState);
+    if (pTileMap->ReloadState.WaitState == READY_TO_RELOAD) {
         LoadTileBitmapsDir(pTileMap, pTransArena);
     }
-    // FIX: be more careful. use a function to determine whether it's time to reload.
-    else if (pTileMap->WaitState == WAITING) {
-        ++pTileMap->WaitedFrames;
-        if (pTileMap->WaitedFrames >= 3) {
-            pTileMap->WaitedFrames = 0;
-            pTileMap->WaitState = READY_TO_RELOAD;
-        }
-    }
     else {
-        // Check dir write time and compare
-        u64 CheckUpdateTime = GetDirWriteTime("tiles");
-        if (pTileMap->LastUpdateTime != CheckUpdateTime) {
-            pTileMap->WaitState = WAITING;
-            pTileMap->WaitedFrames = 0;
-        }
-        else {
-            // If we're not planning to reload all bitmaps on the next frame, check each bitmap
-            //      individually to see if that bitmap has been updated.
-            arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
-            for (int Slot = 0; Slot < pTileTypes->Len; ++Slot) {
-                ReloadBitmapIfChanged(pTileTypes, Slot);
-            }
-
+        // If we're not planning to reload all bitmaps on the next frame, check each bitmap
+        //      individually to see if that bitmap has been updated.
+        arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
+        for (int Slot = 0; Slot < pTileTypes->Len; ++Slot) {
+            ReloadBitmapIfChanged(pTileTypes, Slot);
         }
     }
 
+    // Do the same checks for the player bitmaps
     for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
         facing_bitmaps *pThisFacing = &pPlayer->FacingBitmaps[FacingIdx];
-        if (pThisFacing->WaitState == READY_TO_RELOAD)
-        {
+        char ThisFacingBitmapsDirpath[STRING_LEN];
+        WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, ThisFacingBitmapsDirpath);
+        u64 CheckUpdateTime = GetDirWriteTime(ThisFacingBitmapsDirpath);
+        pThisFacing->ReloadState = GetUpdatedReloadState(CheckUpdateTime, pThisFacing->ReloadState);
+        if (pThisFacing->ReloadState.WaitState == READY_TO_RELOAD) {
             LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
         }
-        else if (pThisFacing->WaitState == WAITING) {
-            ++pThisFacing->WaitedFrames;
-            if (pThisFacing->WaitedFrames >= 3) {
-                pThisFacing->WaitState = READY_TO_RELOAD;
-                pThisFacing->WaitedFrames = 0;
-            }
-        }
         else {
-            char Temp[STRING_LEN];
-            WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, Temp);
-            u64 CheckUpdateTime = GetDirWriteTime(Temp);
-            if (pThisFacing->LastUpdateTime != CheckUpdateTime) {
-                pThisFacing->WaitState = WAITING;
-                pThisFacing->WaitedFrames = 0;
-            }
-            // Check if each individual bitmap needs to be reloaded
-            else {
-                arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
-                for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-                    ReloadBitmapIfChanged(pMetaBitmaps, Slot);
-                }
+            arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
+            for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
+                ReloadBitmapIfChanged(pMetaBitmaps, Slot);
             }
         }
     }
@@ -1739,41 +1721,33 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         ++ControllerIdx)
     {
         game_controller_input *Controller = GetController(Input, ControllerIdx);
-        if (Controller->IsAnalog)
-        {
+        if (Controller->IsAnalog) {
         }
-        else
-        {
+        else {
             v2 dPlayer = {};
-            if (Controller->MoveRight.EndedDown)
-            {
+            if (Controller->MoveRight.EndedDown) {
                 dPlayer.X += 1.0f;
                 pPlayer->IsFacing = EAST;
             }
-            if (Controller->MoveUp.EndedDown)
-            {
+            if (Controller->MoveUp.EndedDown) {
                 dPlayer.Y -= 1.0f;
                 pPlayer->IsFacing = NORTH;
             }
-            if (Controller->MoveLeft.EndedDown)
-            {
+            if (Controller->MoveLeft.EndedDown) {
                 dPlayer.X -= 1.0f;
                 pPlayer->IsFacing = WEST;
             }
-            if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown)
-            {
+            if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
                 dPlayer.Y += 1.0f;
                 pPlayer->IsFacing = SOUTH;
             }
-            if ((dPlayer.X != 0) && (dPlayer.Y != 0))
-            {
+            if ((dPlayer.X != 0) && (dPlayer.Y != 0)) {
                 dPlayer.X *= 0.707106781187f;
                 dPlayer.Y *= 0.707106781187f;
             }
             f32 PlayerSpeed = 600.0f;
             
-            if (pGameState->EditorState.WhichEditor == NO_EDITOR)
-            {
+            if (pGameState->EditorState.WhichEditor == NO_EDITOR) {
                 v2 NewPlayerP = pPlayer->Position;
                 NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
                 NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;

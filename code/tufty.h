@@ -251,15 +251,21 @@ enum wait_state
 {
     NOTHING,
     WAITING,
-    READY_TO_RELOAD
+    READY_TO_RELOAD,
+    RELOADED
+};
+
+struct reload_state
+{
+    enum wait_state WaitState;
+    int WaitedFrames;
+    u64 LastWriteTime;
 };
 
 struct meta_bitmap
 {
     char Filepath[STRING_LEN];
-    wait_state WaitState; 
-    int WaitedFrames;
-    u64 LastWriteTime;
+    reload_state ReloadState;
     bitmap Bitmap;
 
     bool 
@@ -348,17 +354,6 @@ struct arr_meta_bitmap
         }
     }
 
-
-    void
-    SetMissing(int Idx) 
-    {
-        if(Idx > 0 && Idx < Len) {
-            Data[Idx].WaitState = NOTHING;
-            Data[Idx].WaitedFrames = 0;
-            Data[Idx].Bitmap = {};
-        }
-    }
-
     void
     SetEmpty(int Idx) 
     {
@@ -405,9 +400,9 @@ struct arr_meta_bitmap
     ClearButLeaveFilepaths(void) 
     {
         for (int Slot = 1; Slot < Len; ++Slot) {
-            Data[Slot].LastWriteTime = 0;
-            Data[Slot].WaitState = NOTHING;
-            Data[Slot].WaitedFrames = 0;
+            Data[Slot].ReloadState.LastWriteTime = 0;
+            Data[Slot].ReloadState.WaitState = NOTHING;
+            Data[Slot].ReloadState.WaitedFrames = 0;
             Data[Slot].Bitmap = {};
         }
     }
@@ -452,8 +447,7 @@ struct arr_meta_bitmap
                 if (Size) {
                     pIt->Bitmap.Buffer.Size = Size;
                     pIt->Bitmap.Buffer.Data = PushArray(&BitmapsArena, u8, Size);
-                    pIt->WaitState = READY_TO_RELOAD;
-                    pIt->WaitedFrames = 0;
+                    pIt->ReloadState.WaitState = READY_TO_RELOAD;
                 }
             }
         }
@@ -479,8 +473,7 @@ struct arr_meta_bitmap
 
 struct tile_map
 {
-    wait_state WaitState;
-    int WaitedFrames;
+    reload_state ReloadState;
     u64 LastUpdateTime;
     int NumRows;
     int NumCols;
@@ -550,10 +543,7 @@ ParseBitmapHeader(bitmap *Bitmap)
 
 struct facing_bitmaps
 {
-    wait_state WaitState;
-    int WaitedFrames;
-    b32 ReadyToReload;
-    u64 LastUpdateTime;
+    reload_state ReloadState;
     int DrawThis;
     arr_meta_bitmap MetaBitmaps;
 };
