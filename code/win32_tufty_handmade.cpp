@@ -1217,6 +1217,10 @@ WinMain(HINSTANCE Instance,
     Win32BuildEXEPathFileName(&Win32State, "handmade_temp.dll",
                               sizeof(TempGameCodeDLLFullPath), TempGameCodeDLLFullPath);
 
+    char GameCodeLockFullPath[WIN32_STATE_FILE_NAME_COUNT];
+    Win32BuildEXEPathFileName(&Win32State, "lock.tmp",
+                              sizeof(GameCodeLockFullPath), GameCodeLockFullPath);
+
     // NOTE(casey): Set the Windows scheduler granularity to 1ms
     // so that our Sleep() can be more granular.
     UINT DesiredSchedulerMS = 1;
@@ -1386,14 +1390,17 @@ WinMain(HINSTANCE Instance,
                 while(GlobalRunning)
                 {
                     NewInput->dtForFrame = TargetSecondsPerFrame;
-                    
                     FILETIME NewDLLWriteTime = Win32GetLastWriteTime(SourceGameCodeDLLFullPath);
+
                     if(CompareFileTime(&NewDLLWriteTime, &Game.DLLLastWriteTime) != 0)
                     {
-                        Win32UnloadGameCode(&Game);
-                        Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
-                                                 TempGameCodeDLLFullPath);
-                        LoadCounter = 0;
+                        WIN32_FILE_ATTRIBUTE_DATA Ignored;
+                        if (GetFileAttributesEx(GameCodeLockFullPath, GetFileExInfoStandard, &Ignored) == 0) {
+                            Win32UnloadGameCode(&Game);
+                            Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
+                                                     TempGameCodeDLLFullPath);
+                            LoadCounter = 0;
+                        }
                     }
 
                     // TODO(casey): Zeroing macro

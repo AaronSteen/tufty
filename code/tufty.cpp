@@ -1157,7 +1157,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
         v2 OutlineMin = {pMenuBitmapsCursor->TileMin.X-1, pMenuBitmapsCursor->TileMin.Y-1};
         v2 OutlineMax = {pMenuBitmapsCursor->TileMax.X+1, pMenuBitmapsCursor->TileMax.Y+1};
         if (pMenuBitmapsCursor->DrawThis) {
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.7, 0.5, 0.8});
+            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.6, 0.5, 0.8});
         }
         else {
             DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
