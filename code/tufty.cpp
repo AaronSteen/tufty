@@ -1574,7 +1574,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // @init
     if (!Memory->IsInitialized)
     {
-        // Random number generator
+        // Seed random number generator
         pGameState->RandomSeries = SeedRandomSeries(Input->CpuTimerReading);
 
 // ARENAS

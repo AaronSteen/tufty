@@ -98,6 +98,9 @@ InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 static mem_idx
 GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
 {
+    if (Alignment == 0) {
+        return 0;
+    }
     mem_idx BytesToNextAlignment = 0;
     mem_idx ResultPointer = (mem_idx)Arena.pBase + Arena.Used;
     mem_idx AlignmentMask = Alignment-1;
@@ -123,14 +126,46 @@ ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
     void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
     Arena->Used += NumBytesWithAlignment;
 
-    return(Result);
+    return Result;
 }
 
+static void *
+ArenaPushZero_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
+{
+    if (Alignment > 0 && Alignment < 4) {
+        Alignment = 16;
+    }
+    mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
+    mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
+    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
+    void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
+    memset(Result, 0, NumBytesWithAlignment);
+    Arena->Used += NumBytesWithAlignment;
+
+    return Result;
+}
+
+#if 0
+
 #define PushArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), alignof(Type))
+#define PushArrayZero(Arena, Type, Count) (Type *)ArenaPushZero_((Arena), sizeof(Type) * (Count), alignof(Type))
 #define PushStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), alignof(Type))
+#define PushStructZero(Arena, Type) (Type *)ArenaPushZero_((Arena), sizeof(Type), alignof(Type))
 #define PushPackedArray(Arena, Type, Count) (Type *)ArenaPush_((Arena), sizeof(Type) * (Count), 0)
+#define PushPackedArrayZero(Arena, Type, Count) (Type *)ArenaPushZero_((Arena), sizeof(Type) * (Count), 0)
 #define PushPackedStruct(Arena, Type) (Type *)ArenaPush_((Arena), sizeof(Type), 0)
+#define PushPackedStructZero(Arena, Type) (Type *)ArenaPushZero_((Arena), sizeof(Type), 0)
 #define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
+
+#else
+
+#define PushArray(Arena, Type, Count) (Type *)ArenaPushZero_((Arena), sizeof(Type) * (Count), alignof(Type))
+#define PushStruct(Arena, Type) (Type *)ArenaPushZero_((Arena), sizeof(Type), alignof(Type))
+#define PushPackedArray(Arena, Type, Count) (Type *)ArenaPushZero_((Arena), sizeof(Type) * (Count), 0)
+#define PushPackedStruct(Arena, Type) (Type *)ArenaPushZero_((Arena), sizeof(Type), 0)
+#define GetByteCountForTypedArray(Type, Num) (sizeof(Type) * (Num))
+
+#endif
 
 static void
 InitSubArena(arena *pSubArena, arena *pSourceArena, mem_idx Size)
