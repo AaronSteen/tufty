@@ -1287,13 +1287,13 @@ WinMain(HINSTANCE Instance,
 
             // TODO(casey): How do we reliably query on this on Windows?
             int MonitorRefreshHz = 60;
-            HDC RefreshDC = GetDC(GlobalWindow);
-            int Win32RefreshRate = GetDeviceCaps(RefreshDC, VREFRESH);
-            ReleaseDC(GlobalWindow, RefreshDC);
-            if(Win32RefreshRate > 1)
-            {
-                MonitorRefreshHz = Win32RefreshRate;
-            }
+            // HDC RefreshDC = GetDC(GlobalWindow);
+            // int Win32RefreshRate = GetDeviceCaps(RefreshDC, VREFRESH);
+            // ReleaseDC(GlobalWindow, RefreshDC);
+            // if(Win32RefreshRate > 1)
+            // {
+            //     MonitorRefreshHz = Win32RefreshRate;
+            // }
             f32 GameUpdateHz = MonitorRefreshHz;
             f32 TargetSecondsPerFrame = 1.0f / (f32)GameUpdateHz;
 

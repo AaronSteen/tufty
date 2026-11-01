@@ -14,6 +14,8 @@
 #define MAX_FACING_BITMAPS 10
 #define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
 #define MAX_UNDO_STEPS 100
+#define MAX_ANIMATION_CELS 11
+#define MAX_ANIMATIONS_PER_FACING 11
 
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
@@ -92,6 +94,13 @@ InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
 {
     Arena->pBase = Start;
     Arena->Size = Size;
+    Arena->Used = 0;
+}
+
+static void
+ResetArena(arena *Arena)
+{
+    memset(Arena->pBase, 0, Arena->Size);
     Arena->Used = 0;
 }
 
@@ -321,7 +330,7 @@ DoFilepathsMatch(char *A, char *B) {
 
 struct arr_meta_bitmap
 {
-    int Len;
+    int Len; // This is the max number of values it can hold, not the current number it's holding
     meta_bitmap *Data;
     int NextEmptySlot;
     arena BitmapsArena;
@@ -541,6 +550,7 @@ ParseBitmapHeader(bitmap *Bitmap)
     Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
 }
 
+
 struct facing_bitmaps
 {
     reload_state ReloadState;
@@ -612,5 +622,27 @@ struct game_state
     editor_state EditorState;
     tile_map TileMap;
     player Player;
+};
+
+static b32
+IsInRect(v2 Point, v2 RectMin, v2 RectMax)
+{
+    b32 Result = ( (Point.X >= RectMin.X) &&
+                   (Point.Y >= RectMin.Y) &&
+                   (Point.X < RectMax.X) &&
+                   (Point.Y < RectMax.Y) );
+    return Result;
+}
+
+// for interacting with stb easyfont
+struct vertex
+{
+    f32 X, Y, Z;
+    u32 Color;
+};
+
+struct quad
+{
+    vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
