@@ -257,10 +257,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Reset the transient arena
     pTransArena->Used = 0;
+    pPlayer->OldFacing = pPlayer->IsFacing;
     
-    // Update animation frame counters
-    // ++gWestAnimations.FrameCounter;
-
     // Bitmap reloading notes:
     //      We have the following objectives:
     //          1. Be able to immediately add bitmaps to the game

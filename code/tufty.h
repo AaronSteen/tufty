@@ -577,10 +577,14 @@ struct animation
     int Width, Height;
 };
 
-struct animation_state
+struct arr_animation
 {
     animation Animations[MAX_ANIMATIONS_PER_FACING + 1];
     arena *pContainingArena;
+};
+
+struct animation_state
+{
     int CurrAnimationIdx;
     int CurrCelIdx;
     f32 MsInCurrCel;
@@ -590,9 +594,11 @@ struct player
 {
     v2 Position;
     int IsFacing;
-    facing_bitmaps FacingBitmaps[4];
+    int OldFacing;
     arena AnimationsArena;
-    animation_state FacingAnimationStates[4];
+    animation_state AnimationState;
+    facing_bitmaps FacingBitmaps[4];
+    arr_animation FacingAnimationArray[4];
 };
 
 enum mouse_mode
@@ -677,22 +683,33 @@ struct quad
 };
 
 static b32
-IsAnimationSlotFree(const animation *pAnimation)
+IsBitmapPresent(bitmap Bitmap)
 {
     b32 Result = false;
-    if (strlen(pAnimation->Filepath) > 0) {
+    if (Bitmap.Pixels == nullptr) {
+        Result = true;
+    }
+    return Result;
+
+}
+
+static b32
+IsAnimationSlotEmpty(animation Animation)
+{
+    b32 Result = false;
+    if (strlen(Animation.Filepath) == 0) {
         Result = true;
     }
     return Result;
 }
 
 static int
-GetNextFreeAnimationSlot(animation_state *pAnimationState)
+GetNextFreeAnimationSlot(const animation_state *pAnimationState)
 {
     int Result = 0;
     for (int Slot = 1; Slot <= MAX_ANIMATIONS_PER_FACING; ++Slot) {
-        animation *pAnimation = pAnimationState->Animations + Slot;
-        if (IsAnimationSlotFree(pAnimation)) {
+        animation Animation = pAnimationState->Animations[Slot];
+        if (IsAnimationSlotEmpty(Animation)) {
             Result = Slot;
             break;
         }
@@ -717,8 +734,15 @@ LoadAnimation(animation_state *pAnimationState, const char *pFilepath)
     if (NextFreeSlot == NIL) { return NIL; }
 
     ase_t *pAseprite = cute_aseprite_load_from_file(pFilepath, NULL);
-    if (pAseprite == nullptr) { return NIL; }
-    if (pAseprite->frame_count > MAX_ANIMATION_CELS) { return NIL; }
+    if (pAseprite == nullptr) { 
+        return NIL; 
+    }
+    if (pAseprite->frame_count > MAX_ANIMATION_CELS) { 
+        return NIL; 
+    }
+    if (pAseprite->mode != ASE_MODE_RGBA) {
+        return NIL;
+    }
 
     animation *pNewAnimation = pAnimationState->Animations + NextFreeSlot;
     strncpy(pNewAnimation->Filepath, pFilepath, STRING_LEN + 1);
@@ -740,3 +764,108 @@ LoadAnimation(animation_state *pAnimationState, const char *pFilepath)
     cute_aseprite_free(pAseprite);
     return NextFreeSlot;
 }
+
+#if 0
+struct animation
+{
+    char Filepath[STRING_LEN + 1];
+    bitmap Cels[MAX_ANIMATION_CELS + 1];
+    int MsForCels[MAX_ANIMATION_CELS + 1];
+    int Width, Height;
+};
+
+struct animation_state
+{
+    animation Animations[MAX_ANIMATIONS_PER_FACING + 1];
+    arena *pContainingArena;
+    int CurrAnimationIdx;
+    int CurrCelIdx;
+    f32 MsInCurrCel;
+};
+
+struct player
+{
+    v2 Position;
+    int OldFacing;
+    int IsFacing;
+    facing_bitmaps FacingBitmaps[4];
+    arena AnimationsArena;
+    animation_state FacingAnimationStates[4];
+};
+#endif
+
+static animation
+GetAnimation(const animation *pAnimations, int AnimationIdx)
+{
+    if (AnimationIdx < 1 || 
+        AnimationIdx > MAX_ANIMATIONS_PER_FACING) {
+            return pAnimations[0];  // return the empty animation at idx 0
+    }
+    else {
+        return pAnimations[AnimationIdx];
+    }
+}
+
+#if 0
+static void
+ResetAnimationState(animation_state *pAnimationState)
+{
+    pAnimationState->CurrCelIdx = 1;
+    pAnimationState->MsInCurrCel = 0;
+}
+#endif
+
+static animation_state
+GetPlayerFacingAnimationState(player Player, facing Facing)
+{
+    animation_state Result = Player.FacingAnimationStates[Facing];
+    return Result;
+}
+
+static void
+UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
+{
+    // This function only updates the player's CurrAnimationCel and MsInCurrCel, based on
+    //      how much time has passed since the last frame was shown.
+    if (pPlayer->OldFacing != pPlayer->IsFacing) {
+        // If player changed direction, reset the current cel to 1
+        //      and the MsInCurrCel to 0
+
+        pPlayer->FacingAnimationStates[pPlayer->IsFacing].CurrCelIdx = 1;
+        pPlayer->FacingAnimationStates[pPlayer->IsFacing].MsInCurrCel = 0;
+    }
+    else {
+        pPlayer->MsInCurrCel += dtForFrame;
+        animation_state CurrAnimationState = GetPlayerFacingAnimationState(*pPlayer, pPlayer->IsFacing);
+        animation CurrAnimation = GetAnimation(&CurrAnimationState.Animations, CurrAnimationState.CurrAnimationIdx);
+        Assert(IsAnimationSlotEmpty(CurrAnimation) == false);
+        if (pPlayer->MsInCurrCel > CurrAnimation.MsForCels[pPlayer->CurrCelIdx]) {
+            pPlayer->MsInCurrCel -= CurrAnimation.MsForCels[pPlayer->CurrCelIdx];
+
+            int CelsInThisAnimation = 0;
+            for (int NthCel = 1; NthCel <= MAX_ANIMATION_CELS; ++NthCel) {
+                if (IsBitmapPresent(CurrAnimation.Cels[NthCel]) == false) {
+                    break;
+                }
+                ++CelsInThisAnimation;
+            }
+            int NewCelIdx = pPlayer->CurrCelIdx + 1;
+            NewCelIdx = (NewCelIdx % CelsInThisAnimation) + 1;
+            pPlayer->CurrCelIdx = NewCelIdx;
+        }
+    }
+}
+
+static bitmap
+GetPlayerAnimationCel(player Player)
+{
+    animation_state CurrAnimationState = GetPlayerFacingAnimationState(Player, Player.IsFacing);
+    animation CurrentAnimation = GetAnimation(&CurrAnimationState.Animations, CurrAnimationState.CurrAnimationIdx);
+    if (IsAnimationSlotEmpty(CurrentAnimation)) {
+        return pGlobalBagel->Bitmap;
+    }
+    else {
+        return CurrentAnimation.Cels[CurrCelIdx]; 
+    }
+}
+
