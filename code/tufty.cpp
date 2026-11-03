@@ -2,8 +2,6 @@
 
 #include "tufty.h"
 #include "stb_easy_font.h"
-#define CUTE_ASEPRITE_IMPLEMENTATION
-#include "cute_aseprite.h"
 
 // global variables
 static meta_bitmap *pGlobalBagel;
@@ -37,7 +35,7 @@ static game_mouse_input *pGlobalMouse;
 // #define DEBUG_PLATFORM_GET_FILE_PATH_FROM_DIALOG(name) int name(char *Dest, int DestSize, b32 IsSave)
 //
 
-static facing_animations gWestAnimations;
+// static facing_animation gWestAnimations;
 
 static void
 GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
@@ -127,6 +125,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
             InitSubArena(&pGameState->Player.FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena, pWorldArena, Megabytes(1));
         }
+        InitSubArena(&pPlayer->AnimationsArena, pWorldArena, Megabytes(1));
 
         // Transient
         InitializeArena(pTransArena, (u8 *)Memory->TransientStorage + sizeof(arena), Memory->TransientStorageSize - sizeof(arena));
@@ -155,11 +154,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pUndoState->UndoStepsArr[0]->NumTileRows = pTileMap->NumRows;
         pUndoState->UndoStepsArr[0]->NumTileCols = pTileMap->NumCols;
 
+        // arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
+        // InitSubArena(&pGameState->Player.FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena, pWorldArena, Megabytes(1));
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             facing_bitmaps *pFacingBitmaps = pPlayer->FacingBitmaps + FacingIdx;
             arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-            pMetaBitmaps->Data = PushArray(&pGameState->WorldArena, meta_bitmap, MAX_FACING_BITMAPS+1);
+            pMetaBitmaps->Data = PushArray(&pMetaBitmaps->BitmapsArena, meta_bitmap, MAX_FACING_BITMAPS+1);
             pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
             pMetaBitmaps->NextEmptySlot = 1;
             pFacingBitmaps->ReloadState.WaitState = READY_TO_RELOAD;
@@ -168,6 +169,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 pFacingBitmaps->DrawThis = 1;
             }
         }
+        for (int Facing = 0; Facing < 4; ++Facing) {
+            pPlayer->FacingAnimationStates[Facing].pContainingArena = &pPlayer->AnimationsArena;
+        }
+        pPlayer->FacingAnimationStates[EAST].CurrAnimationIdx = LoadAnimation(&pPlayer->FacingAnimationStates[EAST], "stardew_walking_east.aseprite");
+        pPlayer->FacingAnimationStates[EAST].CurrCelIdx = 1;
+        pPlayer->FacingAnimationStates[WEST].CurrAnimationIdx = LoadAnimation(&pPlayer->FacingAnimationStates[WEST], "claude_running_west.aseprite");
+        pPlayer->FacingAnimationStates[WEST].CurrCelIdx = 1;
+
         pPlayer->Position.X = Buffer->Width / 2;
         pPlayer->Position.Y = Buffer->Height / 2;
         pPlayer->IsFacing = EAST;
@@ -201,7 +210,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 //              u8 *Pixels (push here)
 //              int Height, Width, BytesPerPixel, Pitch
 //
-        
+#if 0
         ase_t* LoadedAseprite = cute_aseprite_load_from_file("claude_running.aseprite", NULL);
         Assert(LoadedAseprite->frame_count < MAX_ANIMATION_CELS);
         int AseWidth = LoadedAseprite->w;
@@ -226,7 +235,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
 
         cute_aseprite_free(LoadedAseprite);
-    
+#endif 
 
 // Bagel
         // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
@@ -250,7 +259,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     pTransArena->Used = 0;
     
     // Update animation frame counters
-    ++gWestAnimations.FrameCounter;
+    // ++gWestAnimations.FrameCounter;
 
     // Bitmap reloading notes:
     //      We have the following objectives:
@@ -316,9 +325,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             if (Controller->MoveLeft.EndedDown) {
                 dPlayer.X -= 1.0f;
-                if (pPlayer->IsFacing != WEST) {
-                    gWestAnimations.FrameCounter = 0;
-                }
+                // if (pPlayer->IsFacing != WEST) {
+                //     gWestAnimations.FrameCounter = 0;
+                // }
                 pPlayer->IsFacing = WEST;
             }
             if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
@@ -413,21 +422,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     else
     {
-        if (pPlayer->IsFacing == WEST) {
-            facing_animations *pCurrentFacing = &gWestAnimations;
-            bitmap *pToDrawBitmap = GetCurrentAnimationCel(pCurrentFacing, Input->dtForFrame);
-            Assert(pToDrawBitmap->Pixels != nullptr);
-            f32 PlayerWidth = pToDrawBitmap->Width * 2;
-            f32 PlayerHeight = pToDrawBitmap->Height * 2;
-            v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
-                pPlayer->Position.Y - PlayerHeight};
-            v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-
-            // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-            //      in the game when moving character around. test this.
-            ScaleAndBlitBitmap_(Buffer, PlayerMin, PlayerMax, pToDrawBitmap);
-        }
-        else {
+        // if (pPlayer->IsFacing == WEST) {
+        //     facing_animations *pCurrentFacing = &gWestAnimations;
+        //     bitmap *pToDrawBitmap = GetCurrentAnimationCel(pCurrentFacing, Input->dtForFrame);
+        //     Assert(pToDrawBitmap->Pixels != nullptr);
+        //     f32 PlayerWidth = pToDrawBitmap->Width * 2;
+        //     f32 PlayerHeight = pToDrawBitmap->Height * 2;
+        //     v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
+        //         pPlayer->Position.Y - PlayerHeight};
+        //     v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+        //
+        //     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+        //     //      in the game when moving character around. test this.
+        //     ScaleAndBlitBitmap_(Buffer, PlayerMin, PlayerMax, pToDrawBitmap);
+        // }
+        // else {
             facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
             meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
             if (!pToDraw->IsPresent()) {
@@ -442,7 +451,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
             //      in the game when moving character around. test this.
             ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &pToDraw->Bitmap);
-        }
+        // }
     }
 
     // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown

@@ -721,25 +721,21 @@ InitializeCursorState(cursor_state *pCursorState)
     SetHeldBitmapToNil(pCursorState);
 }
 
-struct animation
-{
-    mem_idx NumCels;
-    bitmap Cels[MAX_ANIMATION_CELS + 1];
-};
+// static animation *
+// LoadAnimation(arena *pDestArena, char *Filename)
+// {
+//
+//
+// }
 
-struct facing_animations
-{
-    animation Animations[MAX_ANIMATIONS_PER_FACING + 1];
-    int CurrAnimationIdx;
-    u64 FrameCounter;
-};
 
+#if 0
 static bitmap *
 GetCurrentAnimationCel(facing_animations *pFacingAnimations, f32 dtForFrame)
 {
     bitmap *pResult = 0;
 
-    f32 MsPerAnimationCel = 100.0f;
+
     f32 MsPerGameFrame = dtForFrame * 1000.0f;
 
     animation *CurrAnimation = &pFacingAnimations->Animations[pFacingAnimations->CurrAnimationIdx];
@@ -774,4 +770,5 @@ GetCurrentAnimationCel(facing_animations *pFacingAnimations, f32 dtForFrame)
     // CellIdx = 25 % 6 = 4;
     //
 }
+#endif
 

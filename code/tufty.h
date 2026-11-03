@@ -7,6 +7,9 @@
 #include <math.h>
 #include <string.h>
 
+#define CUTE_ASEPRITE_IMPLEMENTATION
+#include "cute_aseprite.h"
+
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
 #define MAX_TILE_VALUES (100 * 100)
@@ -14,8 +17,9 @@
 #define MAX_FACING_BITMAPS 10
 #define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
 #define MAX_UNDO_STEPS 100
-#define MAX_ANIMATION_CELS 11
-#define MAX_ANIMATIONS_PER_FACING 11
+#define MAX_ANIMATION_CELS 10
+#define MAX_ANIMATIONS_PER_FACING 10
+#define NIL 0
 
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
@@ -558,11 +562,37 @@ struct facing_bitmaps
     arr_meta_bitmap MetaBitmaps;
 };
 
+// Animation heirarchy.
+//  animation_state contains animations
+//      animation contains Cels, which are bitmaps.
+//  
+//
+//          
+
+struct animation
+{
+    char Filepath[STRING_LEN + 1];
+    bitmap Cels[MAX_ANIMATION_CELS + 1];
+    int MsForCels[MAX_ANIMATION_CELS + 1];
+    int Width, Height;
+};
+
+struct animation_state
+{
+    animation Animations[MAX_ANIMATIONS_PER_FACING + 1];
+    arena *pContainingArena;
+    int CurrAnimationIdx;
+    int CurrCelIdx;
+    f32 MsInCurrCel;
+};
+
 struct player
 {
     v2 Position;
     int IsFacing;
     facing_bitmaps FacingBitmaps[4];
+    arena AnimationsArena;
+    animation_state FacingAnimationStates[4];
 };
 
 enum mouse_mode
@@ -646,3 +676,67 @@ struct quad
     vertex TopLeft, TopRight, BottomRight, BottomLeft;
 };
 
+static b32
+IsAnimationSlotFree(const animation *pAnimation)
+{
+    b32 Result = false;
+    if (strlen(pAnimation->Filepath) > 0) {
+        Result = true;
+    }
+    return Result;
+}
+
+static int
+GetNextFreeAnimationSlot(animation_state *pAnimationState)
+{
+    int Result = 0;
+    for (int Slot = 1; Slot <= MAX_ANIMATIONS_PER_FACING; ++Slot) {
+        animation *pAnimation = pAnimationState->Animations + Slot;
+        if (IsAnimationSlotFree(pAnimation)) {
+            Result = Slot;
+            break;
+        }
+    }
+    return Result;
+}
+
+static int
+LoadAnimation(animation_state *pAnimationState, const char *pFilepath)
+{
+    // terminology.
+    //      "Cels" comprise "Animations". Cels are just bitmaps.
+    //      When an animation is played, the first Cel is shown on the screen for
+    //          its specified ms. When that ms has elapsed, the next Cel is shown, etc.
+    //      cute_aseprite uses "Cel" differently: To it, a "cel" is a single layer, in
+    //          the photoshop sense. Multiple "cels" can be layered on top of each other 
+    //          in Aseprite to form a "frame".
+    //      So, our "cel" corresponds to cute_aseprite's "frame". But we don't
+    //          want to use the term frame since that term already means
+    //          something different in the context of our engine.
+    int NextFreeSlot = GetNextFreeAnimationSlot(pAnimationState); 
+    if (NextFreeSlot == NIL) { return NIL; }
+
+    ase_t *pAseprite = cute_aseprite_load_from_file(pFilepath, NULL);
+    if (pAseprite == nullptr) { return NIL; }
+    if (pAseprite->frame_count > MAX_ANIMATION_CELS) { return NIL; }
+
+    animation *pNewAnimation = pAnimationState->Animations + NextFreeSlot;
+    strncpy(pNewAnimation->Filepath, pFilepath, STRING_LEN + 1);
+    pNewAnimation->Width = pAseprite->w;
+    pNewAnimation->Height = pAseprite->h;
+
+    int BytesPerPixel = 4;
+    // Aseprite indexes from 0; we reserve 0 for NIL
+    for (int AsepriteIdx = 0; AsepriteIdx < pAseprite->frame_count; ++AsepriteIdx) {
+        ase_frame_t *pAsepriteCel = pAseprite->frames + AsepriteIdx;
+        int GameIdx = AsepriteIdx + 1;
+        pNewAnimation->MsForCels[GameIdx] = pAsepriteCel->duration_milliseconds;
+
+        mem_idx NumBytesForPixels = pNewAnimation->Width * pNewAnimation->Height * BytesPerPixel;
+        pNewAnimation->Cels[GameIdx].Pixels = PushArray(pAnimationState->pContainingArena, u8, NumBytesForPixels);
+        memcpy(pNewAnimation->Cels[GameIdx].Pixels, pAsepriteCel->pixels, NumBytesForPixels);
+    }
+
+    cute_aseprite_free(pAseprite);
+    return NextFreeSlot;
+}
