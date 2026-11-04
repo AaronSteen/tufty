@@ -1,3 +1,6 @@
+#pragma once
+#include "tufty.h"
+
 static mem_idx
 SaveProject(tile_map *pTileMap, player *pPlayer, arena *pTransArena)
 {
@@ -31,7 +34,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, arena *pTransArena)
     // Magic number
     char *pMagicNumber = "TUFT";
     mem_idx MagicNumberSize = strnlen(pMagicNumber, STRING_LEN);
-    Assert(MagicNumberSize == 4);
+    assert(MagicNumberSize == 4);
     for (int NthLetter = 0; NthLetter < MagicNumberSize; ++NthLetter) {
         pHeader->MagicNumber[NthLetter] = pMagicNumber[NthLetter];
     }
@@ -157,7 +160,7 @@ LoadProject(player *pPlayer, tile_map *pTileMap, arena *pTransArena)
         pMetaBitmaps->FullClear();
         for (int NthFilepath = 0; NthFilepath < pHeader->NumPlayerBitmapsPerFacing[NthFacing]; ++NthFilepath) {
             int AddedToSlotN = pMetaBitmaps->Add(pFilepathToCopyCursor);
-            Assert(AddedToSlotN);
+            assert(AddedToSlotN);
             pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
         }
         LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
@@ -170,7 +173,7 @@ LoadProject(player *pPlayer, tile_map *pTileMap, arena *pTransArena)
     pTileTypes->FullClear();
     for (int NthTileType = 0; NthTileType < pHeader->NumTileTypes; ++NthTileType) {
         int AddedToSlotN = pTileTypes->Add(pFilepathToCopyCursor);
-        Assert(AddedToSlotN);
+        assert(AddedToSlotN);
         pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
     }
 

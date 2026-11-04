@@ -7,9 +7,6 @@
 #include <math.h>
 #include <string.h>
 
-#define CUTE_ASEPRITE_IMPLEMENTATION
-#include "cute_aseprite.h"
-
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
 #define MAX_TILE_VALUES (100 * 100)
@@ -122,7 +119,7 @@ GetBytesToNextAlignment(arena Arena, mem_idx Alignment)
         BytesToNextAlignment = Alignment - (ResultPointer & AlignmentMask);
     }
 
-    Assert(BytesToNextAlignment < Alignment);
+    assert(BytesToNextAlignment < Alignment);
 
     return BytesToNextAlignment;
 }
@@ -135,7 +132,7 @@ ArenaPush_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
     }
     mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
     mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
-    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
+    assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
     void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
     Arena->Used += NumBytesWithAlignment;
 
@@ -150,7 +147,7 @@ ArenaPushZero_(arena *Arena, mem_idx NumBytes, mem_idx Alignment)
     }
     mem_idx BytesToNextAlignment = GetBytesToNextAlignment(*Arena, Alignment);
     mem_idx NumBytesWithAlignment = NumBytes + BytesToNextAlignment;
-    Assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
+    assert(Arena->Used+NumBytesWithAlignment <= Arena->Size);
     void *Result = Arena->pBase + Arena->Used + BytesToNextAlignment;
     memset(Result, 0, NumBytesWithAlignment);
     Arena->Used += NumBytesWithAlignment;
@@ -549,7 +546,7 @@ ParseBitmapHeader(bitmap *Bitmap)
     Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
     Bitmap->Height = Header->Height;
     Bitmap->Width = Header->Width;
-    Assert(Header->BitsPerPixel == 32);
+    assert(Header->BitsPerPixel == 32);
     Bitmap->BytesPerPixel = Header->BitsPerPixel / 8;
     Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
 }
@@ -561,13 +558,6 @@ struct facing_bitmaps
     int DrawThis;
     arr_meta_bitmap MetaBitmaps;
 };
-
-// Animation heirarchy.
-//  animation_state contains animations
-//      animation contains Cels, which are bitmaps.
-//  
-//
-//          
 
 struct animation
 {
@@ -688,3 +678,15 @@ static game_controller_input *GlobalKeyboardController;
 static dev_keys *GlobalDevKeys;
 static game_mouse_input *pGlobalMouse;
 
+// libraries
+#define CUTE_ASEPRITE_IMPLEMENTATION
+#include "cute_aseprite.h"
+#include "stb_easy_font.h"
+
+// headers
+#include "bitmap.h"
+#include "animation.h"
+#include "undo.h"
+#include "tile.h"
+#include "draw.h"
+#include "serialize.h"

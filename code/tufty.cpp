@@ -1,15 +1,6 @@
 #define _CRT_SECURE_NO_DEPRECATE
 
 #include "tufty.h"
-#include "stb_easy_font.h"
-
-#include "bitmap.h"
-#include "animation.h"
-#include "undo.h"
-#include "tile.h"
-#include "draw.h"
-#include "serialize.h"
-
 #define PROFILE_ANCHORS_BASE 2048
 #define PROFILE_ANCHORS_LIMIT MAX_ANCHORS
 #define PROFILER 1
@@ -36,7 +27,8 @@ static void
 GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 {
     s16 ToneVolume = 3000;
-    int WavePeriod = SoundBuffer->SamplesPerSecond/ToneHz;
+    // NOTE(aaron): Dead code(?):
+        // int WavePeriod = SoundBuffer->SamplesPerSecond/ToneHz;
 
     s16 *SampleOut = SoundBuffer->Samples;
     for (int SampleIdx = 0;
@@ -118,7 +110,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(40));
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
-            InitSubArena(&pGameState->Player.FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena, pWorldArena, Megabytes(1));
+            InitSubArena(pArena, pWorldArena, Megabytes(1));
         }
         InitSubArena(&pPlayer->AnimationsArena, pWorldArena, Megabytes(1));
 
@@ -149,8 +141,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pUndoState->UndoStepsArr[0]->NumTileRows = pTileMap->NumRows;
         pUndoState->UndoStepsArr[0]->NumTileCols = pTileMap->NumCols;
 
-        // arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
-        // InitSubArena(&pGameState->Player.FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena, pWorldArena, Megabytes(1));
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             facing_bitmaps *pFacingBitmaps = pPlayer->FacingBitmaps + FacingIdx;
@@ -168,11 +158,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
         LoadAnimation(&pPlayer->FacingAnimationArray[EAST], "stardew_walking_east.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[NORTH], "north.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "claude_running_west.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "south.aseprite");
 
         pPlayer->Position.X = Buffer->Width / 2;
         pPlayer->Position.Y = Buffer->Height / 2;
         pPlayer->IsFacing = EAST;
+        ResetAnimationStateCelParams(&pPlayer->AnimationState);
+        animation DefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
+        assert(IsAnimationSlotEmpty(DefaultAnimation) == false);
+        pPlayer->AnimationState.CurrAnimationIdx = 1;
 
 // Bagel
         // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
@@ -356,37 +352,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     else
     {
-        // if (pPlayer->IsFacing == WEST) {
-        //     facing_animations *pCurrentFacing = &gWestAnimations;
-        //     bitmap *pToDrawBitmap = GetCurrentAnimationCel(pCurrentFacing, Input->dtForFrame);
-        //     Assert(pToDrawBitmap->Pixels != nullptr);
-        //     f32 PlayerWidth = pToDrawBitmap->Width * 2;
-        //     f32 PlayerHeight = pToDrawBitmap->Height * 2;
-        //     v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
-        //         pPlayer->Position.Y - PlayerHeight};
-        //     v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-        //
-        //     // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-        //     //      in the game when moving character around. test this.
-        //     ScaleAndBlitBitmap_(Buffer, PlayerMin, PlayerMax, pToDrawBitmap);
-        // }
-        // else {
-            facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
-            meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
-            if (!pToDraw->IsPresent()) {
-                pToDraw = pGlobalBagel;
-            }
-            f32 PlayerWidth = pToDraw->Bitmap.Width;
-            f32 PlayerHeight = pToDraw->Bitmap.Height;
-            v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
-                pPlayer->Position.Y - PlayerHeight};
-            v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-
-            // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-            //      in the game when moving character around. test this.
-            ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &pToDraw->Bitmap);
-        // }
+        UpdatePlayerAnimationCel(pPlayer, Input->dtForFrame);
+        bitmap ToDraw = GetPlayerAnimationCelForThisFrame(*pPlayer);
+        f32 PlayerWidth = 64.0f;
+        f32 PlayerHeight = 64.0f;
+        v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, pPlayer->Position.Y - PlayerHeight};
+        v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+        ScaleAndBlitBitmap_(Buffer, PlayerMin, PlayerMax, ToDraw);
     }
+        // else {
+            // facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
+            // meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
+            // if (!pToDraw->IsPresent()) {
+            //     pToDraw = pGlobalBagel;
+            // }
+            // f32 PlayerWidth = pToDraw->Bitmap.Width;
+            // f32 PlayerHeight = pToDraw->Bitmap.Height;
+            // v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
+            //     pPlayer->Position.Y - PlayerHeight};
+            // v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+            //
+            // // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
+            // //      in the game when moving character around. test this.
+            // ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &pToDraw->Bitmap);
+        // }
 
     // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
     //      messages are routed to the message loop for the save/load dialog, not our usual

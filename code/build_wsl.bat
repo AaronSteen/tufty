@@ -31,9 +31,40 @@ if exist win32_tufty_handmade.pdb del win32_tufty_handmade.pdb
 echo WAITING FOR PDB > lock.tmp
 "%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\tufty.cpp -LD /link /MAP:tufty.map %CommonLinkerFlags% /EXPORT:GameUpdateAndRender /EXPORT:GameGetSoundSamples
 if %ERRORLEVEL% NEQ 0 (del lock.tmp & exit /b %ERRORLEVEL%)
-echo tufty.dll: OK
+echo tufty.dll: compiled OK
 del lock.tmp
 "%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\win32_tufty_handmade.cpp user32.lib gdi32.lib winmm.lib comdlg32.lib /link /MAP:win32_tufty_handmade.map %CommonLinkerFlags%
 if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
-echo win32_tufty_handmade.exe: OK
+echo win32_tufty_handmade.exe: compiled OK
+
+rem STATIC ANALYSIS (set up Nov 2026)
+rem Runs only when both compiles above succeeded (a failed compile exits before
+rem reaching here), so compiler errors always come first in the quickfix list and
+rem are never repeated by the analyzer.
+rem --analyze runs Clang's static analyzer instead of compiling: it simulates every
+rem path through each function looking for bugs like returning a pointer to a local
+rem variable. No optimization or linker flags, since nothing is built.
+rem Its findings print as "file(line,col): warning: ...", the same shape as compiler
+rem output, so build.sh's sed and Neovim's errorformat handle them unchanged.
+rem They do NOT fail the build, even with -WX. Each run also leaves a .plist report
+rem file here in build\ (for graphical tools; safe to ignore).
+rem
+rem The analyzer's exit code is always 0, so it can't tell us whether it found
+rem anything. Instead, each run's output is saved to a .txt file here in build\,
+rem printed with "type" (so it still reaches the quickfix list), and then searched
+rem with findstr for a real finding. /c:"..." makes findstr search for that exact
+rem text, spaces included; > NUL hides the matching lines it would print. findstr
+rem sets ERRORLEVEL to 0 if it found a match. "): warning:" only matches findings
+rem that point at a file location, like "tufty.h(125,5): warning: ...", and not
+rem the analyzer's location-less "warning: Path diagnostic report ..." notes.
+"%CLANGCL%" %CommonCompilerFlags% --analyze %CODE%\tufty.cpp > analysis_tufty.txt 2>&1
+type analysis_tufty.txt
+findstr /c:"): warning:" analysis_tufty.txt > NUL
+if %ERRORLEVEL% EQU 0 (echo tufty.dll: static analysis found issues) else (echo tufty.dll: static analysis OK)
+
+"%CLANGCL%" %CommonCompilerFlags% --analyze %CODE%\win32_tufty_handmade.cpp > analysis_win32.txt 2>&1
+type analysis_win32.txt
+findstr /c:"): warning:" analysis_win32.txt > NUL
+if %ERRORLEVEL% EQU 0 (echo win32_tufty_handmade.exe: static analysis found issues) else (echo win32_tufty_handmade.exe: static analysis OK)
 popd
+exit /b 0

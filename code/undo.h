@@ -1,3 +1,6 @@
+#pragma once
+#include "tufty.h"
+
 static int
 GetCanonUndoIndex(int OriginIdx, int Step)
 {
@@ -5,7 +8,7 @@ GetCanonUndoIndex(int OriginIdx, int Step)
     //      the additive inverse of max undo steps is an error.
     // Realistically, we don't expect this function to be called 
     //      with step values that are not positive 1 or negative 1.
-    Assert(Step >= -MAX_UNDO_STEPS);
+    assert(Step >= -MAX_UNDO_STEPS);
 
     int Result = ((OriginIdx + Step) % MAX_UNDO_STEPS);
 

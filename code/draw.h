@@ -1,3 +1,6 @@
+#pragma once
+#include "tufty.h"
+
 static void
 DrawSimpleRect(game_offscreen_buffer *Buf,
                v2 Min, v2 Max,
@@ -256,7 +259,7 @@ UpdateCursorStateHoveredFrames(cursor_state *pCursorState)
 static void
 DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *pTransArena)
 {
-    editor_state *pEditorState = &pGameState->EditorState;
+    // editor_state *pEditorState = &pGameState->EditorState;
     player *pPlayer = &pGameState->Player;
     v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.5f), 0};
@@ -387,10 +390,11 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
                     //      holding a valid bmp, replace the clicked
                     //      bmp with the held one, and set held bmp to nil
                     if (pHoveredBitmap->IsMissing() && pCursorState->HeldFacingIdx == pMenuHovered->FacingIdx) {
-                        meta_bitmap *pHeldBitmap =
-                            GetPlayerMetaBitmapPointer(pPlayer, pCursorState->HeldFacingIdx, pCursorState->HeldSlot);
+                        // NOTE(aaron): Dead code(?):
+                            // meta_bitmap *pHeldBitmap =
+                            //     GetPlayerMetaBitmapPointer(pPlayer, pCursorState->HeldFacingIdx, pCursorState->HeldSlot);
                         arr_meta_bitmap *pHoveredContainingArr = GetPlayerArrMetaBitmapPtr(pPlayer, pMenuHovered->FacingIdx);
-                        Assert(pHoveredContainingArr != nullptr);
+                        assert(pHoveredContainingArr != nullptr);
                         pHoveredContainingArr->ReplaceSlotAWithSlotB(pMenuHovered->Slot, pCursorState->HeldSlot);
                         SetHeldBitmapToNil(pCursorState);
                     }
@@ -486,16 +490,6 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
         if (pIt->IsEmpty()) { continue; }
 
         pMenuTilesCursor->Slot = Slot;
-        f32 Width, Height;
-        if (pIt->IsMissing()) {
-            Width = pGlobalBagel->Bitmap.Width;
-            Height = pGlobalBagel->Bitmap.Height;
-        }
-        else {
-            Width = pIt->Bitmap.Width;
-            Height = pIt->Bitmap.Height;
-        }
-
         pMenuTilesCursor->TileMin = {X, Y};
         pMenuTilesCursor->TileMax = pMenuTilesCursor->TileMin + v2{pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
 
@@ -523,7 +517,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
     pMenuTilesCursor = pMenuTiles;
     for (int NthMenuTile = 0; NthMenuTile < NumToDraw; ++NthMenuTile, ++pMenuTilesCursor) {
         meta_bitmap *pToDraw = GetTileTypePointer(pTileMap, pMenuTilesCursor->Slot);
-        bitmap *pBitmap = pBitmap;
+        bitmap *pBitmap = 0;
         if (pToDraw->IsMissing()) {
             pBitmap = &pGlobalBagel->Bitmap;
         }
@@ -744,7 +738,7 @@ GetCurrentAnimationCel(facing_animations *pFacingAnimations, f32 dtForFrame)
     int NumCelsForCurrAnimation = CurrAnimation->NumCels;
     int CellIdx = (CelIdxUnbounded % NumCelsForCurrAnimation) + 1;
 
-    Assert(CurrAnimation->Cels[CellIdx].Pixels != nullptr);
+    assert(CurrAnimation->Cels[CellIdx].Pixels != nullptr);
     pResult = &CurrAnimation->Cels[CellIdx];
     
     return pResult;

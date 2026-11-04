@@ -1,3 +1,5 @@
+#pragma once
+#include "tufty.h"
 
 static void
 WriteFacingBitmapsDirpathToBuffer(player *pPlayer, facing_bitmaps *pFacingBitmaps, char *Buffer)
@@ -34,7 +36,7 @@ GetPlayerArrMetaBitmapPtr(player *pPlayer, int FacingIdx)
 static void
 ActuallyLoadBitmap(meta_bitmap *pIt)
 {
-    Assert(pIt->IsPresent());
+    assert(pIt->IsPresent());
     ReadFileInto(pIt->Filepath, (u32)pIt->Bitmap.Buffer.Size, pIt->Bitmap.Buffer.Data);
     ParseBitmapHeader(&pIt->Bitmap);
     pIt->ReloadState.LastWriteTime = GetFileWriteTime(pIt->Filepath);
@@ -62,7 +64,7 @@ GetUpdatedReloadState(u64 const CheckOsWriteTime, const reload_state ReloadState
         }
     }
     else {
-        Assert(ReloadState.WaitState == RELOADED);
+        assert(ReloadState.WaitState == RELOADED);
         Result.WaitState = NOTHING;
     }
     return Result;
@@ -316,14 +318,14 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap, b
 }
 
 static void
-ScaleAndBlitBitmap_(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
+ScaleAndBlitBitmap_(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap Bitmap)
 {
-    if (!Bitmap->Pixels)
+    if (Bitmap.Pixels == nullptr)
     {
-        return;
+        Bitmap = pGlobalBagel->Bitmap;
     }
-    f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
-    f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
+    f32 XCoef = (f32)Bitmap.Width / (Max.X - Min.X);
+    f32 YCoef = (f32)Bitmap.Height / (Max.Y - Min.Y);
 
     s32 ScreenMinY = RoundF32ToS32(Min.Y);
     s32 ScreenMaxY = RoundF32ToS32(Max.Y);
@@ -361,7 +363,7 @@ ScaleAndBlitBitmap_(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap)
         for (int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
         {
             s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
-            u8 *SrcPixel = Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel;
+            u8 *SrcPixel = Bitmap.Pixels + SrcRow * Bitmap.Pitch + SrcCol * Bitmap.BytesPerPixel;
 
             // Source is RGBA
             // Dest is BGRA
@@ -412,7 +414,9 @@ ChangeHeldPlayerMetaBitmap(player *pPlayer, cursor_state *pCursorState,
                            int NewFacingIdx, int NewSlot)
 {
     if (NewFacingIdx >= 0 && NewFacingIdx < 4) {
-        arr_meta_bitmap *pNewFacingBitmaps = &pPlayer->FacingBitmaps[NewFacingIdx].MetaBitmaps;
+        // TODO: static analyzer flags us not using pNewFacingBitmaps, but since player
+        //      editor is not working right now, cannot check to see if it's ok to remove this.
+        // arr_meta_bitmap *pNewFacingBitmaps = &pPlayer->FacingBitmaps[NewFacingIdx].MetaBitmaps;
         pCursorState->HeldFacingIdx = NewFacingIdx;
         pCursorState->HeldSlot = NewSlot;
     }

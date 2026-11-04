@@ -10,3 +10,5 @@ today
 *.tufty
 *.vscode*
 *Untitled*
+*.aseprite
+*.hmi

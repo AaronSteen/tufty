@@ -41,6 +41,7 @@
 extern "C" {
 
 #include <stdint.h>
+#include <cassert>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -55,8 +56,6 @@ typedef float f32;
 typedef double f64;
 typedef size_t mem_idx;
 
-#define Assert(Expression) if(!(Expression)) {*(volatile int *)0 = 1;}
-
 #define ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
 
 #define Kilobytes(N) (((mem_idx)N) * 1024)
@@ -69,7 +68,7 @@ typedef size_t mem_idx;
 u32
 SafeTruncateU64ToU32(u64 SixtyFour)
 {
-    Assert(SixtyFour <= 0xFFFFFFFF);
+    assert(SixtyFour <= 0xFFFFFFFF);
     u32 Result = (u32)SixtyFour;
 
     return(Result);
@@ -274,7 +273,7 @@ typedef struct game_input
 game_controller_input *
 GetController(game_input *Input, int ControllerIdx)
 {
-    Assert(ControllerIdx < ArrayCount(Input->Controllers));
+    assert(ControllerIdx < ArrayCount(Input->Controllers));
 
     game_controller_input *Result = &Input->Controllers[ControllerIdx];
 

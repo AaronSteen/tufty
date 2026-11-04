@@ -48,7 +48,7 @@ DEFINE_GUID(IID_IAudioClient,         0x1cb9ad4c, 0xdbfa, 0x4c32, 0xb1, 0x78, 0x
 DEFINE_GUID(IID_IAudioClient3,        0x7ed4ee07, 0x8e67, 0x4cd4, 0x8c, 0x1a, 0x2b, 0x7a, 0x59, 0x87, 0xad, 0x42);
 DEFINE_GUID(IID_IAudioRenderClient,   0xf294acfc, 0x3146, 0x4483, 0xa7, 0xbf, 0xad, 0xdc, 0xa7, 0xc2, 0x60, 0xe2);
 
-#define HR(stmt) do { HRESULT _hr = stmt; Assert(SUCCEEDED(_hr)); } while (0)
+#define HR(stmt) do { HRESULT _hr = stmt; assert(SUCCEEDED(_hr)); } while (0)
 
 #pragma comment(lib, "ole32")
 
@@ -122,7 +122,7 @@ Win32GetEXEFileName(win32_state *State)
 {
     // NOTE(casey): Never use MAX_PATH in code that is user-facing, because it
     // can be dangerous and lead to bad results.
-    DWORD SizeOfFilename = GetModuleFileNameA(0, State->EXEFileName, sizeof(State->EXEFileName));
+    GetModuleFileNameA(0, State->EXEFileName, sizeof(State->EXEFileName));
     State->OnePastLastEXEFileNameSlash = State->EXEFileName;
     for(char *Scan = State->EXEFileName;
         *Scan;
@@ -720,7 +720,7 @@ Win32MainWindowCallback(HWND Window,
         {
             if(!GlobalDialogWasOpen)
             {
-                Assert(!"Keyboard input came in through a non-dispatch message!");
+                assert(!"Keyboard input came in through a non-dispatch message!");
             }
         } break;
         
@@ -799,7 +799,7 @@ Win32GetInputFileLocation(win32_state *State, b32 InputStream,
 static win32_replay_buffer *
 Win32GetReplayBuffer(win32_state *State, int unsigned Index)
 {
-    Assert(Index < ArrayCount(State->ReplayBuffers));
+    assert(Index < ArrayCount(State->ReplayBuffers));
     win32_replay_buffer *Result = &State->ReplayBuffers[Index];
     return(Result);
 }
@@ -1149,12 +1149,12 @@ Win32DebugSyncDisplay(win32_offscreen_buffer *Backbuffer,
         ++MarkerIndex)
     {
         win32_debug_time_marker *ThisMarker = &Markers[MarkerIndex];
-        Assert(ThisMarker->OutputPlayCursor < SoundOutput->SecondaryBufferSize);
-        Assert(ThisMarker->OutputWriteCursor < SoundOutput->SecondaryBufferSize);
-        Assert(ThisMarker->OutputLocation < SoundOutput->SecondaryBufferSize);
-        Assert(ThisMarker->OutputByteCount < SoundOutput->SecondaryBufferSize);
-        Assert(ThisMarker->FlipPlayCursor < SoundOutput->SecondaryBufferSize);
-        Assert(ThisMarker->FlipWriteCursor < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->OutputPlayCursor < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->OutputWriteCursor < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->OutputLocation < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->OutputByteCount < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->FlipPlayCursor < SoundOutput->SecondaryBufferSize);
+        assert(ThisMarker->FlipWriteCursor < SoundOutput->SecondaryBufferSize);
 
         DWORD PlayColor = 0xFFFFFFFF;
         DWORD WriteColor = 0xFFFF0000;
@@ -1399,7 +1399,8 @@ WinMain(HINSTANCE Instance,
                             Win32UnloadGameCode(&Game);
                             Game = Win32LoadGameCode(SourceGameCodeDLLFullPath,
                                                      TempGameCodeDLLFullPath);
-                            LoadCounter = 0;
+                            // NOTE(aaron): Dead code(?):
+                                // LoadCounter = 0;
                         }
                     }
 

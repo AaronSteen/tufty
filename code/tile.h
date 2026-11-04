@@ -1,3 +1,6 @@
+#pragma once
+#include "tufty.h"
+
 static void
 SetTileValue(s32 *TileValues, s32 IdxToChange, s32 NewValue)
 {
