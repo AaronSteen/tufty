@@ -23,6 +23,8 @@
 
 // static facing_animation gWestAnimations;
 
+// u64 static gFrameCounter;
+
 static void
 GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 {
@@ -164,7 +166,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         pPlayer->Position.X = Buffer->Width / 2;
         pPlayer->Position.Y = Buffer->Height / 2;
-        pPlayer->IsFacing = EAST;
+        pPlayer->IsFacing = WEST;
         ResetAnimationStateCelParams(&pPlayer->AnimationState);
         animation *pDefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
         assert(IsAnimationSlotEmpty(pDefaultAnimation) == false);
@@ -397,6 +399,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
 
     DEBUGPrintFps(Buffer, Input->Fps, pTransArena);
+    // ++gFrameCounter;
 
 }
 

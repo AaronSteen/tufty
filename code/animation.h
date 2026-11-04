@@ -123,9 +123,9 @@ UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
                 }
                 ++CelsInThisAnimation;
             }
-            int NewCelIdx = pState->MsInCurrCel + 1;
+            int NewCelIdx = pState->CurrCelIdx + 1;
             NewCelIdx = (NewCelIdx % CelsInThisAnimation) + 1;
-            pState->MsInCurrCel = NewCelIdx;
+            pState->CurrCelIdx = NewCelIdx;
         }
     }
 }
