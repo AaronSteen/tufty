@@ -437,3 +437,13 @@ GetPlayerMetaBitmapPointer(player *pPlayer, int FacingIdx, int Slot)
     return pResult;
 }
 
+static b32
+IsBitmapPresent(bitmap Bitmap)
+{
+    b32 Result = false;
+    if (Bitmap.Pixels == nullptr) {
+        Result = true;
+    }
+    return Result;
+
+}

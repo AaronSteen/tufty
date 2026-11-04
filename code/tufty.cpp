@@ -3,13 +3,8 @@
 #include "tufty.h"
 #include "stb_easy_font.h"
 
-// global variables
-static meta_bitmap *pGlobalBagel;
-static game_controller_input *GlobalKeyboardController;
-static dev_keys *GlobalDevKeys;
-static game_mouse_input *pGlobalMouse;
-
 #include "bitmap.h"
+#include "animation.h"
 #include "undo.h"
 #include "tile.h"
 #include "draw.h"
@@ -170,72 +165,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
         }
         for (int Facing = 0; Facing < 4; ++Facing) {
-            pPlayer->FacingAnimationStates[Facing].pContainingArena = &pPlayer->AnimationsArena;
+            pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
-        pPlayer->FacingAnimationStates[EAST].CurrAnimationIdx = LoadAnimation(&pPlayer->FacingAnimationStates[EAST], "stardew_walking_east.aseprite");
-        pPlayer->FacingAnimationStates[EAST].CurrCelIdx = 1;
-        pPlayer->FacingAnimationStates[WEST].CurrAnimationIdx = LoadAnimation(&pPlayer->FacingAnimationStates[WEST], "claude_running_west.aseprite");
-        pPlayer->FacingAnimationStates[WEST].CurrCelIdx = 1;
+        LoadAnimation(&pPlayer->FacingAnimationArray[EAST], "stardew_walking_east.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "claude_running_west.aseprite");
 
         pPlayer->Position.X = Buffer->Width / 2;
         pPlayer->Position.Y = Buffer->Height / 2;
         pPlayer->IsFacing = EAST;
-
-// TEMP. West-facing animation.
-// Heirarchy:
-//      AllPlayerAnimations
-//          East
-//          North
-//          West
-//              animation Animations[10 + 1]
-//                  [0]
-//                      arr_meta_bitmap Cels[10 + 1]
-//                          Len
-//                          meta_bitmap *Data
-//                          int NextEmptySlot
-//                          arena BitmapsArena
-//                  [1]
-//                  [2]
-//                  ...
-//              u64 FrameCounter
-//          South
-
-// We are only working with a single animation for gWestAnimations.
-// We are only working with gWestAnimations[0].Animations[0].Cels.
-//      Cels is just an array of meta bitmaps which have:
-//          filepath (ignore)
-//          reload_state (ignore)
-//          bitmap
-//              buffer (ignore)
-//              u8 *Pixels (push here)
-//              int Height, Width, BytesPerPixel, Pitch
-//
-#if 0
-        ase_t* LoadedAseprite = cute_aseprite_load_from_file("claude_running.aseprite", NULL);
-        Assert(LoadedAseprite->frame_count < MAX_ANIMATION_CELS);
-        int AseWidth = LoadedAseprite->w;
-        int AseHeight = LoadedAseprite->h;
-        int BytesPerPixel = 4;
-        mem_idx NumBytesPerCel = AseWidth * AseHeight * BytesPerPixel;
-
-        gWestAnimations.CurrAnimationIdx = 1;
-
-        animation *pTestAnimation = &gWestAnimations.Animations[1]; 
-        pTestAnimation->NumCels = LoadedAseprite->frame_count;
-
-        for (int NthCel = 0; NthCel < LoadedAseprite->frame_count; ++NthCel) {
-            ase_frame_t *pCelInFile = LoadedAseprite->frames + NthCel;
-            bitmap *pInGameBitmap = &pTestAnimation->Cels[NthCel + 1];
-            pInGameBitmap->Width = AseWidth;
-            pInGameBitmap->Height = AseHeight;
-            pInGameBitmap->BytesPerPixel = BytesPerPixel;
-            pInGameBitmap->Pitch = AseWidth * BytesPerPixel;
-            pInGameBitmap->Pixels = PushArray(&pGameState->WorldArena, u8, NumBytesPerCel);
-            memcpy(pInGameBitmap->Pixels, pCelInFile->pixels, NumBytesPerCel);
-        }
-
-        cute_aseprite_free(LoadedAseprite);
-#endif 
 
 // Bagel
         // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
@@ -380,7 +317,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
 
     // RENDER
-
     {
         TimeBlock("RenderTiles");
         // Tiles
