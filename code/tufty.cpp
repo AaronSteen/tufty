@@ -166,8 +166,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pPlayer->Position.Y = Buffer->Height / 2;
         pPlayer->IsFacing = EAST;
         ResetAnimationStateCelParams(&pPlayer->AnimationState);
-        animation DefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
-        assert(IsAnimationSlotEmpty(DefaultAnimation) == false);
+        animation *pDefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
+        assert(IsAnimationSlotEmpty(pDefaultAnimation) == false);
         pPlayer->AnimationState.CurrAnimationIdx = 1;
 
 // Bagel
@@ -353,12 +353,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else
     {
         UpdatePlayerAnimationCel(pPlayer, Input->dtForFrame);
-        bitmap ToDraw = GetPlayerAnimationCelForThisFrame(*pPlayer);
+        bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
         f32 PlayerWidth = 64.0f;
         f32 PlayerHeight = 64.0f;
         v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, pPlayer->Position.Y - PlayerHeight};
         v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-        ScaleAndBlitBitmap_(Buffer, PlayerMin, PlayerMax, ToDraw);
+        ScaleAndBlitCel(Buffer, PlayerMin, PlayerMax, pToDraw);
     }
         // else {
             // facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];

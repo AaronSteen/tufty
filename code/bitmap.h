@@ -318,14 +318,14 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap, b
 }
 
 static void
-ScaleAndBlitBitmap_(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap Bitmap)
+ScaleAndBlitCel(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *pBitmap)
 {
-    if (Bitmap.Pixels == nullptr)
+    if (pBitmap->Pixels == nullptr)
     {
-        Bitmap = pGlobalBagel->Bitmap;
+        pBitmap = &pGlobalBagel->Bitmap;
     }
-    f32 XCoef = (f32)Bitmap.Width / (Max.X - Min.X);
-    f32 YCoef = (f32)Bitmap.Height / (Max.Y - Min.Y);
+    f32 XCoef = (f32)pBitmap->Width / (Max.X - Min.X);
+    f32 YCoef = (f32)pBitmap->Height / (Max.Y - Min.Y);
 
     s32 ScreenMinY = RoundF32ToS32(Min.Y);
     s32 ScreenMaxY = RoundF32ToS32(Max.Y);
@@ -363,7 +363,7 @@ ScaleAndBlitBitmap_(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap Bitmap)
         for (int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
         {
             s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
-            u8 *SrcPixel = Bitmap.Pixels + SrcRow * Bitmap.Pitch + SrcCol * Bitmap.BytesPerPixel;
+            u8 *SrcPixel = pBitmap->Pixels + SrcRow * pBitmap->Pitch + SrcCol * pBitmap->BytesPerPixel;
 
             // Source is RGBA
             // Dest is BGRA
@@ -442,12 +442,12 @@ GetPlayerMetaBitmapPointer(player *pPlayer, int FacingIdx, int Slot)
 }
 
 static b32
-IsBitmapPresent(bitmap Bitmap)
+IsBitmapPresent(bitmap *pBitmap)
 {
-    b32 Result = false;
-    if (Bitmap.Pixels == nullptr) {
-        Result = true;
+    if (pBitmap->Pixels != nullptr) {
+         return true;
     }
-    return Result;
-
+    else {
+        return false;
+    }
 }

@@ -2,22 +2,22 @@
 #include "tufty.h"
 
 static b32
-IsAnimationSlotEmpty(animation Animation)
+IsAnimationSlotEmpty(const animation *pAnimation)
 {
     b32 Result = false;
-    if (strlen(Animation.Filepath) == 0) {
+    if (strlen(pAnimation->Filepath) == 0) {
         Result = true;
     }
     return Result;
 }
 
 static int
-GetNextFreeAnimationSlot(const arr_animation *pArrAnimation)
+GetNextFreeAnimationSlot(arr_animation *pArrAnimation)
 {
     int Result = 0;
     for (int Slot = 1; Slot <= MAX_ANIMATIONS_PER_FACING; ++Slot) {
-        animation Animation = pArrAnimation->Animations[Slot];
-        if (IsAnimationSlotEmpty(Animation)) {
+        animation *pAnimation = pArrAnimation->Animations + Slot;
+        if (IsAnimationSlotEmpty(pAnimation)) {
             Result = Slot;
             break;
         }
@@ -51,37 +51,41 @@ LoadAnimation(arr_animation *pAnimationArray, const char *pFilepath)
     if (pAseprite->mode != ASE_MODE_RGBA) {
         return NIL;
     }
+    int BytesPerPixel = 4; // if mode is ASE_MODE_RGBA, bpp == 4
 
     animation *pNewAnimation = pAnimationArray->Animations + NextFreeSlot;
     strncpy(pNewAnimation->Filepath, pFilepath, STRING_LEN + 1);
-    pNewAnimation->Width = pAseprite->w;
-    pNewAnimation->Height = pAseprite->h;
 
-    int BytesPerPixel = 4;
     // Aseprite indexes from 0; we reserve 0 for NIL
     for (int AsepriteIdx = 0; AsepriteIdx < pAseprite->frame_count; ++AsepriteIdx) {
         ase_frame_t *pAsepriteCel = pAseprite->frames + AsepriteIdx;
         int GameIdx = AsepriteIdx + 1;
         pNewAnimation->MsForCels[GameIdx] = pAsepriteCel->duration_milliseconds;
 
-        mem_idx NumBytesForPixels = pNewAnimation->Width * pNewAnimation->Height * BytesPerPixel;
-        pNewAnimation->Cels[GameIdx].Pixels = PushArray(pAnimationArray->pContainingArena, u8, NumBytesForPixels);
-        memcpy(pNewAnimation->Cels[GameIdx].Pixels, pAsepriteCel->pixels, NumBytesForPixels);
+        bitmap *pBitmap = pNewAnimation->Cels + GameIdx;
+        pBitmap->Width = pAseprite->w;
+        pBitmap->Height = pAseprite->h;
+        pBitmap->BytesPerPixel = BytesPerPixel;
+        pBitmap->Pitch = pBitmap->Width * pBitmap->BytesPerPixel;
+
+        mem_idx NumBytesForPixels = pBitmap->Width * pBitmap->Height * BytesPerPixel;
+        pBitmap->Pixels = PushArray(pAnimationArray->pContainingArena, u8, NumBytesForPixels);
+        memcpy(pBitmap->Pixels, pAsepriteCel->pixels, NumBytesForPixels);
     }
 
     cute_aseprite_free(pAseprite);
     return NextFreeSlot;
 }
 
-static animation
-GetAnimation(const arr_animation *pAnimationArray, int AnimationIdx)
+static animation *
+GetAnimation(arr_animation *pAnimationArray, int AnimationIdx)
 {
     if (AnimationIdx < 1 || 
         AnimationIdx > MAX_ANIMATIONS_PER_FACING) {
-            return pAnimationArray->Animations[0];  // return the empty animation at idx 0
+            return (pAnimationArray->Animations + 0);  // return the empty animation at idx 0
     }
     else {
-        return pAnimationArray->Animations[AnimationIdx];
+        return (pAnimationArray->Animations + AnimationIdx);
     }
 }
 
@@ -107,14 +111,14 @@ UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
     else {
         arr_animation *pAnimArray = &pPlayer->FacingAnimationArray[pPlayer->IsFacing];
         pState->MsInCurrCel += dtForFrameMs;
-        animation CurrAnimation = GetAnimation(pAnimArray, pState->CurrAnimationIdx);
-        assert(IsAnimationSlotEmpty(CurrAnimation) == false);
-        if (pState->MsInCurrCel > CurrAnimation.MsForCels[pState->CurrCelIdx]) {
-            pState->MsInCurrCel -= CurrAnimation.MsForCels[pState->CurrCelIdx];
+        animation *pCurrAnimation = GetAnimation(pAnimArray, pState->CurrAnimationIdx);
+        assert(IsAnimationSlotEmpty(pCurrAnimation) == false);
+        if (pState->MsInCurrCel > pCurrAnimation->MsForCels[pState->CurrCelIdx]) {
+            pState->MsInCurrCel -= pCurrAnimation->MsForCels[pState->CurrCelIdx];
 
             int CelsInThisAnimation = 0;
             for (int NthCel = 1; NthCel <= MAX_ANIMATION_CELS; ++NthCel) {
-                if (IsBitmapPresent(CurrAnimation.Cels[NthCel]) == false) {
+                if (IsBitmapPresent(&pCurrAnimation->Cels[NthCel]) == false) {
                     break;
                 }
                 ++CelsInThisAnimation;
@@ -126,16 +130,16 @@ UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
     }
 }
 
-static bitmap
-GetPlayerAnimationCelForThisFrame(player Player)
+static bitmap *
+GetPlayerAnimationCelForThisFrame(player *pPlayer)
 {
-    animation CurrAnimation = GetAnimation(&Player.FacingAnimationArray[Player.IsFacing], 
-                                           Player.AnimationState.CurrAnimationIdx);
-    if (IsAnimationSlotEmpty(CurrAnimation)) {
-        return pGlobalBagel->Bitmap;
+    animation *pCurrAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 
+                                           pPlayer->AnimationState.CurrAnimationIdx);
+    if (IsAnimationSlotEmpty(pCurrAnimation)) {
+        return &pGlobalBagel->Bitmap;
     }
     else {
-        return CurrAnimation.Cels[Player.AnimationState.CurrCelIdx]; 
+        return &pCurrAnimation->Cels[pPlayer->AnimationState.CurrCelIdx]; 
     }
 }
 

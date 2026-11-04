@@ -564,7 +564,6 @@ struct animation
     char Filepath[STRING_LEN + 1];
     bitmap Cels[MAX_ANIMATION_CELS + 1];
     int MsForCels[MAX_ANIMATION_CELS + 1];
-    int Width, Height;
 };
 
 struct arr_animation
