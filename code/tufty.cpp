@@ -6,6 +6,9 @@
 #define PROFILER 1
 #include "prof.h"
 
+#define PLAYER_HEIGHT 64.0f
+#define PLAYER_WIDTH 32.0f
+
 // DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 // DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
 // DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *Filename)
@@ -124,6 +127,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 // Tiles        
         // TileMap dimensions
         pTileMap->TileSideInPixels = 64.0f;
+        pTileMap->TileSideInMeters = 1.4f;
 
         // Tile types, i.e., the tiles that populate the tiles menu in the editor
         arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
@@ -164,8 +168,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "claude_running_west.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "south.aseprite");
 
-        pPlayer->Position.X = Buffer->Width / 2;
-        pPlayer->Position.Y = Buffer->Height / 2;
+        pPlayer->Pos.X = Buffer->Width / 2;
+        pPlayer->Pos.Y = Buffer->Height / 2;
         pPlayer->IsFacing = WEST;
         ResetAnimationStateCelParams(&pPlayer->AnimationState);
         animation *pDefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
@@ -245,39 +249,42 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         game_controller_input *Controller = GetController(Input, ControllerIdx);
         if (Controller->IsAnalog) {
+
         }
         else {
-            v2 dPlayer = {};
+            v2 Acceleration = {};
             if (Controller->MoveRight.EndedDown) {
-                dPlayer.X += 1.0f;
+                Acceleration.X += 1.0f;
                 pPlayer->IsFacing = EAST;
             }
             if (Controller->MoveUp.EndedDown) {
-                dPlayer.Y -= 1.0f;
+                Acceleration.Y -= 1.0f;
                 pPlayer->IsFacing = NORTH;
             }
             if (Controller->MoveLeft.EndedDown) {
-                dPlayer.X -= 1.0f;
-                // if (pPlayer->IsFacing != WEST) {
-                //     gWestAnimations.FrameCounter = 0;
-                // }
+                Acceleration.X -= 1.0f;
                 pPlayer->IsFacing = WEST;
             }
             if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
-                dPlayer.Y += 1.0f;
+                Acceleration.Y += 1.0f;
                 pPlayer->IsFacing = SOUTH;
             }
-            if ((dPlayer.X != 0) && (dPlayer.Y != 0)) {
-                dPlayer.X *= 0.707106781187f;
-                dPlayer.Y *= 0.707106781187f;
-            }
-            f32 PlayerSpeed = 600.0f;
-            
             if (pGameState->EditorState.WhichEditor == NO_EDITOR) {
-                v2 NewPlayerP = pPlayer->Position;
-                NewPlayerP.X += dPlayer.X * PlayerSpeed * Input->dtForFrame;
-                NewPlayerP.Y += dPlayer.Y * PlayerSpeed * Input->dtForFrame;
-                pPlayer->Position = NewPlayerP;
+                if ((Acceleration.X != 0) && (Acceleration.Y != 0)) {
+                    Acceleration *= 0.707106781187f;
+                }
+
+                f32 PlayerSpeed = 5.0f;
+                Acceleration *= PlayerSpeed;
+                Acceleration += -0.5f * pPlayer->Velo;
+
+                f32 MetersToPixels = pTileMap->TileSideInPixels / pTileMap->TileSideInMeters;
+
+                pPlayer->Pos += (0.5f * Acceleration * Square(Input->dtForFrame) +
+                                pPlayer->Velo * Input->dtForFrame) *
+                                MetersToPixels;
+
+                pPlayer->Velo += Acceleration * Input->dtForFrame * MetersToPixels;
             }
         }
     }
@@ -356,10 +363,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         UpdatePlayerAnimationCel(pPlayer, Input->dtForFrame);
         bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
-        f32 PlayerWidth = 64.0f;
-        f32 PlayerHeight = 64.0f;
-        v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, pPlayer->Position.Y - PlayerHeight};
-        v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
+
+        v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
+        v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
         ScaleAndBlitCel(Buffer, PlayerMin, PlayerMax, pToDraw);
     }
         // else {
@@ -399,7 +405,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
 
     DEBUGPrintFps(Buffer, Input->Fps, pTransArena);
-    // ++gFrameCounter;
 
 }
 

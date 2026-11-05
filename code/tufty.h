@@ -7,6 +7,10 @@
 #include <math.h>
 #include <string.h>
 
+// headers everyone needs
+#include "tufty_math.h"
+#include "myrandom.h"
+
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
 #define MAX_TILE_VALUES (100 * 100)
@@ -31,44 +35,6 @@ static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
 static debug_output *DebugOutput;
 static debug_read_cpu_timer *ReadCpuTimer;
 
-static u32
-RoundF32ToU32(f32 Real)
-{
-    u32 Result = (u32)roundf(Real);
-    return(Result);
-}
-
-static s32
-RoundF32ToS32(f32 Real)
-{
-    s32 Result = (s32)roundf(Real);
-    return(Result);
-}
-
-static s32
-FloorF32ToS32(f32 Real)
-{
-    s32 Result = (s32)floorf(Real);
-    return(Result);
-}
-
-static s32
-CeilingF32ToS32(f32 Real)
-{
-    s32 Result = (s32)ceilf(Real);
-    return(Result);
-}
-
-static s32
-LerpS32(s32 A, s32 B, f32 T)
-{
-    s32 Result = A + T * (B - A);
-    return(Result);
-}
-
-
-#include "myrandom.h"
-
 struct arena
 {
     u8 *pBase;
@@ -76,19 +42,139 @@ struct arena
     mem_idx Used;
 };
 
-// #define NUM_SCRATCHES 10
-//
-// struct scratch_arena
-// {
-//     b32 IsFree;
-//     arena Arena;
-// };
-//
-// struct scratch_header
-// {
-//     u32 Count;
-//     scratch_arena ScratchArenas[NUM_SCRATCHES];
-// };
+struct v2
+{
+    f32 X, Y;
+};
+
+v2
+operator+(v2 A, v2 B)
+{
+    v2 Result;
+
+    Result.X = A.X + B.X;
+    Result.Y = A.Y + B.Y;
+
+    return Result;
+}
+
+v2
+operator-(v2 A, v2 B)
+{
+    v2 Result;
+
+    Result.X = A.X - B.X;
+    Result.Y = A.Y - B.Y;
+
+    return Result;
+}
+
+v2
+operator*(int Scalar, v2 Vector)
+{
+    v2 Result;
+
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2
+operator*(v2 Vector, int Scalar)
+{
+    v2 Result;
+
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2 &
+operator*=(v2 &Vector, int Scalar)
+{
+    Vector.X = Vector.X * Scalar;
+    Vector.Y = Vector.Y * Scalar;
+
+    return Vector;
+}
+
+v2
+operator*(f32 Scalar, v2 Vector)
+{
+    v2 Result;
+    
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2
+operator*(v2 Vector, f32 Scalar)
+{
+    v2 Result;
+
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2 &
+operator*=(v2 &Vector, f32 Scalar)
+{
+    Vector.X = Vector.X * Scalar;
+    Vector.Y = Vector.Y * Scalar;
+
+    return Vector;
+}
+
+v2
+operator*(f64 Scalar, v2 Vector)
+{
+    v2 Result;
+
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2
+operator*(v2 Vector, f64 Scalar)
+{
+    v2 Result;
+
+    Result.X = Scalar * Vector.X;
+    Result.Y = Scalar * Vector.Y;
+
+    return Result;
+}
+
+v2 &
+operator*=(v2 &Vector, f64 Scalar)
+{
+    Vector.X = Vector.X * Scalar;
+    Vector.Y = Vector.Y * Scalar;
+
+    return Vector;
+}
+
+v2
+operator+=(v2 &A, v2 B)
+{
+    A = A + B;
+    return A;
+}
+
+b32
+operator==(v2 A, v2 B)
+{
+    b32 Result = ((A.X == B.X) && (A.Y == B.Y));
+    return Result;
+}
 
 static void
 InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
@@ -183,47 +269,6 @@ InitSubArena(arena *pSubArena, arena *pSourceArena, mem_idx Size)
     pSubArena->Size = Size;
     pSubArena->pBase = PushArray(pSourceArena, u8, Size);
     pSubArena->Used = 0;
-}
-
-struct v2
-{
-    f32 X, Y;
-};
-
-v2
-operator+(v2 A, v2 B)
-{
-    v2 Result;
-
-    Result.X = A.X + B.X;
-    Result.Y = A.Y + B.Y;
-
-    return(Result);
-}
-
-v2
-operator-(v2 A, v2 B)
-{
-    v2 Result;
-
-    Result.X = A.X - B.X;
-    Result.Y = A.Y - B.Y;
-
-    return(Result);
-}
-
-v2
-operator+=(v2 &A, v2 B)
-{
-    A = A + B;
-    return(A);
-}
-
-b32
-operator==(v2 A, v2 B)
-{
-    b32 Result = ((A.X == B.X) && (A.Y == B.Y));
-    return(Result);
 }
 
 struct color
@@ -467,7 +512,7 @@ struct arr_meta_bitmap
     IsNilBitmap(meta_bitmap *pToCheck) const
     {
         bool Result = (pToCheck - Data == 0);
-        return(Result);
+        return Result;
     }
 
     void
@@ -488,6 +533,7 @@ struct tile_map
     int NumRows;
     int NumCols;
     arr_meta_bitmap TileTypes;
+    f32 TileSideInMeters;
     f32 TileSideInPixels;
     arena TileValuesArena;
     s32 *TileValues;
@@ -581,7 +627,8 @@ struct animation_state
 
 struct player
 {
-    v2 Position;
+    v2 Pos;
+    v2 Velo;
     int IsFacing;
     int OldFacing;
     arena AnimationsArena;

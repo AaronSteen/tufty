@@ -10,6 +10,15 @@ if [ "$MODE" != "debug" ] && [ "$MODE" != "release" ]; then
     exit 1
 fi
 
+# Optional second word: "analyze" also runs the static analyzer after a successful
+# compile. Left out, it's a plain compile. In Neovim: <leader>b = compile only,
+# <leader>ab = compile + analyze (runs "./build.sh debug analyze").
+ANALYZE="$2"
+if [ -n "$ANALYZE" ] && [ "$ANALYZE" != "analyze" ]; then
+    echo "build.sh: unknown option '$ANALYZE' (expected analyze, or nothing)"
+    exit 1
+fi
+
 mkdir -p "$BUILD"
 
 # compile_commands.json tells clangd exactly how each file is compiled, so it can
@@ -55,6 +64,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
     echo "tufty: compiled OK"
 
     # STATIC ANALYSIS (set up Nov 2026)
+    # Skipped unless "analyze" was passed (see the top of this file), because it
+    # adds a lot to build time.
+    if [ "$ANALYZE" != "analyze" ]; then exit 0; fi
     # Runs only when every compile above succeeded (each one exits on failure), so
     # compiler errors always come first in the quickfix list and are never repeated
     # by the analyzer. --analyze runs Clang's static analyzer instead of compiling.
@@ -84,10 +96,11 @@ if [ "$(uname -s)" = "Darwin" ]; then
 else
     SCRIPT_WIN=$(wslpath -w "$SCRIPT_DIR/build_wsl.bat")
 
-    # build_wsl.bat compiles, then (only if the compile succeeded) runs the static
-    # analyzer. Both outputs come through this same sed, so analyzer findings get
+    # build_wsl.bat compiles, then (only if asked to and the compile succeeded)
+    # runs the static analyzer. Both outputs come through this same sed, so analyzer findings get
     # the same path and (line,col) -> :line:col conversion as compiler errors.
-    cmd.exe /c "$SCRIPT_WIN" "$MODE" 2>&1 | sed \
+    # "$ANALYZE" is either "analyze" or empty; build_wsl.bat reads it as %2.
+    cmd.exe /c "$SCRIPT_WIN" "$MODE" "$ANALYZE" 2>&1 | sed \
         -e 's|\r||g' \
         -e 's|C:\\Users\\ams56\\work\\|/mnt/c/Users/ams56/work/|g' \
         -e 's|\\|/|g' \

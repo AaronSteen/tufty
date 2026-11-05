@@ -1,3 +1,6 @@
+#pragma once
+#include "tufty.h"
+
 struct random_series
 {
     u64 A, B, C, D;

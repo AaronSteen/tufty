@@ -4,6 +4,10 @@ set MODE=%1
 if "%MODE%"=="" set MODE=debug
 set OptFlag=-Od
 if /i "%MODE%"=="release" set OptFlag=-O2
+rem Optional second argument from build.sh: "analyze" also runs the static
+rem analyzer after a successful compile. Empty means compile only.
+rem (%~2 strips the quotes build.sh puts around it, so an empty one becomes truly empty.)
+set ANALYZE=%~2
 
 set VCVARSALL=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat
 set CLANGCL=C:\ProgramDirIMade\clang+llvm-21.1.4-x86_64-pc-windows-msvc\clang+llvm-21.1.4-x86_64-pc-windows-msvc\bin\clang-cl.exe
@@ -29,7 +33,7 @@ echo build mode: %MODE%
 if exist tufty.pdb del tufty.pdb
 if exist win32_tufty_handmade.pdb del win32_tufty_handmade.pdb
 echo WAITING FOR PDB > lock.tmp
-"%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\tufty.cpp -LD /link /MAP:tufty.map %CommonLinkerFlags% /EXPORT:GameUpdateAndRender /EXPORT:GameGetSoundSamples
+"%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\tufty.cpp -LD /link /MAP:tufty.map %CommonLinkerFlags% /EXPORT:GameUpdateAndRender /EXPORT:GameGetSoundSamples /NOIMPLIB /NOEXP
 if %ERRORLEVEL% NEQ 0 (del lock.tmp & exit /b %ERRORLEVEL%)
 echo tufty.dll: compiled OK
 del lock.tmp
@@ -38,6 +42,10 @@ if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 echo win32_tufty_handmade.exe: compiled OK
 
 rem STATIC ANALYSIS (set up Nov 2026)
+rem Skipped unless build.sh passed "analyze", because it adds a lot to build time.
+rem "goto" jumps to the line labeled :done near the bottom of this file, so
+rem everything between here and there is skipped.
+if /i not "%ANALYZE%"=="analyze" goto done
 rem Runs only when both compiles above succeeded (a failed compile exits before
 rem reaching here), so compiler errors always come first in the quickfix list and
 rem are never repeated by the analyzer.
@@ -66,5 +74,7 @@ if %ERRORLEVEL% EQU 0 (echo tufty.dll: static analysis found issues) else (echo 
 type analysis_win32.txt
 findstr /c:"): warning:" analysis_win32.txt > NUL
 if %ERRORLEVEL% EQU 0 (echo win32_tufty_handmade.exe: static analysis found issues) else (echo win32_tufty_handmade.exe: static analysis OK)
+
+:done
 popd
 exit /b 0
