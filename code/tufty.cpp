@@ -105,14 +105,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         InitializeArena(pWorldArena, (u8 *)Memory->PermanentStorage + sizeof(game_state), Memory->PermanentStorageSize - sizeof(game_state));
         InitSubArena(&pGameState->FailBitmapsArena, pWorldArena, Megabytes(1));
         
-        // Assumption: 40 kb covers the most tile values we'd ever want to store in a tilemap, assuming that max is 
-        //      100 x 100 = 10000 tiles at 4 bytes per = 40000 bytes. 
-        //
-        //      ...and we need to know how many bytes to allocate for the tile values for the undo steps below.
-        InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Megabytes(4));
-        InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(100));
+
         InitSubArena(&pGameState->TileMap.TileTypes.BitmapsArena, pWorldArena, Megabytes(4));
-        InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(40));
+        pTileMap->RowsInWorld = 221;
+        pTileMap->ColsInWorld = 393;
+        int NumTilesInWorld = pTileMap->RowsInWorld * pTileMap->ColsInWorld; // 221 * 393 = 86,853 total tiles
+        int BytesForAllTilesInWorld = GetByteCountForTypedArray(int, NumTilesInWorld); // 86853 tiles & 4 bytes per = 347,412 bytes 
+        // Round up to nearest kilobyte:
+        int KbForAllTilesInWorld = 1;
+        while (Kilobytes(KbForAllTilesInWorld) < BytesForAllTilesInWorld) {
+            assert(Kilobytes(KbForAllTilesInWorld) <= Kilobytes(500));
+            ++KbForAllTilesInWorld;
+        }
+        InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(KbForAllTilesInWorld));
+        InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * MAX_UNDO_STEPS);
+        InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * 2);
+
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
             arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
             InitSubArena(pArena, pWorldArena, Megabytes(1));

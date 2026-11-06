@@ -535,6 +535,8 @@ struct tile_map
     arr_meta_bitmap TileTypes;
     f32 TileSideInMeters;
     f32 TileSideInPixels;
+    int RowsInWorld;
+    int ColsInWorld;
     arena TileValuesArena;
     s32 *TileValues;
 };
@@ -664,8 +666,6 @@ enum which_editor
 
 struct undo_step
 {
-    int NumTileRows;
-    int NumTileCols;
     s32 *TileValues;
 };
 
