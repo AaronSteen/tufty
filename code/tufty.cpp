@@ -274,9 +274,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     Acceleration *= 0.707106781187f;
                 }
 
-                f32 PlayerSpeed = 5.0f;
+                f32 PlayerSpeed = 15.0f;
                 Acceleration *= PlayerSpeed;
-                Acceleration += -0.5f * pPlayer->Velo;
+                Acceleration += -1.8f * pPlayer->Velo;
 
                 f32 MetersToPixels = pTileMap->TileSideInPixels / pTileMap->TileSideInMeters;
 
@@ -284,7 +284,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 pPlayer->Velo * Input->dtForFrame) *
                                 MetersToPixels;
 
-                pPlayer->Velo += Acceleration * Input->dtForFrame * MetersToPixels;
+                pPlayer->Velo += Acceleration * Input->dtForFrame;
             }
         }
     }
@@ -322,30 +322,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
 
     // RENDER
-    {
-        TimeBlock("RenderTiles");
-        // Tiles
-        for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
-            for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
-                int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap->NumCols, v2{(f32)Col, (f32)Row});
-                s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
-                v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
-                v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
+    // Tiles
+    for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
+        for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
+            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap->NumCols, v2{(f32)Col, (f32)Row});
+            s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
+            v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
+            v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
 
-                if (TileValue > 0) {
-                    meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
-                    bitmap *pBitmap = &pToDraw->Bitmap;
-                    // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
-                    //      but if we change the tile size from 64x64 then we will
-                    if (pToDraw->IsPresent() == false) {
-                        pBitmap = &pGlobalBagel->Bitmap;
-                    }
-                    ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
+            if (TileValue > 0) {
+                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
+                bitmap *pBitmap = &pToDraw->Bitmap;
+                // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
+                //      but if we change the tile size from 64x64 then we will
+                if (pToDraw->IsPresent() == false) {
+                    pBitmap = &pGlobalBagel->Bitmap;
                 }
-                if (pGameState->EditorState.WhichEditor == TILE)
-                {
-                    DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
-                }
+                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
+            }
+            if (pGameState->EditorState.WhichEditor == TILE)
+            {
+                DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
             }
         }
     }
