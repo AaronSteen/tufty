@@ -7,34 +7,6 @@
 #include <math.h>
 #include <string.h>
 
-// headers everyone needs
-#include "tufty_math.h"
-#include "myrandom.h"
-
-#define STRING_LEN 250
-#define MAX_TILE_TYPES 200
-#define MAX_TILE_VALUES (100 * 100)
-#define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
-#define MAX_FACING_BITMAPS 10
-#define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
-#define MAX_UNDO_STEPS 100
-#define MAX_ANIMATION_CELS 10
-#define MAX_ANIMATIONS_PER_FACING 10
-#define NIL 0
-
-// Platform services
-static debug_platform_get_file_size *GetFileSize;
-static debug_platform_free_file_memory *FreeFileMemory;
-static debug_platform_read_entire_file *ReadEntireFile;
-static debug_platform_write_entire_file *WriteEntireFile;
-static debug_platform_get_file_write_time *GetFileWriteTime;
-static debug_platform_get_dir_write_time *GetDirWriteTime;
-static debug_platform_get_list_of_dir_contents *GetListOfDirContents;
-static debug_platform_read_file_into *ReadFileInto;
-static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
-static debug_output *DebugOutput;
-static debug_read_cpu_timer *ReadCpuTimer;
-
 struct arena
 {
     u8 *pBase;
@@ -104,7 +76,7 @@ v2
 operator*(f32 Scalar, v2 Vector)
 {
     v2 Result;
-    
+
     Result.X = Scalar * Vector.X;
     Result.Y = Scalar * Vector.Y;
 
@@ -175,6 +147,38 @@ operator==(v2 A, v2 B)
     b32 Result = ((A.X == B.X) && (A.Y == B.Y));
     return Result;
 }
+
+// headers everyone needs
+#include "tufty_math.h"
+#include "myrandom.h"
+
+#define STRING_LEN 250
+#define MAX_TILE_TYPES 200
+#define MAX_TILE_VALUES (100 * 100)
+#define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
+#define MAX_FACING_BITMAPS 10
+#define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
+#define MAX_UNDO_STEPS 100
+#define MAX_ANIMATION_CELS 10
+#define MAX_ANIMATIONS_PER_FACING 10
+#define NIL 0
+#define ROWS_IN_WORLD 221
+#define COLS_IN_WORLD 393
+#define TILES_IN_WORLD (ROWS_IN_WORLD * COLS_IN_WORLD)
+#define BYTE_COUNT_FOR_ALL_TILE_VALUES (TILES_IN_WORLD * sizeof(s32))
+
+// Platform services
+static debug_platform_get_file_size *GetFileSize;
+static debug_platform_free_file_memory *FreeFileMemory;
+static debug_platform_read_entire_file *ReadEntireFile;
+static debug_platform_write_entire_file *WriteEntireFile;
+static debug_platform_get_file_write_time *GetFileWriteTime;
+static debug_platform_get_dir_write_time *GetDirWriteTime;
+static debug_platform_get_list_of_dir_contents *GetListOfDirContents;
+static debug_platform_read_file_into *ReadFileInto;
+static debug_platform_get_file_path_from_dialog *GetFilepathFromDialog;
+static debug_output *DebugOutput;
+static debug_read_cpu_timer *ReadCpuTimer;
 
 static void
 InitializeArena(arena *Arena, u8 *Start, mem_idx Size)
@@ -535,8 +539,6 @@ struct tile_map
     arr_meta_bitmap TileTypes;
     f32 TileSideInMeters;
     f32 TileSideInPixels;
-    int RowsInWorld;
-    int ColsInWorld;
     arena TileValuesArena;
     s32 *TileValues;
 };
@@ -633,6 +635,7 @@ struct player
     v2 Velo;
     int IsFacing;
     int OldFacing;
+    b32 TryingToMove;
     arena AnimationsArena;
     animation_state AnimationState;
     facing_bitmaps FacingBitmaps[4];

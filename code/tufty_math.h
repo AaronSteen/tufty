@@ -44,4 +44,12 @@ Square(f32 A)
     return Result;
 }
 
+static f32
+Dot(v2 A, v2 B)
+{
+    f32 Result = A.X * B.X + A.Y * B.Y;
+
+    return Result;
+}
+
 

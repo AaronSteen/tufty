@@ -7,7 +7,7 @@
 #include "prof.h"
 
 #define PLAYER_HEIGHT 64.0f
-#define PLAYER_WIDTH 32.0f
+#define PLAYER_WIDTH 64.0f
 
 // DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 // DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
@@ -62,7 +62,17 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
-// Resolution of bacbkuffer or framebuffer is 1920 x 1080
+b32
+IsPlayerTryingToMove(void)
+{
+    b32 Result = (GlobalKeyboardController->MoveLeft.EndedDown ||
+                  GlobalKeyboardController->MoveUp.EndedDown ||
+                  GlobalKeyboardController->MoveRight.EndedDown ||
+                  GlobalKeyboardController->MoveDown.EndedDown);
+    return Result;
+}
+
+// Resolution of backbuffer or framebuffer is 1920 x 1080
 
 // #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -107,16 +117,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
 
         InitSubArena(&pGameState->TileMap.TileTypes.BitmapsArena, pWorldArena, Megabytes(4));
-        pTileMap->RowsInWorld = 221;
-        pTileMap->ColsInWorld = 393;
-        int NumTilesInWorld = pTileMap->RowsInWorld * pTileMap->ColsInWorld; // 221 * 393 = 86,853 total tiles
-        int BytesForAllTilesInWorld = GetByteCountForTypedArray(int, NumTilesInWorld); // 86853 tiles & 4 bytes per = 347,412 bytes 
+        int BytesForAllTilesInWorld = BYTE_COUNT_FOR_ALL_TILE_VALUES; // 221 * 393 = 86853 tiles @ 4 bytes per = 347,412 bytes 
         // Round up to nearest kilobyte:
-        int KbForAllTilesInWorld = 1;
-        while (Kilobytes(KbForAllTilesInWorld) < BytesForAllTilesInWorld) {
-            assert(Kilobytes(KbForAllTilesInWorld) <= Kilobytes(500));
-            ++KbForAllTilesInWorld;
-        }
+        int KbForAllTilesInWorld = BytesForAllTilesInWorld / Kilobytes(1);
+        ++KbForAllTilesInWorld;
         InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(KbForAllTilesInWorld));
         InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * MAX_UNDO_STEPS);
         InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * 2);
@@ -152,8 +156,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 // Undo
         pUndoState->UndoStepsArr[0] = PushNewUndoStep(&pUndoState->UndoStepsArena);
-        pUndoState->UndoStepsArr[0]->NumTileRows = pTileMap->NumRows;
-        pUndoState->UndoStepsArr[0]->NumTileCols = pTileMap->NumCols;
 
 // pPlayer
         for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
@@ -171,10 +173,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         for (int Facing = 0; Facing < 4; ++Facing) {
             pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
-        LoadAnimation(&pPlayer->FacingAnimationArray[EAST], "stardew_walking_east.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[EAST], "64x64faceright_walking.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[NORTH], "north.aseprite");
-        LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "claude_running_west.aseprite");
-        LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "south.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "64x64faceleft_walking.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "64x64frontview_walking.aseprite");
 
         pPlayer->Pos.X = Buffer->Width / 2;
         pPlayer->Pos.Y = Buffer->Height / 2;
@@ -205,6 +207,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // Reset the transient arena
     pTransArena->Used = 0;
     pPlayer->OldFacing = pPlayer->IsFacing;
+    pPlayer->TryingToMove = IsPlayerTryingToMove();
     
     // Bitmap reloading notes:
     //      We have the following objectives:
@@ -282,9 +285,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     Acceleration *= 0.707106781187f;
                 }
 
-                f32 PlayerSpeed = 15.0f;
+                f32 PlayerSpeed = 20.0f;
                 Acceleration *= PlayerSpeed;
-                Acceleration += -1.8f * pPlayer->Velo;
+                Acceleration += -3.0f * pPlayer->Velo;
 
                 f32 MetersToPixels = pTileMap->TileSideInPixels / pTileMap->TileSideInMeters;
 
@@ -293,6 +296,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 MetersToPixels;
 
                 pPlayer->Velo += Acceleration * Input->dtForFrame;
+                // f32 PlayerVeloSquaredMagnitude = Dot(pPlayer->Velo, pPlayer->Velo);
+                // f32 SquaredMinMovementThreshold = 0.001; 
+                // if (PlayerVeloSquaredMagnitude < SquaredMinMovementThreshold) {
+                //     pPlayer->Velo = v2{0, 0};
+                // }
             }
         }
     }

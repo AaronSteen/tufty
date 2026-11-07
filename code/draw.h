@@ -461,9 +461,9 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
     ResetArena(&pUndoState->SingleFrameUndoArena);
 
     undo_step *pLastFrameState = PushNewUndoStep(&pUndoState->SingleFrameUndoArena);
-    WriteUndoStep(pLastFrameState, pTileMap->NumRows, pTileMap->NumCols, pTileMap->TileValues);
+    WriteUndoStep(pLastFrameState, pTileMap->TileValues);
     undo_step *pThisFrameState = PushNewUndoStep(&pUndoState->SingleFrameUndoArena);
-    WriteUndoStep(pThisFrameState, pTileMap->NumRows, pTileMap->NumCols, pTileMap->TileValues);
+    WriteUndoStep(pThisFrameState, pTileMap->TileValues);
 
     v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.8f), 0};
@@ -581,7 +581,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
                 // Figure out which tile they clicked on
                 v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
                 // NOTE: We are getting these from the temp this frame state struct instead of the tilemap. don't forget!!!
-                int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumTileCols, TileAsV2);
+                int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
                 s32 TileValue = GetTileValueFrom1DCoord(pThisFrameState->TileValues, HoveredIdx);
                 // If they clicked on an empty tile
                 if (TileValue == 0) {
@@ -642,12 +642,12 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
     }
     if (pCursorState->PrimaryMode == PAINTING && InBrowser == false && pHeldTile->IsPresent()) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumTileCols, TileAsV2);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
         SetTileValue(pThisFrameState->TileValues, HoveredIdx, pCursorState->HeldSlot);
     }
     else if (pCursorState->SecondaryMode == PAINTING && InBrowser == false) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(pThisFrameState->NumTileCols, TileAsV2);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
         SetTileValue(pThisFrameState->TileValues, HoveredIdx, 0);
     }
 

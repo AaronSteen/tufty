@@ -30,11 +30,9 @@ ReadUndoStep(undo_state *pUndoState, int Idx)
 }
 
 static void
-WriteUndoStep(undo_step *pWriteHere, int Rows, int Cols, const s32 *pTileValues)
+WriteUndoStep(undo_step *pWriteHere, const s32 *pTileValues)
 {
-    pWriteHere->NumTileRows = Rows;
-    pWriteHere->NumTileCols = Cols;
-    memcpy(pWriteHere->TileValues, pTileValues, GetByteCountForTypedArray(s32, Rows * Cols));
+    memcpy(pWriteHere->TileValues, pTileValues, BYTE_COUNT_FOR_ALL_TILE_VALUES);
 }
 
 static undo_step *
@@ -55,7 +53,7 @@ IncrementUndoHead(undo_state *pUndoState, undo_step ToPush)
     if (*ppPushHere == nullptr) {
         *ppPushHere = PushNewUndoStep(&pUndoState->UndoStepsArena);
     }
-    WriteUndoStep(*ppPushHere, ToPush.NumTileRows, ToPush.NumTileCols, ToPush.TileValues);
+    WriteUndoStep(*ppPushHere, ToPush.TileValues);
     pUndoState->HeadIdx = NewIdx;
     pUndoState->CurrIdx = NewIdx;
 }
@@ -89,13 +87,7 @@ IsRedoStepValid(undo_state *pUndoState, int ProspectiveStep)
 static b32
 ShouldPushUndoStep(undo_step LastFrameState, undo_step ThisFrameState)
 {
-    if (LastFrameState.NumTileRows != ThisFrameState.NumTileRows) {
-        return true;
-    }
-    if (LastFrameState.NumTileCols != ThisFrameState.NumTileCols) {
-        return true;
-    }
-    for (int TileIdx = 0; TileIdx < LastFrameState.NumTileRows * LastFrameState.NumTileCols; ++TileIdx) {
+    for (int TileIdx = 0; TileIdx < ROWS_IN_WORLD * COLS_IN_WORLD; ++TileIdx) {
         if (LastFrameState.TileValues[TileIdx] != ThisFrameState.TileValues[TileIdx]) {
             return true;
         }
@@ -113,7 +105,5 @@ UndoRedoAndGetTheStep(undo_state *pUndoState, int NewUndoStepIdx)
 static void
 UpdateTileMapAfterEditorExit(tile_map *pTileMap, undo_step UndoStepToCopy)
 {
-    pTileMap->NumRows = UndoStepToCopy.NumTileRows;
-    pTileMap->NumCols = UndoStepToCopy.NumTileCols;
-    memcpy(pTileMap->TileValues, UndoStepToCopy.TileValues, GetByteCountForTypedArray(s32, UndoStepToCopy.NumTileRows * UndoStepToCopy.NumTileCols));
+    memcpy(pTileMap->TileValues, UndoStepToCopy.TileValues, BYTE_COUNT_FOR_ALL_TILE_VALUES);
 }

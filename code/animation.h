@@ -103,9 +103,9 @@ UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
     animation_state *pState = &pPlayer->AnimationState;
     // This function only updates the player's CurrAnimationCel and MsInCurrCel, based on
     //      how much time has passed since the last frame was shown.
-    if (pPlayer->OldFacing != pPlayer->IsFacing) {
-        // If player changed direction, reset the current cel to 1
-        //      and the MsInCurrCel to 0
+    if (pPlayer->OldFacing != pPlayer->IsFacing || pPlayer->TryingToMove == false) {
+        // If player changed direction or has stopped moving, 
+        //      reset the current cel to 1 and the MsInCurrCel to 0
         ResetAnimationStateCelParams(pState);
     }
     else {
@@ -123,9 +123,7 @@ UpdatePlayerAnimationCel(player *pPlayer, f32 dtForFrame)
                 }
                 ++CelsInThisAnimation;
             }
-            int NewCelIdx = pState->CurrCelIdx + 1;
-            NewCelIdx = (NewCelIdx % CelsInThisAnimation) + 1;
-            pState->CurrCelIdx = NewCelIdx;
+            pState->CurrCelIdx = pState->CurrCelIdx % CelsInThisAnimation + 1;
         }
     }
 }
