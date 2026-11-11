@@ -154,7 +154,6 @@ operator==(v2 A, v2 B)
 
 #define STRING_LEN 250
 #define MAX_TILE_TYPES 200
-#define MAX_TILE_VALUES (100 * 100)
 #define TILE_TYPES_ARRAY_LEN (MAX_TILE_TYPES + 1)
 #define MAX_FACING_BITMAPS 10
 #define FACING_BITMAPS_ARRAY_LEN (MAX_FACING_BITMAPS + 1)
@@ -162,10 +161,14 @@ operator==(v2 A, v2 B)
 #define MAX_ANIMATION_CELS 10
 #define MAX_ANIMATIONS_PER_FACING 10
 #define NIL 0
-#define ROWS_IN_WORLD 221
-#define COLS_IN_WORLD 393
-#define TILES_IN_WORLD (ROWS_IN_WORLD * COLS_IN_WORLD)
-#define BYTE_COUNT_FOR_ALL_TILE_VALUES (TILES_IN_WORLD * sizeof(s32))
+#define TILE_SIDE_M 1.4f
+#define TILE_SIDE_PX 64.0f
+#define TILES_IN_WORLD_Y 9
+#define TILES_IN_WORLD_X 16
+#define TILES_IN_WORLD (TILES_IN_WORLD_Y * TILES_IN_WORLD_X)
+#define WORLD_HEIGHT (TILE_SIDE_M * TILES_IN_WORLD_Y)
+#define WORLD_WIDTH (TILE_SIDE_M * TILES_IN_WORLD_X)
+#define TILES_IN_WORLD_NUM_BYTES (TILES_IN_WORLD * sizeof(s32))
 
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
@@ -534,8 +537,6 @@ struct tile_map
 {
     reload_state ReloadState;
     u64 LastUpdateTime;
-    int NumRows;
-    int NumCols;
     arr_meta_bitmap TileTypes;
     f32 TileSideInMeters;
     f32 TileSideInPixels;

@@ -10,7 +10,7 @@ SetTileValue(s32 *TileValues, s32 IdxToChange, s32 NewValue)
 static int
 SearchAndReplaceTileValue(tile_map *pTileMap, s32 GetsReplaced, s32 ReplaceWith)
 {
-    int NumTilesInWorld = pTileMap->NumRows * pTileMap->NumCols;
+    int NumTilesInWorld = TILES_IN_WORLD_Y * TILES_IN_WORLD_X;
     int NumValuesReplaced = 0;
     for (int NthTile = 0;
          NthTile < NumTilesInWorld;

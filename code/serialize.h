@@ -40,8 +40,8 @@ SaveProject(tile_map *pTileMap, player *pPlayer, arena *pTransArena)
     }
 
     // Fields we can just copy    
-    pHeader->NumTileRows = pTileMap->NumRows;
-    pHeader->NumTileCols = pTileMap->NumCols;
+    pHeader->NumTileRows = TILES_IN_WORLD_Y;
+    pHeader->NumTileCols = TILES_IN_WORLD_X;
     pHeader->NumTileTypes = pTileMap->TileTypes.CountNonEmptySlots();
 
     // NumBitmaps per facing
@@ -146,9 +146,6 @@ LoadProject(player *pPlayer, tile_map *pTileMap, arena *pTransArena)
         return 0;
     }
 
-    pTileMap->NumRows = pHeader->NumTileRows;
-    pTileMap->NumCols = pHeader->NumTileCols;
-
     // int NumPlayerBitmapsPerFacing[4];
     // mem_idx PlayerDrawThisOffset;
     // mem_idx PlayerFilepathsOffset;
@@ -179,7 +176,7 @@ LoadProject(player *pPlayer, tile_map *pTileMap, arena *pTransArena)
 
     // Tile values
     memcpy(pTileMap->TileValues, pLoadedDataStart + pHeader->TileValuesOffset, 
-           GetByteCountForTypedArray(s32, pTileMap->NumRows * pTileMap->NumCols));
+           GetByteCountForTypedArray(s32, TILES_IN_WORLD_Y * TILES_IN_WORLD_X));
 
     LoadTileBitmapsDir(pTileMap, pTransArena);
 

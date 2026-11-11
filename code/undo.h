@@ -32,7 +32,7 @@ ReadUndoStep(undo_state *pUndoState, int Idx)
 static void
 WriteUndoStep(undo_step *pWriteHere, const s32 *pTileValues)
 {
-    memcpy(pWriteHere->TileValues, pTileValues, BYTE_COUNT_FOR_ALL_TILE_VALUES);
+    memcpy(pWriteHere->TileValues, pTileValues, TILES_IN_WORLD_NUM_BYTES);
 }
 
 static undo_step *
@@ -41,7 +41,7 @@ PushNewUndoStep(arena *pArena)
     // The returned struct will have a valid TileValues pointer but 
     //      will not have any values in the array; caller must copy these in
     undo_step *pNew = PushStruct(pArena, undo_step);
-    pNew->TileValues = PushArray(pArena, s32, MAX_TILE_VALUES);
+    pNew->TileValues = PushArray(pArena, s32, TILES_IN_WORLD);
     return pNew;
 }
 
@@ -87,7 +87,7 @@ IsRedoStepValid(undo_state *pUndoState, int ProspectiveStep)
 static b32
 ShouldPushUndoStep(undo_step LastFrameState, undo_step ThisFrameState)
 {
-    for (int TileIdx = 0; TileIdx < ROWS_IN_WORLD * COLS_IN_WORLD; ++TileIdx) {
+    for (int TileIdx = 0; TileIdx < TILES_IN_WORLD_Y * TILES_IN_WORLD_X; ++TileIdx) {
         if (LastFrameState.TileValues[TileIdx] != ThisFrameState.TileValues[TileIdx]) {
             return true;
         }
@@ -105,5 +105,5 @@ UndoRedoAndGetTheStep(undo_state *pUndoState, int NewUndoStepIdx)
 static void
 UpdateTileMapAfterEditorExit(tile_map *pTileMap, undo_step UndoStepToCopy)
 {
-    memcpy(pTileMap->TileValues, UndoStepToCopy.TileValues, BYTE_COUNT_FOR_ALL_TILE_VALUES);
+    memcpy(pTileMap->TileValues, UndoStepToCopy.TileValues, TILES_IN_WORLD_NUM_BYTES);
 }

@@ -117,10 +117,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
 
         InitSubArena(&pGameState->TileMap.TileTypes.BitmapsArena, pWorldArena, Megabytes(4));
-        int BytesForAllTilesInWorld = BYTE_COUNT_FOR_ALL_TILE_VALUES; // 221 * 393 = 86853 tiles @ 4 bytes per = 347,412 bytes 
         // Round up to nearest kilobyte:
-        int KbForAllTilesInWorld = BytesForAllTilesInWorld / Kilobytes(1);
+        int KbForAllTilesInWorld = TILES_IN_WORLD_NUM_BYTES / Kilobytes(1);
         ++KbForAllTilesInWorld;
+
         InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(KbForAllTilesInWorld));
         InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * MAX_UNDO_STEPS);
         InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * 2);
@@ -134,25 +134,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Transient
         InitializeArena(pTransArena, (u8 *)Memory->TransientStorage + sizeof(arena), Memory->TransientStorageSize - sizeof(arena));
         
-// DATA STRUCTURES
-
 // Tiles        
         // TileMap dimensions
-        pTileMap->TileSideInPixels = 64.0f;
-        pTileMap->TileSideInMeters = 1.4f;
+        pTileMap->TileSideInPixels = TILE_SIDE_PX;
+        pTileMap->TileSideInMeters = TILE_SIDE_M;
 
         // Tile types, i.e., the tiles that populate the tiles menu in the editor
         arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
-        pTileTypes->Data = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES+1);
+        pTileTypes->Data = PushArray(&pTileTypes->BitmapsArena, meta_bitmap, MAX_TILE_TYPES+1);
         pTileTypes->Len = MAX_TILE_TYPES+1;
         pTileTypes->NextEmptySlot = 1;
-        pTileMap->NumRows = CeilingF32ToS32((f32)Buffer->Height / pTileMap->TileSideInPixels);        
-        pTileMap->NumCols = CeilingF32ToS32((f32)Buffer->Width / pTileMap->TileSideInPixels);        
-
-        pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, MAX_TILE_VALUES);
-
         pTileMap->ReloadState.WaitState = READY_TO_RELOAD;
         LoadTileBitmapsDir(pTileMap, pTransArena);
+
+        // Tile values, i.e., the int array that says what type of tile each tile in the world is
+        pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, TILES_IN_WORLD);
+
+        // Randomly assign tile values to test
+        for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
+            pTileMap->TileValues[NthTile] = RandomS32InRange(&pGameState->RandomSeries, 1, 
+                                                             CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
+        }
 
 // Undo
         pUndoState->UndoStepsArr[0] = PushNewUndoStep(&pUndoState->UndoStepsArena);
@@ -187,8 +189,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pPlayer->AnimationState.CurrAnimationIdx = 1;
 
 // Bagel
-        // TODO(AARON): ScaleAndBlitBitmap called with Bitmap == nullptr draw something other than bagel
-        //      so we know when we called it with nullptr
+        // TODO(AARON): Fix crash when hot reloading tufty.cpp when bagel is on screen
         char *BagelFilepath = "bagel1.bmp";
         pGlobalBagel = PushStruct(&pGameState->FailBitmapsArena, meta_bitmap);
         snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
@@ -235,24 +236,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    // Do the same checks for the player bitmaps
-    for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
-        facing_bitmaps *pThisFacing = &pPlayer->FacingBitmaps[FacingIdx];
-        char ThisFacingBitmapsDirpath[STRING_LEN];
-        WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, ThisFacingBitmapsDirpath);
-        u64 CheckUpdateTime = GetDirWriteTime(ThisFacingBitmapsDirpath);
-        pThisFacing->ReloadState = GetUpdatedReloadState(CheckUpdateTime, pThisFacing->ReloadState);
-        if (pThisFacing->ReloadState.WaitState == READY_TO_RELOAD) {
-            LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
-        }
-        else {
-            arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
-            for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-                ReloadBitmapIfChanged(pMetaBitmaps, Slot);
-            }
-        }
-    }
-
+    // // Do the same checks for the player bitmaps
+    // for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
+    //     facing_bitmaps *pThisFacing = &pPlayer->FacingBitmaps[FacingIdx];
+    //     char ThisFacingBitmapsDirpath[STRING_LEN];
+    //     WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, ThisFacingBitmapsDirpath);
+    //     u64 CheckUpdateTime = GetDirWriteTime(ThisFacingBitmapsDirpath);
+    //     pThisFacing->ReloadState = GetUpdatedReloadState(CheckUpdateTime, pThisFacing->ReloadState);
+    //     if (pThisFacing->ReloadState.WaitState == READY_TO_RELOAD) {
+    //         LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
+    //     }
+    //     else {
+    //         arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
+    //         for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
+    //             ReloadBitmapIfChanged(pMetaBitmaps, Slot);
+    //         }
+    //     }
+    // }
+    //
     // Controller
     for (int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
@@ -285,7 +286,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     Acceleration *= 0.707106781187f;
                 }
 
-                f32 PlayerSpeed = 20.0f;
+                f32 PlayerSpeed = 30.0f;
                 Acceleration *= PlayerSpeed;
                 Acceleration += -3.0f * pPlayer->Velo;
 
@@ -339,9 +340,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // RENDER
     // Tiles
-    for (int Row = 0; Row < pTileMap->NumRows; ++Row) {
-        for (int Col = 0; Col < pTileMap->NumCols; ++Col) {
-            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(pTileMap->NumCols, v2{(f32)Col, (f32)Row});
+    for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
+        for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
+            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)Col, (f32)Row});
             s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
             v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
             v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
@@ -365,8 +366,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if (pGameState->EditorState.WhichEditor == TILE)
     {
-        undo_step Result = DrawTileEditor(Buffer, pGameState, pTransArena);
-        UpdateTileMapAfterEditorExit(pTileMap, Result);
+        // undo_step Result = DrawTileEditor(Buffer, pGameState, pTransArena);
+        // UpdateTileMapAfterEditorExit(pTileMap, Result);
     }
     else if (pGameState->EditorState.WhichEditor == PLAYER)
     {

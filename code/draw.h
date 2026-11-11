@@ -181,37 +181,37 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *pDebugTe
 #undef FPS_SNAPS
 }
 
-static void
-DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
-{
-    int OffsetFromGridX = 15;
-    int OffsetFromGridY = 15;
-    // 0, 0
-    DEBUGDrawText(Backbuf, OffsetFromGridX, OffsetFromGridY, "0", DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
-
-    // Cols
-    for (int Col = 1;
-         Col < TileMap->NumCols;
-         ++Col)
-    {
-        int PrintX = Col * TileMap->TileSideInPixels + OffsetFromGridX; 
-        char Temp[3];
-        snprintf(Temp, 3, "%d", Col);
-        DEBUGDrawText(Backbuf, PrintX, OffsetFromGridY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
-    }
-
-    // Rows
-    for (int Row = 1;
-         Row < TileMap->NumRows;
-         ++Row)
-    {
-        int PrintY = Row * TileMap->TileSideInPixels + OffsetFromGridY; 
-        char Temp[3];
-        snprintf(Temp, 3, "%d", Row);
-        DEBUGDrawText(Backbuf, OffsetFromGridX, PrintY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
-    }
-}
-
+// static void
+// DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
+// {
+//     int OffsetFromGridX = 15;
+//     int OffsetFromGridY = 15;
+//     // 0, 0
+//     DEBUGDrawText(Backbuf, OffsetFromGridX, OffsetFromGridY, "0", DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
+//
+//     // Cols
+//     for (int Col = 1;
+//          Col < TileMap->NumCols;
+//          ++Col)
+//     {
+//         int PrintX = Col * TileMap->TileSideInPixels + OffsetFromGridX; 
+//         char Temp[3];
+//         snprintf(Temp, 3, "%d", Col);
+//         DEBUGDrawText(Backbuf, PrintX, OffsetFromGridY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
+//     }
+//
+//     // Rows
+//     for (int Row = 1;
+//          Row < TileMap->NumRows;
+//          ++Row)
+//     {
+//         int PrintY = Row * TileMap->TileSideInPixels + OffsetFromGridY; 
+//         char Temp[3];
+//         snprintf(Temp, 3, "%d", Row);
+//         DEBUGDrawText(Backbuf, OffsetFromGridX, PrintY, Temp, DebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
+//     }
+// }
+//
 static void
 DrawFilepathTooltip(game_offscreen_buffer *pBackbuf, arena *pDebugTextArena, 
                     v2 MouseCoords, meta_bitmap *pHoveredBitmap)
@@ -581,7 +581,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
                 // Figure out which tile they clicked on
                 v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
                 // NOTE: We are getting these from the temp this frame state struct instead of the tilemap. don't forget!!!
-                int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
+                int HoveredIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, TileAsV2);
                 s32 TileValue = GetTileValueFrom1DCoord(pThisFrameState->TileValues, HoveredIdx);
                 // If they clicked on an empty tile
                 if (TileValue == 0) {
@@ -642,12 +642,12 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
     }
     if (pCursorState->PrimaryMode == PAINTING && InBrowser == false && pHeldTile->IsPresent()) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, TileAsV2);
         SetTileValue(pThisFrameState->TileValues, HoveredIdx, pCursorState->HeldSlot);
     }
     else if (pCursorState->SecondaryMode == PAINTING && InBrowser == false) {
         v2 TileAsV2 = GetTileCoordsFromMouseCoords(pTileMap->TileSideInPixels);
-        int HoveredIdx = Get1DTileCoordFrom2DCoord(COLS_IN_WORLD, TileAsV2);
+        int HoveredIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, TileAsV2);
         SetTileValue(pThisFrameState->TileValues, HoveredIdx, 0);
     }
 
@@ -684,7 +684,7 @@ DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *p
     }
 
     if (pGameState->EditorState.PrintRowsCols) {
-        DEBUGPrintRowsCols(pBackbuf, pTransArena, pTileMap);
+        // DEBUGPrintRowsCols(pBackbuf, pTransArena, pTileMap);
     }
 
 

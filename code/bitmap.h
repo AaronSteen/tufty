@@ -181,7 +181,6 @@ LoadTileBitmapsDir(tile_map *pTileMap, arena *pTransArena)
     // Clear bitmap structs in tile types array
     pTileTypes->ClearButLeaveFilepaths();
 
-
     buffer OsFilenames;
     OsFilenames.Size = MAX_TILE_TYPES * STRING_LEN;
     OsFilenames.Data = PushArray(pTransArena, u8, OsFilenames.Size);
