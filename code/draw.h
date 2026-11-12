@@ -133,7 +133,7 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
               f32 Scale = 3.5f)
 {
     buffer QuadBuf = {};
-    QuadBuf.Size = Kilobytes(10);
+    QuadBuf.Size = 300 * strlen(StringText);
     QuadBuf.Data = PushArray(DebugTextArena, u8, QuadBuf.Size);
     int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, QuadBuf.Data, QuadBuf.Size);
     for (int QuadIdx = 0;
@@ -152,6 +152,14 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
             DrawSpecialRect(Backbuf, Min, Max, Color, color{0, 0, 0, 0});
         }
     }
+}
+
+static void
+PrintCameraCoords(game_offscreen_buffer *Backbuf, v2 CameraPos, arena *pDebugTextArena)
+{
+    char Temp[512];
+    snprintf(Temp, sizeof(Temp), "Camera X = %f\nCamera Y = %f", CameraPos.X, CameraPos.Y);
+    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.1f), 30, Temp, pDebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
 }
 
 static void

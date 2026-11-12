@@ -154,11 +154,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Tile values, i.e., the int array that says what type of tile each tile in the world is
         pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, TILES_IN_WORLD);
 
-        // // Randomly assign tile values to test
-        // for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
-        //     pTileMap->TileValues[NthTile] = RandomS32InRange(&pGameState->RandomSeries, 1, 
-        //                                                      CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
-        // }
+        // Randomly assign tile values as test; tiles have 1/3 chance of being a tile
+        for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
+            if (RandomF64InRange(&pGameState->RandomSeries, 0.0, 1.0) <= 0.3) {
+                pTileMap->TileValues[NthTile] = 
+                    RandomS32InRange(&pGameState->RandomSeries, 1, 
+                                     CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
+            }
+        }
 
 // Undo
         pUndoState->UndoStepsArr[0] = PushNewUndoStep(&pUndoState->UndoStepsArena);
@@ -172,8 +175,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "64x64faceleft_walking.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "64x64frontview_walking.aseprite");
 
-        pPlayer->Pos.X = Buffer->Width / 2;
-        pPlayer->Pos.Y = Buffer->Height / 2;
         pPlayer->IsFacing = WEST;
         ResetAnimationStateCelParams(&pPlayer->AnimationState);
         animation *pDefaultAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 1);
@@ -191,7 +192,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pGlobalBagel->Bitmap.Buffer.Data = PushArray(&pGameState->FailBitmapsArena, u8, BagelSize);
         }
         ActuallyLoadBitmap(pGlobalBagel);
+
+        pGameState->CameraPos = {(f32)TILES_IN_WORLD_Y * TILE_SIDE_M * 0.5f, 
+                                TILES_IN_WORLD_X * TILE_SIDE_M * 0.5f};
+        pPlayer->Pos.X = pGameState->CameraPos.X;
+        pPlayer->Pos.Y = pGameState->CameraPos.Y;
         
+        pGameState->RedX.Pixels = PushArray(pWorldArena, u8, 64 * 64 * sizeof(u32));
+        pGameState->RedX.Height = pGameState->RedX.Width = 64;
+        pGameState->RedX.BytesPerPixel = 4;
+        DEBUGDrawText(pGameState->RedX.Pixels, 0, 0, "X", pTransArena, {1.0f, 0.1f, 0.1f});
+
         Memory->IsInitialized = true;
     }
     
@@ -237,6 +248,36 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         if (Controller->IsAnalog) {
 
         }
+#if 1    
+        else {
+            v2 Acceleration = {};
+            if (Controller->MoveRight.EndedDown) {
+                Acceleration.X += 1.0f;
+            }
+            if (Controller->MoveUp.EndedDown) {
+                Acceleration.Y -= 1.0f;
+            }
+            if (Controller->MoveLeft.EndedDown) {
+                Acceleration.X -= 1.0f;
+            }
+            if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
+                Acceleration.Y += 1.0f;
+            }
+
+            if ((Acceleration.X != 0) && (Acceleration.Y != 0)) {
+                Acceleration *= 0.707106781187f;
+            }
+
+            f32 CameraSpeed = 30.0f;
+            Acceleration *= CameraSpeed;
+            Acceleration += -3.0f * pGameState->CameraVelo;
+
+            pGameState->CameraPos += 0.5f * Acceleration * Square(Input->dtForFrame) + pGameState->CameraVelo * Input->dtForFrame;
+
+            pGameState->CameraVelo += Acceleration * Input->dtForFrame;
+        }
+
+#else 
         else {
             v2 Acceleration = {};
             if (Controller->MoveRight.EndedDown) {
@@ -273,6 +314,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 pPlayer->Velo += Acceleration * Input->dtForFrame;
             }
         }
+#endif
     }
 
     if (GlobalDevKeys->F1.EndedDown && GlobalDevKeys->F1.HalfTransitionCount == 1)
@@ -308,6 +350,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
 
     // RENDER
+    f32 FrameBufferWithApronWidth = RoundF32ToS32(1920.0f / 64.0f) + 2 * 64.0f;
+    f32 FrameBufferWithApronHeight = RoundF32ToS32(1080.0f / 64.0f) + 2 * 64.0f;
+    u32 *FrameBufferWithApron = PushArray(pTransArena, u32, FrameBufferWithApronWidth * FrameBufferWithApronHeight);
+
     // Tiles
     for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
         for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
@@ -389,6 +435,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     DEBUGPrintFps(Buffer, Input->Fps, pTransArena);
 
+    PrintCameraCoords(Buffer, pGameState->CameraPos, pTransArena);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

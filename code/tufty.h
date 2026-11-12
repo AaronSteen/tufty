@@ -162,15 +162,11 @@ operator==(v2 A, v2 B)
 #define MAX_ANIMATIONS_PER_FACING 10
 #define NIL 0
 
-#define RES_H 1920.0f
-#define RES_V 1080.0f
 #define TILE_SIDE_M 1.4f
 #define TILE_SIDE_PX 64.0f
-#define TILES_IN_WORLD_Y CeilingF32ToS32(RES_V / TILE_SIDE_PX)
-#define TILES_IN_WORLD_X CeilingF32ToS32(RES_H / TILE_SIDE_PX)
+#define TILES_IN_WORLD_Y 221 
+#define TILES_IN_WORLD_X 393
 #define TILES_IN_WORLD (TILES_IN_WORLD_Y * TILES_IN_WORLD_X)
-#define WORLD_HEIGHT (TILE_SIDE_M * TILES_IN_WORLD_Y)
-#define WORLD_WIDTH (TILE_SIDE_M * TILES_IN_WORLD_X)
 #define TILES_IN_WORLD_NUM_BYTES (TILES_IN_WORLD * sizeof(s32))
 
 // Platform services
@@ -693,9 +689,12 @@ struct game_state
     random_series RandomSeries;
     arena WorldArena;
     arena FailBitmapsArena;
+    bitmap RedX;
     editor_state EditorState;
     tile_map TileMap;
     player Player;
+    v2 CameraPos;
+    v2 CameraVelo;
 };
 
 static b32
