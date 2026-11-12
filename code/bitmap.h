@@ -82,7 +82,7 @@ ReloadBitmapIfChanged(arr_meta_bitmap *pMetaBitmaps, int Slot)
             mem_idx NewBitmapSize = GetFileSize(pIt->Filepath);
             bitmap *pItsBitmap = &pIt->Bitmap;
             if (NewBitmapSize != pItsBitmap->Buffer.Size) {
-                pItsBitmap->Buffer.Data = PushArray(&pMetaBitmaps->BitmapsArena, u8, NewBitmapSize);
+                pItsBitmap->Buffer.Data = PushArray(&pMetaBitmaps->PixelsArena, u8, NewBitmapSize);
                 pItsBitmap->Buffer.Size = NewBitmapSize;
             }
             ActuallyLoadBitmap(pIt);
@@ -176,7 +176,7 @@ static void
 LoadTileBitmapsDir(tile_map *pTileMap, arena *pTransArena)
 {
     arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
-    ResetArena(&pTileTypes->BitmapsArena);
+    ResetArena(&pTileTypes->PixelsArena);
 
     // Clear bitmap structs in tile types array
     pTileTypes->ClearButLeaveFilepaths();
@@ -211,7 +211,7 @@ static void
 LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, arena *pTransArena)
 {
     arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-    ResetArena(&pMetaBitmaps->BitmapsArena);
+    ResetArena(&pMetaBitmaps->PixelsArena);
 
     // Clear bitmap structs in meta bitmaps but leave the filepaths so that bitmaps
     //      staying in the game retain their array indices and therefore tile

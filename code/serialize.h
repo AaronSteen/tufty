@@ -40,42 +40,7 @@ SaveProject(tile_map *pTileMap, player *pPlayer, arena *pTransArena)
     }
 
     // Fields we can just copy    
-    pHeader->NumTileRows = TILES_IN_WORLD_Y;
-    pHeader->NumTileCols = TILES_IN_WORLD_X;
     pHeader->NumTileTypes = pTileMap->TileTypes.CountNonEmptySlots();
-
-    // NumBitmaps per facing
-    for (int NthFacing = 0;
-         NthFacing < 4;
-         ++NthFacing)
-    {
-        pHeader->NumPlayerBitmapsPerFacing[NthFacing] = 
-            pPlayer->FacingBitmaps[NthFacing].MetaBitmaps.CountNonEmptySlots();
-    }
-
-    // Player DrawThis.
-    pHeader->PlayerDrawThisOffset = pOutfileArena->Used;
-    int *pPlayerDrawThisArray = PushPackedArray(pOutfileArena, int, 4);
-    for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
-        pPlayerDrawThisArray[NthFacing] = 
-            pPlayer->FacingBitmaps[NthFacing].DrawThis;
-    }
-
-    pHeader->PlayerFilepathsOffset = pOutfileArena->Used;
-
-    // Player filepaths
-    for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
-        arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFacing].MetaBitmaps;
-        for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-            meta_bitmap *pIt = pMetaBitmaps->Get(Slot);
-            if (pIt->IsEmpty() == false) {
-                mem_idx FilepathLen = strlen(pIt->Filepath);
-                ++FilepathLen;
-                char *FilepathBufferInOutfile = PushPackedArray(pOutfileArena, char, FilepathLen);
-                snprintf(FilepathBufferInOutfile, FilepathLen, "%s", pIt->Filepath);
-            }
-        }
-    }
 
     // Tile type filepaths
     pHeader->TileTypeFilepathsOffset = pOutfileArena->Used;
@@ -92,9 +57,8 @@ SaveProject(tile_map *pTileMap, player *pPlayer, arena *pTransArena)
 
     // Tile values
     pHeader->TileValuesOffset = pOutfileArena->Used;
-    mem_idx NumTileValuesToCopy = pHeader->NumTileRows * pHeader->NumTileCols;
-    s32 *TileValuesInOutfile = PushPackedArray(pOutfileArena, s32, NumTileValuesToCopy);
-    memcpy(TileValuesInOutfile, pTileMap->TileValues, GetByteCountForTypedArray(s32, NumTileValuesToCopy));
+    s32 *TileValuesInOutfile = PushPackedArray(pOutfileArena, s32, TILES_IN_WORLD);
+    memcpy(TileValuesInOutfile, pTileMap->TileValues, TILES_IN_WORLD_NUM_BYTES);
 
     // Write file
     mem_idx NumBytesToWrite = pOutfileArena->Used;
@@ -142,30 +106,7 @@ LoadProject(player *pPlayer, tile_map *pTileMap, arena *pTransArena)
         }
     }
 
-    if (pHeader->NumTileRows == 0 || pHeader->NumTileCols == 0) {
-        return 0;
-    }
-
-    // int NumPlayerBitmapsPerFacing[4];
-    // mem_idx PlayerDrawThisOffset;
-    // mem_idx PlayerFilepathsOffset;
-    char *pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->PlayerFilepathsOffset);
-    int *pPlayerDrawThisToCopy = (int *)(pLoadedDataStart + pHeader->PlayerDrawThisOffset);
-    for (int NthFacing = 0; NthFacing < 4; ++NthFacing) {
-        facing_bitmaps *pThisFacing = pPlayer->FacingBitmaps + NthFacing;
-        arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
-        pMetaBitmaps->FullClear();
-        for (int NthFilepath = 0; NthFilepath < pHeader->NumPlayerBitmapsPerFacing[NthFacing]; ++NthFilepath) {
-            int AddedToSlotN = pMetaBitmaps->Add(pFilepathToCopyCursor);
-            assert(AddedToSlotN);
-            pFilepathToCopyCursor += strlen(pFilepathToCopyCursor) + 1;
-        }
-        LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
-        pThisFacing->DrawThis = pPlayerDrawThisToCopy[NthFacing];
-    }
-
-    // Use the same cursor pointer as we used for player filepaths
-    pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->TileTypeFilepathsOffset);
+    char *pFilepathToCopyCursor = (char *)(pLoadedDataStart + pHeader->TileTypeFilepathsOffset);
     arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
     pTileTypes->FullClear();
     for (int NthTileType = 0; NthTileType < pHeader->NumTileTypes; ++NthTileType) {

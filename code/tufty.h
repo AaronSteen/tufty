@@ -161,10 +161,13 @@ operator==(v2 A, v2 B)
 #define MAX_ANIMATION_CELS 10
 #define MAX_ANIMATIONS_PER_FACING 10
 #define NIL 0
+
+#define RES_H 1920.0f
+#define RES_V 1080.0f
 #define TILE_SIDE_M 1.4f
 #define TILE_SIDE_PX 64.0f
-#define TILES_IN_WORLD_Y 9
-#define TILES_IN_WORLD_X 16
+#define TILES_IN_WORLD_Y CeilingF32ToS32(RES_V / TILE_SIDE_PX)
+#define TILES_IN_WORLD_X CeilingF32ToS32(RES_H / TILE_SIDE_PX)
 #define TILES_IN_WORLD (TILES_IN_WORLD_Y * TILES_IN_WORLD_X)
 #define WORLD_HEIGHT (TILE_SIDE_M * TILES_IN_WORLD_Y)
 #define WORLD_WIDTH (TILE_SIDE_M * TILES_IN_WORLD_X)
@@ -386,7 +389,7 @@ struct arr_meta_bitmap
     int Len; // This is the max number of values it can hold, not the current number it's holding
     meta_bitmap *Data;
     int NextEmptySlot;
-    arena BitmapsArena;
+    arena PixelsArena;
 
     int 
     Add(char *AddFilepath)
@@ -508,7 +511,7 @@ struct arr_meta_bitmap
                 mem_idx Size = GetFileSize(pIt->Filepath);
                 if (Size) {
                     pIt->Bitmap.Buffer.Size = Size;
-                    pIt->Bitmap.Buffer.Data = PushArray(&BitmapsArena, u8, Size);
+                    pIt->Bitmap.Buffer.Data = PushArray(&PixelsArena, u8, Size);
                     pIt->ReloadState.WaitState = READY_TO_RELOAD;
                 }
             }
@@ -578,12 +581,7 @@ struct bitmap_header
 struct saved_project
 {
     char MagicNumber[4];
-    int NumPlayerBitmapsPerFacing[4];
-    int NumTileRows;
-    int NumTileCols;
     int NumTileTypes;
-    mem_idx PlayerDrawThisOffset;
-    mem_idx PlayerFilepathsOffset;
     mem_idx TileTypeFilepathsOffset;
     mem_idx TileValuesOffset;
 };

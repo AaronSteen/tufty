@@ -114,34 +114,38 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         arena *pWorldArena = &pGameState->WorldArena;
         InitializeArena(pWorldArena, (u8 *)Memory->PermanentStorage + sizeof(game_state), Memory->PermanentStorageSize - sizeof(game_state));
         InitSubArena(&pGameState->FailBitmapsArena, pWorldArena, Megabytes(1));
-        
 
-        InitSubArena(&pGameState->TileMap.TileTypes.BitmapsArena, pWorldArena, Megabytes(4));
-        // Round up to nearest kilobyte:
-        int KbForAllTilesInWorld = TILES_IN_WORLD_NUM_BYTES / Kilobytes(1);
-        ++KbForAllTilesInWorld;
+        // Tiles
+        //
+        // Tiles::Meta bitmaps data (e.g., filepath, reload state...)
+        pTileMap->TileTypes.Data = PushArray(pWorldArena, meta_bitmap, MAX_TILE_TYPES);
+        // Tiles::Bitmaps for tiles
+        InitSubArena(&pTileMap->TileTypes.PixelsArena, pWorldArena, Megabytes(4));
 
-        InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(KbForAllTilesInWorld));
-        InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * MAX_UNDO_STEPS);
-        InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(KbForAllTilesInWorld) * 2);
+        // Tiles::s32 values for tiles that say e.g. tile is grass, tree, etc
+        // Compute bytes needed to store tile values for all the tiles in the world, rounded up to the nearest kb:
+        int KbForAllTileValuesInWorld = TILES_IN_WORLD_NUM_BYTES / Kilobytes(1);
+        ++KbForAllTileValuesInWorld;
 
-        for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
-            arena *pArena = &pPlayer->FacingBitmaps[FacingIdx].MetaBitmaps.BitmapsArena;
-            InitSubArena(pArena, pWorldArena, Megabytes(1));
-        }
+        InitSubArena(&pGameState->TileMap.TileValuesArena, pWorldArena, Kilobytes(KbForAllTileValuesInWorld));
+
+        // Undo state
+        InitSubArena(&pGameState->EditorState.UndoState.UndoStepsArena, pWorldArena, Kilobytes(KbForAllTileValuesInWorld) * MAX_UNDO_STEPS);
+        InitSubArena(&pGameState->EditorState.UndoState.SingleFrameUndoArena, pWorldArena, Kilobytes(KbForAllTileValuesInWorld) * 2);
+
+        // Player animations
         InitSubArena(&pPlayer->AnimationsArena, pWorldArena, Megabytes(1));
 
-        // Transient
+        // Transient memory
         InitializeArena(pTransArena, (u8 *)Memory->TransientStorage + sizeof(arena), Memory->TransientStorageSize - sizeof(arena));
         
-// Tiles        
+// Tile state
         // TileMap dimensions
         pTileMap->TileSideInPixels = TILE_SIDE_PX;
         pTileMap->TileSideInMeters = TILE_SIDE_M;
 
         // Tile types, i.e., the tiles that populate the tiles menu in the editor
         arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
-        pTileTypes->Data = PushArray(&pTileTypes->BitmapsArena, meta_bitmap, MAX_TILE_TYPES+1);
         pTileTypes->Len = MAX_TILE_TYPES+1;
         pTileTypes->NextEmptySlot = 1;
         pTileMap->ReloadState.WaitState = READY_TO_RELOAD;
@@ -150,28 +154,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Tile values, i.e., the int array that says what type of tile each tile in the world is
         pTileMap->TileValues = PushArray(&pTileMap->TileValuesArena, s32, TILES_IN_WORLD);
 
-        // Randomly assign tile values to test
-        for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
-            pTileMap->TileValues[NthTile] = RandomS32InRange(&pGameState->RandomSeries, 1, 
-                                                             CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
-        }
+        // // Randomly assign tile values to test
+        // for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
+        //     pTileMap->TileValues[NthTile] = RandomS32InRange(&pGameState->RandomSeries, 1, 
+        //                                                      CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
+        // }
 
 // Undo
         pUndoState->UndoStepsArr[0] = PushNewUndoStep(&pUndoState->UndoStepsArena);
 
 // pPlayer
-        for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
-            facing_bitmaps *pFacingBitmaps = pPlayer->FacingBitmaps + FacingIdx;
-            arr_meta_bitmap *pMetaBitmaps = &pFacingBitmaps->MetaBitmaps;
-            pMetaBitmaps->Data = PushArray(&pMetaBitmaps->BitmapsArena, meta_bitmap, MAX_FACING_BITMAPS+1);
-            pMetaBitmaps->Len = MAX_FACING_BITMAPS+1;
-            pMetaBitmaps->NextEmptySlot = 1;
-            pFacingBitmaps->ReloadState.WaitState = READY_TO_RELOAD;
-            LoadPlayerBitmapsDir(pPlayer, pFacingBitmaps, pTransArena);
-            if(pMetaBitmaps->Data[1].IsPresent()) {
-                pFacingBitmaps->DrawThis = 1;
-            }
-        }
         for (int Facing = 0; Facing < 4; ++Facing) {
             pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
@@ -236,24 +228,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    // // Do the same checks for the player bitmaps
-    // for (int FacingIdx = 0; FacingIdx < 4; ++FacingIdx) {
-    //     facing_bitmaps *pThisFacing = &pPlayer->FacingBitmaps[FacingIdx];
-    //     char ThisFacingBitmapsDirpath[STRING_LEN];
-    //     WriteFacingBitmapsDirpathToBuffer(pPlayer, pThisFacing, ThisFacingBitmapsDirpath);
-    //     u64 CheckUpdateTime = GetDirWriteTime(ThisFacingBitmapsDirpath);
-    //     pThisFacing->ReloadState = GetUpdatedReloadState(CheckUpdateTime, pThisFacing->ReloadState);
-    //     if (pThisFacing->ReloadState.WaitState == READY_TO_RELOAD) {
-    //         LoadPlayerBitmapsDir(pPlayer, pThisFacing, pTransArena);
-    //     }
-    //     else {
-    //         arr_meta_bitmap *pMetaBitmaps = &pThisFacing->MetaBitmaps;
-    //         for(int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
-    //             ReloadBitmapIfChanged(pMetaBitmaps, Slot);
-    //         }
-    //     }
-    // }
-    //
     // Controller
     for (int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
@@ -297,11 +271,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 MetersToPixels;
 
                 pPlayer->Velo += Acceleration * Input->dtForFrame;
-                // f32 PlayerVeloSquaredMagnitude = Dot(pPlayer->Velo, pPlayer->Velo);
-                // f32 SquaredMinMovementThreshold = 0.001; 
-                // if (PlayerVeloSquaredMagnitude < SquaredMinMovementThreshold) {
-                //     pPlayer->Velo = v2{0, 0};
-                // }
             }
         }
     }
@@ -366,8 +335,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     if (pGameState->EditorState.WhichEditor == TILE)
     {
-        // undo_step Result = DrawTileEditor(Buffer, pGameState, pTransArena);
-        // UpdateTileMapAfterEditorExit(pTileMap, Result);
+        undo_step Result = DrawTileEditor(Buffer, pGameState, pTransArena);
+        UpdateTileMapAfterEditorExit(pTileMap, Result);
     }
     else if (pGameState->EditorState.WhichEditor == PLAYER)
     {
