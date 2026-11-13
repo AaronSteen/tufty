@@ -2,7 +2,7 @@
 #include "tufty.h"
 
 static void
-DrawSimpleRect(game_offscreen_buffer *Buf,
+DrawSimpleRect(bitmap *pDestBitmap,
                v2 Min, v2 Max,
                f32 R, f32 G, f32 B, f32 Alpha = 0.5f,
                b32 Outline = false)
@@ -16,24 +16,24 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
     {
         MinY = 0;
     }
-    if (MaxY > Buf->Height)
+    if (MaxY > pDestBitmap->Height)
     {
-        MaxY = Buf->Height;
+        MaxY = pDestBitmap->Height;
     }
     if (MinX < 0)
     {
         MinX = 0;
     }
-    if (MaxX > Buf->Width)
+    if (MaxX > pDestBitmap->Width)
     {
-        MaxX = Buf->Width;
+        MaxX = pDestBitmap->Width;
     }
 
     u32 Color = ((RoundF32ToU32(R * 255.0f) << 16) |
                  (RoundF32ToU32(G * 255.0f) << 8)  |
                  (RoundF32ToU32(B * 255.0f) << 0));
 
-    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
+    u8 *Row = (u8 *)pDestBitmap->Pixels + (MinY * pDestBitmap->Pitch) + (MinX * pDestBitmap->BytesPerPixel);
     for (int Y = MinY;
          Y < MaxY;
          ++Y)
@@ -45,12 +45,12 @@ DrawSimpleRect(game_offscreen_buffer *Buf,
         {
             *Pixel++ = Color;
         }
-        Row += Buf->Pitch;
+        Row += pDestBitmap->Pitch;
     }
 }
 
 static void
-DrawSpecialRect(game_offscreen_buffer *Buf,
+DrawSpecialRect(bitmap *pDestBitmap,
                 v2 Min, v2 Max,
                 color RectColor, color OutlineColor)
 {
@@ -61,21 +61,17 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
 
     b32 HasOutline = ((OutlineColor.R > 0) || (OutlineColor.G > 0) || (OutlineColor.B > 0) || (OutlineColor.A > 0));
 
-    if (MinY < 0)
-    {
+    if (MinY < 0) {
         MinY = 0;
     }
-    if (MaxY > Buf->Height)
-    {
-        MaxY = Buf->Height;
+    if (MaxY > pDestBitmap->Height) {
+        MaxY = pDestBitmap->Height;
     }
-    if (MinX < 0)
-    {
+    if (MinX < 0) {
         MinX = 0;
     }
-    if (MaxX > Buf->Width)
-    {
-        MaxX = Buf->Width;
+    if (MaxX > pDestBitmap->Width) {
+        MaxX = pDestBitmap->Width;
     }
 
     u32 RectBlue = RoundF32ToU32(RectColor.B * 255.0f);
@@ -83,50 +79,39 @@ DrawSpecialRect(game_offscreen_buffer *Buf,
     u32 RectRed = RoundF32ToU32(RectColor.R * 255.0f);
 
     u32 PackedOutlineColor = 0;
-    if (HasOutline)
-    {
+    if (HasOutline) {
         PackedOutlineColor = ( (RoundF32ToU32(OutlineColor.R * 255.0f) << 16) |
                                (RoundF32ToU32(OutlineColor.G * 255.0f) << 8 ) | 
                                (RoundF32ToU32(OutlineColor.B * 255.0f) << 0 ) );
     }
 
-    u8 *Row = (u8 *)Buf->Memory + (MinY * Buf->Pitch) + (MinX * Buf->BytesPerPixel);
-    for (int Y = MinY;
-         Y < MaxY;
-         ++Y)
-    {
-        u8 *Pixel = Row;
-        for (int X = MinX;
-             X < MaxX;
-             ++X)
-        {
-            if ( ((X == MinX) && HasOutline)   ||
-                 ((Y == MinY) && HasOutline)   ||
-                 ((X == MaxX-1) && HasOutline) ||
-                 ((Y == MaxY-1) && HasOutline) ) 
-            {
-                *(u32 *)Pixel = PackedOutlineColor;
+    u8 *pRow = pDestBitmap->Pixels + (MinY * pDestBitmap->Pitch) + (MinX * BPP);
+    for (int Y = MinY; Y < MaxY; ++Y) {
+        u8 *pPixel = pRow;
+        for (int X = MinX; X < MaxX; ++X) {
+            if ( ((X == MinX) && HasOutline)   || ((Y == MinY) && HasOutline)   ||
+                 ((X == MaxX-1) && HasOutline) || ((Y == MaxY-1) && HasOutline) ) {
+                    *(u32 *)pPixel = PackedOutlineColor;
             }
-            else
-            {
+            else {
                 // Blue
-                Pixel[0] = LerpS32(Pixel[0], RectBlue, RectColor.A);
+                pPixel[0] = LerpS32(pPixel[0], RectBlue, RectColor.A);
 
                 // Green
-                Pixel[1] = LerpS32(Pixel[1], RectGreen, RectColor.A);
+                pPixel[1] = LerpS32(pPixel[1], RectGreen, RectColor.A);
 
                 // Red
-                Pixel[2] = LerpS32(Pixel[2], RectRed, RectColor.A);
+                pPixel[2] = LerpS32(pPixel[2], RectRed, RectColor.A);
 
             }
-            Pixel += sizeof(u32);
+            pPixel += sizeof(u32);
         }
-        Row += Buf->Pitch;
+        pRow += pDestBitmap->Pitch;
     }
 }
 
 static void
-DEBUGDrawText(game_offscreen_buffer *Backbuf,
+DEBUGDrawText(bitmap *pDestBitmap,
               f32 X, f32 Y,
               char *StringText, arena *DebugTextArena,
               color Color,
@@ -136,34 +121,29 @@ DEBUGDrawText(game_offscreen_buffer *Backbuf,
     QuadBuf.Size = 300 * strlen(StringText);
     QuadBuf.Data = PushArray(DebugTextArena, u8, QuadBuf.Size);
     int NumQuads = stb_easy_font_print(0, 0, StringText, NULL, QuadBuf.Data, QuadBuf.Size);
-    for (int QuadIdx = 0;
-         QuadIdx < NumQuads;
-         ++QuadIdx)
-    {
+    for (int QuadIdx = 0; QuadIdx < NumQuads; ++QuadIdx) {
         quad *ThisQuad = (quad *)(QuadBuf.Data + QuadIdx * sizeof(quad));
         v2 Min = {(X + ThisQuad->TopLeft.X*Scale), (Y + ThisQuad->TopLeft.Y*Scale)};
         v2 Max = {(X + ThisQuad->BottomRight.X*Scale), (Y + ThisQuad->BottomRight.Y*Scale)};
-        if (Color.A == 1.0f)
-        {
-            DrawSimpleRect(Backbuf, Min, Max, Color.R, Color.G, Color.B);
+        if (Color.A == 1.0f) {
+            DrawSimpleRect(pDestBitmap, Min, Max, Color.R, Color.G, Color.B);
         }
-        else
-        {
-            DrawSpecialRect(Backbuf, Min, Max, Color, color{0, 0, 0, 0});
+        else {
+            DrawSpecialRect(pDestBitmap, Min, Max, Color, color{0, 0, 0, 0});
         }
     }
 }
 
 static void
-PrintCameraCoords(game_offscreen_buffer *Backbuf, v2 CameraPos, arena *pDebugTextArena)
+PrintCameraCoords(bitmap *pDestBitmap, v2 CameraPos, arena *pDebugTextArena)
 {
     char Temp[512];
     snprintf(Temp, sizeof(Temp), "Camera X = %f\nCamera Y = %f", CameraPos.X, CameraPos.Y);
-    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.1f), 30, Temp, pDebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
+    DEBUGDrawText(pDestBitmap, (pDestBitmap->Width * 0.1f), 30, Temp, pDebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
 }
 
 static void
-DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *pDebugTextArena)
+DEBUGPrintFps(bitmap *pDestBitmap, f32 NewFpsReading, arena *pDebugTextArena)
 {
 #define FPS_SNAPS 30
     static f32 FpsSnaps[FPS_SNAPS] = {};
@@ -185,12 +165,12 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *pDebugTe
     }
     char Temp[256];
     snprintf(Temp, 256, "%d FPS", RoundF32ToS32(FpsAvg));
-    DEBUGDrawText(Backbuf, (Backbuf->Width * 0.9f), 30, Temp, pDebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
+    DEBUGDrawText(pDestBitmap, (pDestBitmap->Width * 0.9f), 30, Temp, pDebugTextArena, color{0.9f, 0.2f, 0.5f, 1.0f});
 #undef FPS_SNAPS
 }
 
 // static void
-// DEBUGPrintRowsCols(game_offscreen_buffer *Backbuf, arena *DebugTextArena, tile_map *TileMap)
+// DEBUGPrintRowsCols(bitmap *Backbuf, arena *DebugTextArena, tile_map *TileMap)
 // {
 //     int OffsetFromGridX = 15;
 //     int OffsetFromGridY = 15;
@@ -221,22 +201,22 @@ DEBUGPrintFps(game_offscreen_buffer *Backbuf, f32 NewFpsReading, arena *pDebugTe
 // }
 //
 static void
-DrawFilepathTooltip(game_offscreen_buffer *pBackbuf, arena *pDebugTextArena, 
+DrawFilepathTooltip(bitmap *pDestBitmap, arena *pDebugTextArena, 
                     v2 MouseCoords, meta_bitmap *pHoveredBitmap)
 {
     f32 TooltipWidth = ((f32)strlen(pHoveredBitmap->Filepath)) * 11.2f;
     v2 TooltipMin = MouseCoords + v2{20.0f, -30.0f};
-    if (TooltipMin.X + TooltipWidth >= pBackbuf->Width) {
+    if (TooltipMin.X + TooltipWidth >= pDestBitmap->Width) {
         TooltipMin.X -= TooltipWidth;
     }
     v2 TooltipMax = TooltipMin + v2{TooltipWidth, 30.0f};
-    DrawSimpleRect(pBackbuf, TooltipMin, TooltipMax, 1, 1, 0.88f, 0.75f);
-    DEBUGDrawText(pBackbuf, TooltipMin.X + 5.0f, TooltipMin.Y + 6.0f, 
+    DrawSimpleRect(pDestBitmap, TooltipMin, TooltipMax, 1, 1, 0.88f, 0.75f);
+    DEBUGDrawText(pDestBitmap, TooltipMin.X + 5.0f, TooltipMin.Y + 6.0f, 
                   pHoveredBitmap->Filepath, pDebugTextArena, color{0, 0, 0, 1}, 2.0f);
 }
 
 static void
-DEBUGDrawFadingText(game_offscreen_buffer *pBackbuf, fading_text *pFadingText, 
+DEBUGDrawFadingText(bitmap *pDestBitmap, fading_text *pFadingText, 
                     arena *pDebugTextArena, color Color = {1, 1, 1, 1})
 {
     if (pFadingText->FrameCount >= pFadingText->FrameDuration) {
@@ -245,7 +225,7 @@ DEBUGDrawFadingText(game_offscreen_buffer *pBackbuf, fading_text *pFadingText,
     else {
         f32 InverseOpacity = (f32)pFadingText->FrameCount / (f32)pFadingText->FrameDuration;
         Color = {Color.R, Color.G, Color.B, 1 - InverseOpacity};
-        DEBUGDrawText(pBackbuf, pFadingText->X, pFadingText->Y, pFadingText->Text, pDebugTextArena, Color);
+        DEBUGDrawText(pDestBitmap, pFadingText->X, pFadingText->Y, pFadingText->Text, pDebugTextArena, Color);
         ++pFadingText->FrameCount;
     }
 }
@@ -265,13 +245,13 @@ UpdateCursorStateHoveredFrames(cursor_state *pCursorState)
 
 
 static void
-DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *pTransArena)
+DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena)
 {
     // editor_state *pEditorState = &pGameState->EditorState;
     player *pPlayer = &pGameState->Player;
     v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
-    v2 BrowserMin = {(f32)(pBackbuf->Width * 0.5f), 0};
-    v2 BrowserMax = {(f32)(pBackbuf->Width), (f32)(pBackbuf->Height)};
+    v2 BrowserMin = {(f32)(pDestBitmap->Width * 0.5f), 0};
+    v2 BrowserMax = {(f32)(pDestBitmap->Width), (f32)(pDestBitmap->Height)};
     b32 BagelActive = false;
 
     // Get an array of menu_tile structs accommodating the maximum number of player bitmaps the game supports.
@@ -279,9 +259,9 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
     //      player bitmaps because that array contains the special nil bitmap at the front
     menu_bitmap *pMenuBitmaps = PushArray(pTransArena, menu_bitmap, 4 * (MAX_FACING_BITMAPS));
 
-    DrawSpecialRect(pBackbuf, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{0, 0, 0, 0});
+    DrawSpecialRect(pDestBitmap, BrowserMin, BrowserMax, color{0.5f, 0.5f, 0.5f, 0.85f}, color{0, 0, 0, 0});
 
-    DEBUGDrawText(pBackbuf, BrowserMin.X + 300, 60, "Player Bitmaps Menu", pTransArena, color{1, 1, 1, 1});
+    DEBUGDrawText(pDestBitmap, BrowserMin.X + 300, 60, "Player Bitmaps Menu", pTransArena, color{1, 1, 1, 1});
 
     char *Dirs[] = {"East", "North", "West", "South"};
     menu_bitmap *pMenuHovered = nullptr;
@@ -293,7 +273,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
         arr_meta_bitmap *pMetaBitmaps = &pPlayer->FacingBitmaps[NthFace].MetaBitmaps;
         char Temp[STRING_LEN];
         snprintf(Temp, STRING_LEN, "Facing %s", Dirs[NthFace]);
-        DEBUGDrawText(pBackbuf, HeaderTextStart.X, HeaderTextStart.Y, Temp, pTransArena, color{0.9, 0.9, 0.9, 1}, 2.4);
+        DEBUGDrawText(pDestBitmap, HeaderTextStart.X, HeaderTextStart.Y, Temp, pTransArena, color{0.9, 0.9, 0.9, 1}, 2.4);
 
         f32 XDrawCoord = HeaderTextStart.X;
         for (int Slot = 0; Slot < pMetaBitmaps->Len; ++Slot) {
@@ -344,14 +324,14 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
         else {
             pBitmap = &pToDraw->Bitmap;
         }
-        ScaleAndBlitBitmap(pBackbuf, pMenuBitmapsCursor->TileMin, pMenuBitmapsCursor->TileMax, pBitmap);
+        ScaleAndBlitBitmap(pDestBitmap, pMenuBitmapsCursor->TileMin, pMenuBitmapsCursor->TileMax, pBitmap);
         v2 OutlineMin = {pMenuBitmapsCursor->TileMin.X-1, pMenuBitmapsCursor->TileMin.Y-1};
         v2 OutlineMax = {pMenuBitmapsCursor->TileMax.X+1, pMenuBitmapsCursor->TileMax.Y+1};
         if (pMenuBitmapsCursor->DrawThis) {
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.6, 0.5, 0.8});
+            DrawSpecialRect(pDestBitmap, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0, 0.6, 0.5, 0.8});
         }
         else {
-            DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
+            DrawSpecialRect(pDestBitmap, OutlineMin, OutlineMax, color{0, 0, 0, 0}, color{0.1, 0.1, 0.1, 0.8});        
         }
     }
 
@@ -361,11 +341,11 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
     if (pMenuHovered != nullptr) {
         v2 OutlineMin = {pMenuHovered->TileMin.X-1, pMenuHovered->TileMin.Y-1};
         v2 OutlineMax = {pMenuHovered->TileMax.X+1, pMenuHovered->TileMax.Y+1};
-        DrawSpecialRect(pBackbuf, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
+        DrawSpecialRect(pDestBitmap, OutlineMin, OutlineMax, color{1, 1, 1, 0.5f}, color{0, 0, 0, 0});
         if (pCursorState->HoveredFrames >= 30) {
             meta_bitmap *pHoveredBitmap = 
                 GetPlayerMetaBitmapPointer(pPlayer, pMenuHovered->FacingIdx, pMenuHovered->Slot);
-            DrawFilepathTooltip(pBackbuf, pTransArena, MouseCoords, pHoveredBitmap);
+            DrawFilepathTooltip(pDestBitmap, pTransArena, MouseCoords, pHoveredBitmap);
         }
     }
 
@@ -433,7 +413,7 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
         meta_bitmap *pIt = pHeldContainingArr->Get(pCursorState->HeldSlot);
         if (pIt->IsPresent()) {
             bitmap *pBitmap = &pIt->Bitmap;
-            DrawHeldTile(pBackbuf, MouseCoords, pBitmap);
+            DrawHeldTile(pDestBitmap, MouseCoords, pBitmap);
         }
     }
 
@@ -450,16 +430,16 @@ DrawPlayerEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena 
             f32 PlayerWidth = pBitmap->Width;
             f32 PlayerHeight = pBitmap->Height;
 
-            v2 PlayerMin = v2{(f32)pBackbuf->Width * 0.25f - PlayerWidth * 0.5f, 
-                (f32)pBackbuf->Height * 0.5f - PlayerHeight * 0.5f};
+            v2 PlayerMin = v2{(f32)pDestBitmap->Width * 0.25f - PlayerWidth * 0.5f, 
+                (f32)pDestBitmap->Height * 0.5f - PlayerHeight * 0.5f};
             v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-            ScaleAndBlitBitmap(pBackbuf, PlayerMin, PlayerMax, pBitmap);
+            ScaleAndBlitBitmap(pDestBitmap, PlayerMin, PlayerMax, pBitmap);
         }
     }
 }
 
 static undo_step
-DrawTileEditor(game_offscreen_buffer *pBackbuf, game_state *pGameState, arena *pTransArena)
+DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
 {
     editor_state *pEditorState = &pGameState->EditorState;
     undo_state *pUndoState = &pEditorState->UndoState;

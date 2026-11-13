@@ -84,8 +84,53 @@ ShouldAllowCameraMove(v2 Cam)
     }
 }
 
-static s32 
-GetTileValueFromMeters(
+static f32 
+MetersToTileSpace(f32 Meters)
+{
+    f32 Result = Meters / TILE_SIDE_M;
+    return Result;
+}
+
+static void
+BlitTilesToFramebuffer(game_state *pGameState, bitmap *pFramebuffer, arena *pTransArena)
+{
+    f32 MetersToDrawX = (RES_X / TILE_SIDE_PX) * 1.4f;
+    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
+    f32 OffsetFromCameraLeft = -OffsetFromCameraRight;
+
+    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
+    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
+    f32 OffsetFromCameraUp = -OffsetFromCameraDown;
+
+    f32 LeftmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X - (f32)MetersToDrawX * 0.5f);
+    LeftmostTile = floorf(LeftmostTile);
+
+    f32 RightmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X + (f32)MetersToDrawX * 0.5f);
+    RightmostTile = ceilf(RightmostTile);
+
+    f32 UpmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y - (f32)MetersToDrawY * 0.5f);
+    UpmostTile = floorf(UpmostTile);
+
+    f32 DownmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y + (f32)MetersToDrawY * 0.5f);
+    DownmostTile = ceilf(DownmostTile);
+
+    s32 FramebufferWidthInTiles = RightmostTile - LeftmostTile;
+    s32 FramebufferHeightInTiles = DownmostTile - UpmostTile;
+
+    pFramebuffer->BytesPerPixel = BPP;
+    pFramebuffer->Width = (int)FramebufferWidthInTiles * TILE_SIDE_PX;
+    pFramebuffer->Height = (int)FramebufferHeightInTiles * TILE_SIDE_PX;
+    pFramebuffer->Pitch = pFramebuffer->Width * BPP;
+    pFramebuffer->Pixels = PushArray(pTransArena, u8, pFramebuffer->Height * pFramebuffer->Width * BPP);
+
+    for (int Row = UpmostTile; Row <= DownmostTile; ++Row) {
+        for (int Col = LeftmostTile; Col <= RightmostTile; ++Col) {
+
+
+        }
+
+    }
+}
 
 // Resolution of backbuffer or framebuffer is 1920 x 1080
 
@@ -213,15 +258,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pPlayer->Pos.X = pGameState->CameraPos.X;
         pPlayer->Pos.Y = pGameState->CameraPos.Y;
         
-        pGameState->RedX.Pixels = PushArray(pWorldArena, u8, 64 * 64 * sizeof(u32));
-        pGameState->RedX.Height = pGameState->RedX.Width = 64;
-        pGameState->RedX.BytesPerPixel = 4;
-        DEBUGDrawText(pGameState->RedX.Pixels, 0, 0, "X", pTransArena, {1.0f, 0.1f, 0.1f});
+        // pGameState->RedX.Pixels = PushArray(pWorldArena, u8, 64 * 64 * sizeof(u32));
+        // pGameState->RedX.Height = pGameState->RedX.Width = 64;
+        // pGameState->RedX.BytesPerPixel = 4;
+        // DEBUGDrawText(pGameState->RedX.Pixels, 0, 0, "X", pTransArena, {1.0f, 0.1f, 0.1f});
 
         Memory->IsInitialized = true;
     }
     
     // @Main
+
+    // Wrap game_offscreen_buffer Buffer so we can write to it with our drawing functions
+    bitmap DrawBuffer = {};
+    DrawBuffer.Width = OsPixelBuffer->Width;
+    DrawBuffer.Height = OsPixelBuffer->Height;
+    DrawBuffer.Pitch = OsPixelBuffer->Pitch;
+    DrawBuffer.Pixels = (u8 *)OsPixelBuffer->Memory;
 
     // Reset the transient arena
     pTransArena->Used = 0;
@@ -363,15 +415,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Underlayer
     v2 ScreenMin = {0, 0};
-    v2 ScreenMax = {(f32)Buffer->Width, (f32)Buffer->Height};
-    DrawSimpleRect(Buffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
+    v2 ScreenMax = {(f32)DrawBuffer->Width, (f32)DrawBuffer->Height};
+    DrawSimpleRect(&DrawBuffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
 
     // RENDER
-    f32 FrameBufferWithApronWidth = RoundF32ToS32(1920.0f / 64.0f) + 2 * 64.0f;
-    f32 FrameBufferWithApronHeight = RoundF32ToS32(1080.0f / 64.0f) + 2 * 64.0f;
-    u32 *FrameBufferWithApron = PushArray(pTransArena, u32, FrameBufferWithApronWidth * FrameBufferWithApronHeight);
-
     // Tiles
+    bitmap Framebuffer;
+    BlitTilesToFramebuffer(pGameState, &Framebuffer, pTransArena);
+
     for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
         for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
             int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)Col, (f32)Row});

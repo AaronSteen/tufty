@@ -173,6 +173,10 @@ operator==(v2 A, v2 B)
 #define METERS_IN_WORLD_Y (TILE_SIDE_M * TILES_IN_WORLD_Y)
 #define METERS_IN_WORLD_X (TILE_SIDE_M * TILES_IN_WORLD_X)
 
+#define RES_X 1920.0f
+#define RES_Y 1080.0f
+#define BPP 4
+
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
 static debug_platform_free_file_memory *FreeFileMemory;
@@ -592,14 +596,20 @@ static void
 ParseBitmapHeader(bitmap *Bitmap)
 {
     bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
-    Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
-    Bitmap->Height = Header->Height;
-    Bitmap->Width = Header->Width;
     assert(Header->BitsPerPixel == 32);
-    Bitmap->BytesPerPixel = Header->BitsPerPixel / 8;
-    Bitmap->Pitch = Bitmap->Width * Bitmap->BytesPerPixel;
+    assert(Header->Height != 0);
+    if (Bitmap->Height > 0) {
+        Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset + ((Header->Height - 1) * (Header->Width * BPP));
+        Bitmap->Pitch = -(Header->Width * BPP);
+        Bitmap->Height = Header->Height;
+    }
+    else {
+        Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
+        Bitmap->Pitch = Header->Width * BPP;
+        Bitmap->Height = -Header->Height;
+    }
+    Bitmap->Width = Header->Width;
 }
-
 
 struct facing_bitmaps
 {

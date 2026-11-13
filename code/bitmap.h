@@ -247,56 +247,52 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, arena *pTr
 }
 
 static void
-ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap, b32 Flipped = true)
+ScaleAndBlitBitmap(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
 {
-    if (!Bitmap->Pixels)
+    if (!pSrcBitmap->Pixels)
     {
         return;
     }
-    f32 XCoef = (f32)Bitmap->Width / (Max.X - Min.X);
-    f32 YCoef = (f32)Bitmap->Height / (Max.Y - Min.Y);
+    f32 XCoef = (f32)pSrcBitmap->Width / (Max.X - Min.X);
+    f32 YCoef = (f32)pSrcBitmap->Height / (Max.Y - Min.Y);
 
-    s32 ScreenMinY = RoundF32ToS32(Min.Y);
-    s32 ScreenMaxY = RoundF32ToS32(Max.Y);
-    s32 ScreenMinX = RoundF32ToS32(Min.X);
-    s32 ScreenMaxX = RoundF32ToS32(Max.X);
+    s32 DestMinY = RoundF32ToS32(Min.Y);
+    s32 DestMaxY = RoundF32ToS32(Max.Y);
+    s32 DestMinX = RoundF32ToS32(Min.X);
+    s32 DestMaxX = RoundF32ToS32(Max.X);
 
-    s32 SampledScreenMinY = ScreenMinY;
-    s32 SampledScreenMaxY = ScreenMaxY;
-    s32 SampledScreenMinX = ScreenMinX;
-    s32 SampledScreenMaxX = ScreenMaxX;
+    s32 SampledDestMinY = DestMinY;
+    s32 SampledDestMaxY = DestMaxY;
+    s32 SampledDestMinX = DestMinX;
+    s32 SampledDestMaxX = DestMaxX;
 
-    if (ScreenMinY < 0)
+    if (DestMinY < 0)
     {
-        SampledScreenMinY = 0;
+        SampledDestMinY = 0;
     }
-    if (ScreenMinX < 0)
+    if (DestMinX < 0)
     {
-        SampledScreenMinX = 0;
+        SampledDestMinX = 0;
     }
-    if (ScreenMaxY > Buf->Height)
+    if (DestMaxY > pDestBitmap->Height)
     {
-        SampledScreenMaxY = Buf->Height;
+        SampledDestMaxY = pDestBitmap->Height;
     }
-    if (ScreenMaxX > Buf->Width)
+    if (DestMaxX > pDestBitmap->Width)
     {
-        SampledScreenMaxX = Buf->Width;
+        SampledDestMaxX = pDestBitmap->Width;
     }
 
     // Pixels are always 32 bits wide, memory order BB GG RR XX
-    u8 *DestRow = (u8 *)Buf->Memory + SampledScreenMinY * Buf->Pitch + SampledScreenMinX * Buf->BytesPerPixel;
-    for (int Y = SampledScreenMinY; Y < SampledScreenMaxY; ++Y)
+    u8 *DestRow = (u8 *)pDestBitmap->Pixels + SampledDestMinY * pDestBitmap->Pitch + SampledDestMinX * BPP;
+    for (int Y = SampledDestMinY; Y < SampledDestMaxY; ++Y)
     {
-        s32 SrcRowIdx = FloorF32ToS32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
-        s32 SrcRow = Bitmap->Height - 1 - SrcRowIdx;
-        if (Flipped == false) {
-            SrcRow = SrcRowIdx;
-        }
+        s32 SrcRow = FloorF32ToS32(YCoef*((f32)(Y-DestMinY)+0.5f));
         u8 *DestPixel = DestRow;
-        for (int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
+        for (int X = SampledDestMinX; X < SampledDestMaxX; ++X)
         {
-            s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
-            u8 *SrcPixel = Bitmap->Pixels + SrcRow * Bitmap->Pitch + SrcCol * Bitmap->BytesPerPixel;
+            s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-DestMinX)+0.5f));
+            u8 *SrcPixel = pSrcBitmap->Pixels + SrcRow * pSrcBitmap->Pitch + SrcCol * BPP;
 
             // Get the alpha value
             f32 Alpha = ((f32)SrcPixel[3]) / 255.0f;
@@ -312,57 +308,57 @@ ScaleAndBlitBitmap(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *Bitmap, b
 
             DestPixel += sizeof(u32);   
         }
-        DestRow += Buf->Pitch;
+        DestRow += pDestBitmap->Pitch;
     }
 }
 
 static void
-ScaleAndBlitCel(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *pBitmap)
+ScaleAndBlitCel(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
 {
-    if (pBitmap->Pixels == nullptr)
+    if (pSrcBitmap->Pixels == nullptr)
     {
-        pBitmap = &pGlobalBagel->Bitmap;
+        pSrcBitmap = &pGlobalBagel->Bitmap;
     }
-    f32 XCoef = (f32)pBitmap->Width / (Max.X - Min.X);
-    f32 YCoef = (f32)pBitmap->Height / (Max.Y - Min.Y);
+    f32 XCoef = (f32)pSrcBitmap->Width / (Max.X - Min.X);
+    f32 YCoef = (f32)pSrcBitmap->Height / (Max.Y - Min.Y);
 
-    s32 ScreenMinY = RoundF32ToS32(Min.Y);
-    s32 ScreenMaxY = RoundF32ToS32(Max.Y);
-    s32 ScreenMinX = RoundF32ToS32(Min.X);
-    s32 ScreenMaxX = RoundF32ToS32(Max.X);
+    s32 DestMinY = RoundF32ToS32(Min.Y);
+    s32 DestMaxY = RoundF32ToS32(Max.Y);
+    s32 DestMinX = RoundF32ToS32(Min.X);
+    s32 DestMaxX = RoundF32ToS32(Max.X);
 
-    s32 SampledScreenMinY = ScreenMinY;
-    s32 SampledScreenMaxY = ScreenMaxY;
-    s32 SampledScreenMinX = ScreenMinX;
-    s32 SampledScreenMaxX = ScreenMaxX;
+    s32 SampledDestMinY = DestMinY;
+    s32 SampledDestMaxY = DestMaxY;
+    s32 SampledDestMinX = DestMinX;
+    s32 SampledDestMaxX = DestMaxX;
 
-    if (ScreenMinY < 0)
+    if (DestMinY < 0)
     {
-        SampledScreenMinY = 0;
+        SampledDestMinY = 0;
     }
-    if (ScreenMinX < 0)
+    if (DestMinX < 0)
     {
-        SampledScreenMinX = 0;
+        SampledDestMinX = 0;
     }
-    if (ScreenMaxY > Buf->Height)
+    if (DestMaxY > pDestBitmap->Height)
     {
-        SampledScreenMaxY = Buf->Height;
+        SampledDestMaxY = pDestBitmap->Height;
     }
-    if (ScreenMaxX > Buf->Width)
+    if (DestMaxX > pDestBitmap->Width)
     {
-        SampledScreenMaxX = Buf->Width;
+        SampledDestMaxX = pDestBitmap->Width;
     }
 
     // Pixels are always 32 bits wide, memory order BB GG RR XX
-    u8 *DestRow = (u8 *)Buf->Memory + SampledScreenMinY * Buf->Pitch + SampledScreenMinX * Buf->BytesPerPixel;
-    for (int Y = SampledScreenMinY; Y < SampledScreenMaxY; ++Y)
+    u8 *pDestRow = pDestBitmap->Pixels + SampledDestMinY * pDestBitmap->Pitch + SampledDestMinX * BPP;
+    for (int Y = SampledDestMinY; Y < SampledDestMaxY; ++Y)
     {
-        s32 SrcRow = FloorF32ToS32(YCoef*((f32)(Y-ScreenMinY)+0.5f));
-        u8 *DestPixel = DestRow;
-        for (int X = SampledScreenMinX; X < SampledScreenMaxX; ++X)
+        s32 SrcRow = FloorF32ToS32(YCoef*((f32)(Y-DestMinY)+0.5f));
+        u8 *pDestPixel = pDestRow;
+        for (int X = SampledDestMinX; X < SampledDestMaxX; ++X)
         {
-            s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-ScreenMinX)+0.5f));
-            u8 *SrcPixel = pBitmap->Pixels + SrcRow * pBitmap->Pitch + SrcCol * pBitmap->BytesPerPixel;
+            s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-DestMinX)+0.5f));
+            u8 *SrcPixel = pSrcBitmap->Pixels + SrcRow * pSrcBitmap->Pitch + SrcCol * BPP;
 
             // Source is RGBA
             // Dest is BGRA
@@ -371,25 +367,25 @@ ScaleAndBlitCel(game_offscreen_buffer *Buf, v2 Min, v2 Max, bitmap *pBitmap)
             f32 Alpha = ((f32)SrcPixel[3]) / 255.0f;
 
             //Blue
-            DestPixel[0] = LerpS32(DestPixel[0], SrcPixel[2], Alpha);
+            pDestPixel[0] = LerpS32(pDestPixel[0], SrcPixel[2], Alpha);
 
             // Green
-            DestPixel[1] = LerpS32(DestPixel[1], SrcPixel[1], Alpha);
+            pDestPixel[1] = LerpS32(pDestPixel[1], SrcPixel[1], Alpha);
 
             // Red
-            DestPixel[2] = LerpS32(DestPixel[2], SrcPixel[0], Alpha);
+            pDestPixel[2] = LerpS32(pDestPixel[2], SrcPixel[0], Alpha);
 
-            DestPixel += sizeof(u32);   
+            pDestPixel += sizeof(u32);   
         }
-        DestRow += Buf->Pitch;
+        pDestRow += pDestBitmap->Pitch;
     }
 }
 static void
-DrawHeldTile(game_offscreen_buffer *pBackbuf, v2 MouseCoords, bitmap *pBitmap)
+DrawHeldTile(bitmap *pDestBitmap, v2 MouseCoords, bitmap *pSrcBitmap)
 {
     v2 Min = MouseCoords + v2{20.0f, 20.0f};
     v2 Max = Min + v2{30.0f, 30.0f};
-    ScaleAndBlitBitmap(pBackbuf, Min, Max, pBitmap);
+    ScaleAndBlitBitmap(pDestBitmap, Min, Max, pSrcBitmap);
 }
 
 static int
