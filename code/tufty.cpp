@@ -62,7 +62,7 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
     }
 }
 
-b32
+static b32
 IsPlayerTryingToMove(void)
 {
     b32 Result = (GlobalKeyboardController->MoveLeft.EndedDown ||
@@ -71,6 +71,21 @@ IsPlayerTryingToMove(void)
                   GlobalKeyboardController->MoveDown.EndedDown);
     return Result;
 }
+
+static b32
+ShouldAllowCameraMove(v2 Cam)
+{
+    if (Cam.X < 21.0f || Cam.X >= METERS_IN_WORLD_X - 21.0f ||
+        Cam.Y < 11.8125f || Cam.Y >= METERS_IN_WORLD_Y - 11.8125f) {
+            return false;
+    }
+    else {
+        return true;
+    }
+}
+
+static s32 
+GetTileValueFromMeters(
 
 // Resolution of backbuffer or framebuffer is 1920 x 1080
 
@@ -272,8 +287,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Acceleration *= CameraSpeed;
             Acceleration += -3.0f * pGameState->CameraVelo;
 
-            pGameState->CameraPos += 0.5f * Acceleration * Square(Input->dtForFrame) + pGameState->CameraVelo * Input->dtForFrame;
-
+            v2 TestCamera = 0.5f * Acceleration * Square(Input->dtForFrame) + pGameState->CameraVelo * Input->dtForFrame;
+            if (ShouldAllowCameraMove(TestCamera)) {
+                pGameState->CameraPos = TestCamera;
+            }
             pGameState->CameraVelo += Acceleration * Input->dtForFrame;
         }
 
