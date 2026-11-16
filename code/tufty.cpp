@@ -91,46 +91,18 @@ MetersToTileSpace(f32 Meters)
     return Result;
 }
 
-static void
-BlitTilesToFramebuffer(game_state *pGameState, bitmap *pFramebuffer, arena *pTransArena)
+static bitmap
+MakeEmptyBitmap(s32 Width, s32 Height, arena *pArena)
 {
-    f32 MetersToDrawX = (RES_X / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
-    f32 OffsetFromCameraLeft = -OffsetFromCameraRight;
-
-    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
-    f32 OffsetFromCameraUp = -OffsetFromCameraDown;
-
-    f32 LeftmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X - (f32)MetersToDrawX * 0.5f);
-    LeftmostTile = floorf(LeftmostTile);
-
-    f32 RightmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X + (f32)MetersToDrawX * 0.5f);
-    RightmostTile = ceilf(RightmostTile);
-
-    f32 UpmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y - (f32)MetersToDrawY * 0.5f);
-    UpmostTile = floorf(UpmostTile);
-
-    f32 DownmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y + (f32)MetersToDrawY * 0.5f);
-    DownmostTile = ceilf(DownmostTile);
-
-    s32 FramebufferWidthInTiles = RightmostTile - LeftmostTile;
-    s32 FramebufferHeightInTiles = DownmostTile - UpmostTile;
-
-    pFramebuffer->BytesPerPixel = BPP;
-    pFramebuffer->Width = (int)FramebufferWidthInTiles * TILE_SIDE_PX;
-    pFramebuffer->Height = (int)FramebufferHeightInTiles * TILE_SIDE_PX;
-    pFramebuffer->Pitch = pFramebuffer->Width * BPP;
-    pFramebuffer->Pixels = PushArray(pTransArena, u8, pFramebuffer->Height * pFramebuffer->Width * BPP);
-
-    for (int Row = UpmostTile; Row <= DownmostTile; ++Row) {
-        for (int Col = LeftmostTile; Col <= RightmostTile; ++Col) {
-
-
-        }
-
-    }
+    bitmap Result = {};
+    Result.Pixels = PushArray(pArena, u8, Width * Height * BPP);
+    Result.Height = Height;
+    Result.Width = Width;
+    Result.BytesPerPixel = BPP;
+    Result.Pitch = Width * BPP;
+    return Result;
 }
+
 
 // Resolution of backbuffer or framebuffer is 1920 x 1080
 
@@ -267,13 +239,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     
     // @Main
-
-    // Wrap game_offscreen_buffer Buffer so we can write to it with our drawing functions
-    bitmap DrawBuffer = {};
-    DrawBuffer.Width = OsPixelBuffer->Width;
-    DrawBuffer.Height = OsPixelBuffer->Height;
-    DrawBuffer.Pitch = OsPixelBuffer->Pitch;
-    DrawBuffer.Pixels = (u8 *)OsPixelBuffer->Memory;
 
     // Reset the transient arena
     pTransArena->Used = 0;
@@ -412,49 +377,71 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
     
+    f32 MetersToDrawX = (RES_X / TILE_SIDE_PX) * 1.4f;
+    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
+    f32 OffsetFromCameraLeft = -OffsetFromCameraRight;
+
+    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
+    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
+    f32 OffsetFromCameraUp = -OffsetFromCameraDown;
+
+    f32 LeftmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X - (f32)MetersToDrawX * 0.5f);
+    LeftmostTile = floorf(LeftmostTile);
+
+    f32 RightmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X + (f32)MetersToDrawX * 0.5f);
+    RightmostTile = ceilf(RightmostTile);
+
+    f32 UpmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y - (f32)MetersToDrawY * 0.5f);
+    UpmostTile = floorf(UpmostTile);
+
+    f32 DownmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y + (f32)MetersToDrawY * 0.5f);
+    DownmostTile = ceilf(DownmostTile);
+
+    s32 GameFramebufWidthInTiles = RightmostTile - LeftmostTile;
+    s32 GameFramebufWidthInPx = GameFramebufWidthInTiles * TILE_SIDE_PX;
+    s32 GameFramebufHeightInTiles = DownmostTile - UpmostTile;
+    s32 GameFramebufHeightInPx = GameFramebufHeightInTiles * TILE_SIDE_PX;
+
+    bitmap GameFramebuf = MakeEmptyBitmap(GameFramebufWidthInPx, GameFramebufHeightInPx, pTransArena);
 
     // Underlayer
-    v2 ScreenMin = {0, 0};
-    v2 ScreenMax = {(f32)DrawBuffer->Width, (f32)DrawBuffer->Height};
-    DrawSimpleRect(&DrawBuffer, ScreenMin, ScreenMax, 0.5f, 0.55f, 0.6f);
+    DrawSimpleRect(&GameFramebuf, v2{0, 0}, v2{(f32)GameFramebuf.Width, (f32)GameFramebuf.Height}, 0.5f, 0.55f, 0.6f);
 
     // RENDER
     // Tiles
-    bitmap Framebuffer;
-    BlitTilesToFramebuffer(pGameState, &Framebuffer, pTransArena);
 
-    for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
-        for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
-            int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)Col, (f32)Row});
-            s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
-            v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
-            v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
-
-            if (TileValue > 0) {
-                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
-                bitmap *pBitmap = &pToDraw->Bitmap;
-                // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
-                //      but if we change the tile size from 64x64 then we will
-                if (pToDraw->IsPresent() == false) {
-                    pBitmap = &pGlobalBagel->Bitmap;
-                }
-                ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
-            }
-            if (pGameState->EditorState.WhichEditor == TILE)
-            {
-                DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
-            }
-        }
-    }
-
+    // for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
+    //     for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
+    //         int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)Col, (f32)Row});
+    //         s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
+    //         v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
+    //         v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
+    //
+    //         if (TileValue > 0) {
+    //             meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
+    //             bitmap *pBitmap = &pToDraw->Bitmap;
+    //             // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
+    //             //      but if we change the tile size from 64x64 then we will
+    //             if (pToDraw->IsPresent() == false) {
+    //                 pBitmap = &pGlobalBagel->Bitmap;
+    //             }
+    //             ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
+    //         }
+    //         if (pGameState->EditorState.WhichEditor == TILE)
+    //         {
+    //             DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
+    //         }
+    //     }
+    // }
+    //
     if (pGameState->EditorState.WhichEditor == TILE)
     {
-        undo_step Result = DrawTileEditor(Buffer, pGameState, pTransArena);
+        undo_step Result = DrawTileEditor(&GameFramebuf, pGameState, pTransArena);
         UpdateTileMapAfterEditorExit(pTileMap, Result);
     }
     else if (pGameState->EditorState.WhichEditor == PLAYER)
     {
-        DrawPlayerEditor(Buffer, pGameState, pTransArena);
+        DrawPlayerEditor(&GameFramebuf, pGameState, pTransArena);
     }
     else
     {
@@ -463,7 +450,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
         v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
-        ScaleAndBlitCel(Buffer, PlayerMin, PlayerMax, pToDraw);
+        ScaleAndBlitCel(&GameFramebuf, PlayerMin, PlayerMax, pToDraw);
     }
         // else {
             // facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
@@ -501,9 +488,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pGameState->EditorState.PrintRowsCols = !pGameState->EditorState.PrintRowsCols;
     }
 
-    DEBUGPrintFps(Buffer, Input->Fps, pTransArena);
+    DEBUGPrintFps(&GameFramebuf, Input->Fps, pTransArena);
+    PrintCameraCoords(&GameFramebuf, pGameState->CameraPos, pTransArena);
+    s32 CenteredCameraX = GameFramebufWidthInPx * 0.5f;
+    s32 CenteredCameraY = GameFramebufHeightInPx * 0.5f;
+    s32 CopySrcX = CenteredCameraX - OsFramebuf->Width * 0.5f;
+    s32 CopySrcY = CenteredCameraY - OsFramebuf->Height * 0.5f;
+    
+    u8 *CopySrcRow = GameFramebuf.Pixels + CopySrcY * GameFramebuf.Pitch + CopySrcX * BPP;
+    u8 *CopyDestRow = (u8 *)OsFramebuf->Memory;
+    for (int Y = 0; Y < OsFramebuf->Height; ++Y) {
+        memcpy(CopyDestRow, CopySrcRow, OsFramebuf->Pitch);
+        CopySrcRow += GameFramebuf.Pitch;
+        CopyDestRow += OsFramebuf->Pitch;
+    }
 
-    PrintCameraCoords(Buffer, pGameState->CameraPos, pTransArena);
+
+
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
