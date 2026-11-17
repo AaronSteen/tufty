@@ -71,6 +71,14 @@ LoadAnimation(arr_animation *pAnimationArray, const char *pFilepath)
         mem_idx NumBytesForPixels = pBitmap->Width * pBitmap->Height * BytesPerPixel;
         pBitmap->Pixels = PushArray(pAnimationArray->pContainingArena, u8, NumBytesForPixels);
         memcpy(pBitmap->Pixels, pAsepriteCel->pixels, NumBytesForPixels);
+        for (int Y = 0; Y < pBitmap->Height; ++Y) {
+            for (int X = 0; X < pBitmap->Width; ++X) {
+                u8 *Pixel = pBitmap->Pixels + Y * pBitmap->Pitch + X * BPP;
+                u8 *R = Pixel + 2;
+                u8 *B = Pixel;
+                XorSwapU8(R, B);
+            }
+        }
     }
 
     cute_aseprite_free(pAseprite);

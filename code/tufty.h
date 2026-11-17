@@ -568,7 +568,7 @@ struct bitmap_header
     u8 Reserved[4];
     u32 DataOffset;
     u32 HeaderSize;
-    u32 Width;
+    s32 Width;
     s32 Height;
     u16 Planes;
     u16 BitsPerPixel;
@@ -598,7 +598,7 @@ ParseBitmapHeader(bitmap *Bitmap)
     bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
     assert(Header->BitsPerPixel == 32);
     assert(Header->Height != 0);
-    if (Bitmap->Height > 0) {
+    if (Header->Height > 0) {
         Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset + ((Header->Height - 1) * (Header->Width * BPP));
         Bitmap->Pitch = -(Header->Width * BPP);
         Bitmap->Height = Header->Height;
@@ -608,6 +608,18 @@ ParseBitmapHeader(bitmap *Bitmap)
         Bitmap->Pitch = Header->Width * BPP;
         Bitmap->Height = -Header->Height;
     }
+    Bitmap->Width = Header->Width;
+}
+
+static void
+ParseBitmapHeader_(bitmap *Bitmap)
+{
+    bitmap_header *Header = (bitmap_header *)Bitmap->Buffer.Data;
+    assert(Header->BitsPerPixel == 32);
+    assert(Header->Height > 0);
+    Bitmap->Pixels = Bitmap->Buffer.Data + Header->DataOffset;
+    Bitmap->Pitch = Header->Width * BPP;
+    Bitmap->Height = Header->Height;
     Bitmap->Width = Header->Width;
 }
 

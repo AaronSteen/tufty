@@ -6,3 +6,8 @@ target:
   working_directory: data
   enabled: 1
 }
+type_view:
+{
+  type: bitmap
+  expr: "bitmap(Pixels, Width, Height, fmt=bgra8)"
+}

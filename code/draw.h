@@ -2,6 +2,54 @@
 #include "tufty.h"
 
 static void
+DrawSimpleRect_(bitmap *pDestBitmap,
+               v2 Min, v2 Max,
+               f32 R, f32 G, f32 B)
+{
+    s32 MinX = RoundF32ToS32(Min.X);
+    s32 MinY = RoundF32ToS32(Min.Y);
+    s32 MaxX = RoundF32ToS32(Max.X);
+    s32 MaxY = RoundF32ToS32(Max.Y);
+
+    if (MinY < 0)
+    {
+        MinY = 0;
+    }
+    if (MaxY > pDestBitmap->Height)
+    {
+        MaxY = pDestBitmap->Height;
+    }
+    if (MinX < 0)
+    {
+        MinX = 0;
+    }
+    if (MaxX > pDestBitmap->Width)
+    {
+        MaxX = pDestBitmap->Width;
+    }
+
+    u32 Color = ((0xFF << 24)                      |
+                 (RoundF32ToU32(R * 255.0f) << 16) |
+                 (RoundF32ToU32(G * 255.0f) << 8)  |
+                 (RoundF32ToU32(B * 255.0f) << 0));
+
+    u8 *Row = (u8 *)pDestBitmap->Pixels + (MinY * pDestBitmap->Pitch) + (MinX * pDestBitmap->BytesPerPixel);
+    for (int Y = MinY;
+         Y < MaxY;
+         ++Y)
+    {
+        u32 *Pixel = (u32 *)Row;
+        for (int X = MinX;
+             X < MaxX;
+             ++X)
+        {
+            *Pixel++ = Color;
+        }
+        Row += pDestBitmap->Pitch;
+    }
+}
+
+static void
 DrawSimpleRect(bitmap *pDestBitmap,
                v2 Min, v2 Max,
                f32 R, f32 G, f32 B, f32 Alpha = 0.5f,

@@ -34,11 +34,36 @@ GetPlayerArrMetaBitmapPtr(player *pPlayer, int FacingIdx)
 }
 
 static void
+XorSwapU8(u8 *A, u8 *B)
+{
+    assert(A != B);
+    *A ^= *B;
+    *B ^= *A;
+    *A ^= *B;
+}
+static void
+XorSwapU32(u32 *A, u32 *B)
+{
+    assert(A != B);
+    *A ^= *B;
+    *B ^= *A;
+    *A ^= *B;
+}
+
+static void
 ActuallyLoadBitmap(meta_bitmap *pIt)
 {
     assert(pIt->IsPresent());
     ReadFileInto(pIt->Filepath, (u32)pIt->Bitmap.Buffer.Size, pIt->Bitmap.Buffer.Data);
-    ParseBitmapHeader(&pIt->Bitmap);
+    bitmap *pBmp = &pIt->Bitmap;
+    ParseBitmapHeader_(pBmp);
+    for (int Y = 0; Y < pBmp->Height * 0.5f; ++Y) {
+        for (int X = 0; X < pBmp->Width; ++X) {
+            u32 *Higher = (u32 *)(pBmp->Pixels + Y * pBmp->Pitch + X * BPP);
+            u32 *Lower = (u32 *)(pBmp->Pixels + ((pBmp->Height - 1) * pBmp->Pitch - (Y * pBmp->Pitch)) + X * BPP);
+            XorSwapU32(Higher, Lower);
+        }
+    }
     pIt->ReloadState.LastWriteTime = GetFileWriteTime(pIt->Filepath);
 }
 
@@ -249,9 +274,9 @@ LoadPlayerBitmapsDir(player *pPlayer, facing_bitmaps *pFacingBitmaps, arena *pTr
 static void
 ScaleAndBlitBitmap(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
 {
-    if (!pSrcBitmap->Pixels)
+    if (pSrcBitmap->Pixels == nullptr)
     {
-        return;
+        pSrcBitmap = &pGlobalBagel->Bitmap;
     }
     f32 XCoef = (f32)pSrcBitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)pSrcBitmap->Height / (Max.Y - Min.Y);
@@ -360,20 +385,17 @@ ScaleAndBlitCel(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
             s32 SrcCol = FloorF32ToS32(XCoef*((f32)(X-DestMinX)+0.5f));
             u8 *SrcPixel = pSrcBitmap->Pixels + SrcRow * pSrcBitmap->Pitch + SrcCol * BPP;
 
-            // Source is RGBA
-            // Dest is BGRA
-
             // Get the alpha value
             f32 Alpha = ((f32)SrcPixel[3]) / 255.0f;
 
             //Blue
-            pDestPixel[0] = LerpS32(pDestPixel[0], SrcPixel[2], Alpha);
+            pDestPixel[0] = LerpS32(pDestPixel[0], SrcPixel[0], Alpha);
 
             // Green
             pDestPixel[1] = LerpS32(pDestPixel[1], SrcPixel[1], Alpha);
 
             // Red
-            pDestPixel[2] = LerpS32(pDestPixel[2], SrcPixel[0], Alpha);
+            pDestPixel[2] = LerpS32(pDestPixel[2], SrcPixel[2], Alpha);
 
             pDestPixel += sizeof(u32);   
         }

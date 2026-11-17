@@ -225,8 +225,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
         ActuallyLoadBitmap(pGlobalBagel);
 
-        pGameState->CameraPos = {(f32)TILES_IN_WORLD_Y * TILE_SIDE_M * 0.5f, 
-                                TILES_IN_WORLD_X * TILE_SIDE_M * 0.5f};
+        pGameState->CameraPos = {(f32)TILES_IN_WORLD_X * TILE_SIDE_M * 0.5f, 
+                                (f32)TILES_IN_WORLD_Y * TILE_SIDE_M * 0.5f};
         pPlayer->Pos.X = pGameState->CameraPos.X;
         pPlayer->Pos.Y = pGameState->CameraPos.Y;
         
@@ -304,7 +304,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Acceleration *= CameraSpeed;
             Acceleration += -3.0f * pGameState->CameraVelo;
 
-            v2 TestCamera = 0.5f * Acceleration * Square(Input->dtForFrame) + pGameState->CameraVelo * Input->dtForFrame;
+            v2 TestCamera = pGameState->CameraPos + 
+                            0.5f * Acceleration * Square(Input->dtForFrame) + 
+                            pGameState->CameraVelo * Input->dtForFrame;
             if (ShouldAllowCameraMove(TestCamera)) {
                 pGameState->CameraPos = TestCamera;
             }
@@ -378,23 +380,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     
     f32 MetersToDrawX = (RES_X / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
-    f32 OffsetFromCameraLeft = -OffsetFromCameraRight;
-
-    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
-    f32 OffsetFromCameraUp = -OffsetFromCameraDown;
-
-    f32 LeftmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X - (f32)MetersToDrawX * 0.5f);
+    f32 OffsetFromCameraLeft = -(MetersToDrawX * 0.5f);
+    f32 LeftmostTile = MetersToTileSpace(pGameState->CameraPos.X + OffsetFromCameraLeft);
     LeftmostTile = floorf(LeftmostTile);
-
-    f32 RightmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.X + (f32)MetersToDrawX * 0.5f);
+    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
+    f32 RightmostTile = MetersToTileSpace(pGameState->CameraPos.X + OffsetFromCameraRight);
     RightmostTile = ceilf(RightmostTile);
 
-    f32 UpmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y - (f32)MetersToDrawY * 0.5f);
+    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
+    f32 OffsetFromCameraUp = -(MetersToDrawY * 0.5f);
+    f32 UpmostTile = MetersToTileSpace(pGameState->CameraPos.Y + OffsetFromCameraUp);
     UpmostTile = floorf(UpmostTile);
-
-    f32 DownmostTile = (f32)MetersToTileSpace(pGameState->CameraPos.Y + (f32)MetersToDrawY * 0.5f);
+    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
+    f32 DownmostTile = MetersToTileSpace(pGameState->CameraPos.Y + OffsetFromCameraDown);
     DownmostTile = ceilf(DownmostTile);
 
     s32 GameFramebufWidthInTiles = RightmostTile - LeftmostTile;
@@ -403,12 +401,53 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     s32 GameFramebufHeightInPx = GameFramebufHeightInTiles * TILE_SIDE_PX;
 
     bitmap GameFramebuf = MakeEmptyBitmap(GameFramebufWidthInPx, GameFramebufHeightInPx, pTransArena);
+    // for (u32 *Pixel = (u32 *)GameFramebuf.Pixels; Pixel < ((u32 *)GameFramebuf.Pixels + (GameFramebuf.Width * GameFramebuf.Height)); ++Pixel) {
+    //     *Pixel |= (0xFF << 24);
+    // }
 
     // Underlayer
-    DrawSimpleRect(&GameFramebuf, v2{0, 0}, v2{(f32)GameFramebuf.Width, (f32)GameFramebuf.Height}, 0.5f, 0.55f, 0.6f);
+    DrawSimpleRect_(&GameFramebuf, v2{0, 0}, v2{(f32)GameFramebuf.Width, (f32)GameFramebuf.Height}, 0.5f, 0.55f, 0.6f);
 
     // RENDER
     // Tiles
+    for (int Y = UpmostTile; Y <= DownmostTile; ++Y) {
+        for (int X = LeftmostTile; X <= RightmostTile; ++X) {
+            int Tile1D = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)X, (f32)Y});
+            int TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, Tile1D);
+            if (TileValue > 0) {
+                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
+                f32 XStart = (f32)(X - LeftmostTile) * TILE_SIDE_PX;
+                f32 YStart = (f32)(Y - UpmostTile) * TILE_SIDE_PX;
+                v2 Min = {XStart, YStart};
+                v2 Max = Min + v2{TILE_SIDE_PX, TILE_SIDE_PX};
+                ScaleAndBlitBitmap(&GameFramebuf, Min, Max, &pToDraw->Bitmap);
+            }
+        }
+    }
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
     //     for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
@@ -446,34 +485,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else
     {
         UpdatePlayerAnimationCel(pPlayer, Input->dtForFrame);
-        bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
-
-        v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
-        v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
-        ScaleAndBlitCel(&GameFramebuf, PlayerMin, PlayerMax, pToDraw);
+        // bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
+        //
+        // v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
+        // v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
+        // ScaleAndBlitCel(&GameFramebuf, PlayerMin, PlayerMax, pToDraw);
     }
-        // else {
-            // facing_bitmaps *CurrentFacing = &pPlayer->FacingBitmaps[pPlayer->IsFacing];
-            // meta_bitmap *pToDraw = CurrentFacing->MetaBitmaps.Get(CurrentFacing->DrawThis);
-            // if (!pToDraw->IsPresent()) {
-            //     pToDraw = pGlobalBagel;
-            // }
-            // f32 PlayerWidth = pToDraw->Bitmap.Width;
-            // f32 PlayerHeight = pToDraw->Bitmap.Height;
-            // v2 PlayerMin = {pPlayer->Position.X - PlayerWidth * 0.5f, 
-            //     pPlayer->Position.Y - PlayerHeight};
-            // v2 PlayerMax = PlayerMin + v2{PlayerWidth, PlayerHeight};
-            //
-            // // TODO(Aaron): doing it once per frame is bound to be very slow, and it seems like i can detect slightly jittery animation
-            // //      in the game when moving character around. test this.
-            // ScaleAndBlitBitmap(Buffer, PlayerMin, PlayerMax, &pToDraw->Bitmap);
-        // }
-
-    // I think we don't need to check half transition count for the keys with these save/load commands because subsequent EndedDown
-    //      messages are routed to the message loop for the save/load dialog, not our usual
-    //      message loop in the platform layer, and we have code in the platform layer to
-    //      ensure that these are ignored (AS, 9/22)
-    //
+    // 
     // Note MoveDown is the "S" key
     if (GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown) {
         SaveProject(pTileMap, pPlayer, pTransArena);
@@ -488,21 +506,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pGameState->EditorState.PrintRowsCols = !pGameState->EditorState.PrintRowsCols;
     }
 
-    DEBUGPrintFps(&GameFramebuf, Input->Fps, pTransArena);
-    PrintCameraCoords(&GameFramebuf, pGameState->CameraPos, pTransArena);
+
     s32 CenteredCameraX = GameFramebufWidthInPx * 0.5f;
     s32 CenteredCameraY = GameFramebufHeightInPx * 0.5f;
     s32 CopySrcX = CenteredCameraX - OsFramebuf->Width * 0.5f;
     s32 CopySrcY = CenteredCameraY - OsFramebuf->Height * 0.5f;
     
+    bitmap WrapOsFramebuf = {};
+    WrapOsFramebuf.Width = OsFramebuf->Width;
+    WrapOsFramebuf.Height = OsFramebuf->Height;
+    WrapOsFramebuf.BytesPerPixel = OsFramebuf->BytesPerPixel;
+    WrapOsFramebuf.Pitch = OsFramebuf->Pitch;
+    WrapOsFramebuf.Pixels = (u8 *)OsFramebuf->Memory;
+
     u8 *CopySrcRow = GameFramebuf.Pixels + CopySrcY * GameFramebuf.Pitch + CopySrcX * BPP;
-    u8 *CopyDestRow = (u8 *)OsFramebuf->Memory;
-    for (int Y = 0; Y < OsFramebuf->Height; ++Y) {
-        memcpy(CopyDestRow, CopySrcRow, OsFramebuf->Pitch);
+    u8 *CopyDestRow = WrapOsFramebuf.Pixels;
+    for (int Y = 0; Y < WrapOsFramebuf.Height; ++Y) {
+        memcpy(CopyDestRow, CopySrcRow, WrapOsFramebuf.Pitch);
         CopySrcRow += GameFramebuf.Pitch;
-        CopyDestRow += OsFramebuf->Pitch;
+        CopyDestRow += WrapOsFramebuf.Pitch;
     }
 
+
+    DEBUGPrintFps(&WrapOsFramebuf, Input->Fps, pTransArena);
+    PrintCameraCoords(&WrapOsFramebuf, pGameState->CameraPos, pTransArena);
 
 
 }
