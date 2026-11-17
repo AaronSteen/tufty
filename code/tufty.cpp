@@ -378,109 +378,74 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pGameState->EditorState.WhichEditor = PLAYER;
         }
     }
-    
-    f32 MetersToDrawX = (RES_X / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraLeft = -(MetersToDrawX * 0.5f);
-    f32 LeftmostTile = MetersToTileSpace(pGameState->CameraPos.X + OffsetFromCameraLeft);
-    LeftmostTile = floorf(LeftmostTile);
-    f32 OffsetFromCameraRight = MetersToDrawX * 0.5f;
-    f32 RightmostTile = MetersToTileSpace(pGameState->CameraPos.X + OffsetFromCameraRight);
-    RightmostTile = ceilf(RightmostTile);
 
-    f32 MetersToDrawY = (RES_Y / TILE_SIDE_PX) * 1.4f;
-    f32 OffsetFromCameraUp = -(MetersToDrawY * 0.5f);
-    f32 UpmostTile = MetersToTileSpace(pGameState->CameraPos.Y + OffsetFromCameraUp);
-    UpmostTile = floorf(UpmostTile);
-    f32 OffsetFromCameraDown = MetersToDrawY * 0.5f;
-    f32 DownmostTile = MetersToTileSpace(pGameState->CameraPos.Y + OffsetFromCameraDown);
-    DownmostTile = ceilf(DownmostTile);
+/************************* RENDER **************************/
 
-    s32 GameFramebufWidthInTiles = RightmostTile - LeftmostTile;
-    s32 GameFramebufWidthInPx = GameFramebufWidthInTiles * TILE_SIDE_PX;
-    s32 GameFramebufHeightInTiles = DownmostTile - UpmostTile;
-    s32 GameFramebufHeightInPx = GameFramebufHeightInTiles * TILE_SIDE_PX;
-
-    bitmap GameFramebuf = MakeEmptyBitmap(GameFramebufWidthInPx, GameFramebufHeightInPx, pTransArena);
-    // for (u32 *Pixel = (u32 *)GameFramebuf.Pixels; Pixel < ((u32 *)GameFramebuf.Pixels + (GameFramebuf.Width * GameFramebuf.Height)); ++Pixel) {
-    //     *Pixel |= (0xFF << 24);
-    // }
+    bitmap WrappedOsFramebuf = {};
+    WrappedOsFramebuf.Width = OsFramebuf->Width;
+    WrappedOsFramebuf.Height = OsFramebuf->Height;
+    WrappedOsFramebuf.Pitch = OsFramebuf->Pitch;
+    WrappedOsFramebuf.BytesPerPixel = BPP;
+    WrappedOsFramebuf.Pixels = (u8 *)OsFramebuf->Memory;
 
     // Underlayer
-    DrawSimpleRect_(&GameFramebuf, v2{0, 0}, v2{(f32)GameFramebuf.Width, (f32)GameFramebuf.Height}, 0.5f, 0.55f, 0.6f);
+    DrawSimpleRect_(&WrappedOsFramebuf, v2{0, 0}, v2{(f32)WrappedOsFramebuf.Width, (f32)WrappedOsFramebuf.Height}, 0.5f, 0.55f, 0.6f);
 
-    // RENDER
-    // Tiles
-    for (int Y = UpmostTile; Y <= DownmostTile; ++Y) {
-        for (int X = LeftmostTile; X <= RightmostTile; ++X) {
-            int Tile1D = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)X, (f32)Y});
-            int TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, Tile1D);
+    // Compute draw rectangle
+    v2 Camera = pGameState->CameraPos;
+    f32 XTilesToDrawFloat = RES_X / 64.0f;
+    f32 XMetersToDraw = XTilesToDrawFloat * 1.4f;
+    f32 CameraOffsetLeft = -(XMetersToDraw * 0.5f);
+    f32 LeftmostMeterCoordinate = Camera.X + CameraOffsetLeft;
+    f32 LeftmostTileCoordinate = LeftmostMeterCoordinate / 1.4f;
+    s32 LeftmostTile = floorf(LeftmostTileCoordinate);
+    f32 LeftmostTileOffset = LeftmostTileCoordinate - LeftmostTile;
+    f32 XDrawOffsetFloat = LeftmostTileOffset * (64.0f / 1.4f);
+    s32 XDrawOffsetInt = RoundF32ToS32(XDrawOffsetFloat);
+    XDrawOffsetInt = -XDrawOffsetInt;
+
+    f32 YTilesToDrawFloat = RES_Y / 64.0f;
+    f32 YMetersToDraw = YTilesToDrawFloat * 1.4f;
+    f32 CameraOffsetUp = -(YMetersToDraw * 0.5f);
+    f32 UpmostMeterCoordinate = Camera.Y + CameraOffsetUp;
+    f32 UpmostTileCoordinate = UpmostMeterCoordinate / 1.4f;
+    s32 UpmostTile = floorf(UpmostTileCoordinate);
+    f32 UpmostTileOffset = UpmostTileCoordinate - UpmostTile;
+    f32 YDrawOffsetFloat = UpmostTileOffset * (64.0f / 1.4f);
+    s32 YDrawOffsetInt = RoundF32ToS32(YDrawOffsetFloat);
+    YDrawOffsetInt = -YDrawOffsetInt;
+
+    s32 YTilesToDrawInt = RoundF32ToS32(YTilesToDrawFloat);
+    s32 XTilesToDrawInt = RoundF32ToS32(XTilesToDrawFloat);
+
+    // Draw tiles
+    for (int Y = 0; Y < 18; ++Y) {
+        int YTileCoord = UpmostTile + Y;
+        for (int X = 0; X < 31; ++X) {
+            int XTileCoord = LeftmostTile + X;
+            v2 TileCoords = {(f32)XTileCoord, (f32)YTileCoord};
+            int Tile1D = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, TileCoords);
+            s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, Tile1D);
             if (TileValue > 0) {
-                meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
-                f32 XStart = (f32)(X - LeftmostTile) * TILE_SIDE_PX;
-                f32 YStart = (f32)(Y - UpmostTile) * TILE_SIDE_PX;
-                v2 Min = {XStart, YStart};
-                v2 Max = Min + v2{TILE_SIDE_PX, TILE_SIDE_PX};
-                ScaleAndBlitBitmap(&GameFramebuf, Min, Max, &pToDraw->Bitmap);
+                meta_bitmap *pMetaBmp = pTileMap->TileTypes.Get(TileValue);
+                bitmap *pToDraw = &pMetaBmp->Bitmap;
+                f32 DestYMin = (f32)YDrawOffsetInt + Y * 64.0f;
+                f32 DestXMin = (f32)XDrawOffsetInt + X * 64.0f;
+                v2 DestMin = {DestXMin, DestYMin};
+                v2 DestMax = DestMin + v2{64.0f, 64.0f};
+                ScaleAndBlitBitmap(&WrappedOsFramebuf, DestMin, DestMax, pToDraw);
             }
         }
     }
-    
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // for (int Row = 0; Row < TILES_IN_WORLD_Y; ++Row) {
-    //     for (int Col = 0; Col < TILES_IN_WORLD_X; ++Col) {
-    //         int OneDimensionalIdx = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, v2{(f32)Col, (f32)Row});
-    //         s32 TileValue = GetTileValueFrom1DCoord(pTileMap->TileValues, OneDimensionalIdx);
-    //         v2 TileMin = {Col * pTileMap->TileSideInPixels, Row * pTileMap->TileSideInPixels};
-    //         v2 TileMax = TileMin + (v2){pTileMap->TileSideInPixels, pTileMap->TileSideInPixels};
-    //
-    //         if (TileValue > 0) {
-    //             meta_bitmap *pToDraw = pTileMap->TileTypes.Get(TileValue);
-    //             bitmap *pBitmap = &pToDraw->Bitmap;
-    //             // For now bagel is 64x64 so we don't need to adjust the size if we're going to draw it,
-    //             //      but if we change the tile size from 64x64 then we will
-    //             if (pToDraw->IsPresent() == false) {
-    //                 pBitmap = &pGlobalBagel->Bitmap;
-    //             }
-    //             ScaleAndBlitBitmap(Buffer, TileMin, TileMax, pBitmap);
-    //         }
-    //         if (pGameState->EditorState.WhichEditor == TILE)
-    //         {
-    //             DrawSpecialRect(Buffer, TileMin, TileMax, color{}, color{0.1, 0.1, 0.1, 1});
-    //         }
-    //     }
-    // }
-    //
     if (pGameState->EditorState.WhichEditor == TILE)
     {
-        undo_step Result = DrawTileEditor(&GameFramebuf, pGameState, pTransArena);
+        undo_step Result = DrawTileEditor(&WrappedOsFramebuf, pGameState, pTransArena);
         UpdateTileMapAfterEditorExit(pTileMap, Result);
     }
     else if (pGameState->EditorState.WhichEditor == PLAYER)
     {
-        DrawPlayerEditor(&GameFramebuf, pGameState, pTransArena);
+        DrawPlayerEditor(&WrappedOsFramebuf, pGameState, pTransArena);
     }
     else
     {
@@ -489,7 +454,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         //
         // v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
         // v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
-        // ScaleAndBlitCel(&GameFramebuf, PlayerMin, PlayerMax, pToDraw);
+        // ScaleAndBlitCel(&WrappedOsFramebuf, PlayerMin, PlayerMax, pToDraw);
     }
     // 
     // Note MoveDown is the "S" key
@@ -506,31 +471,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         pGameState->EditorState.PrintRowsCols = !pGameState->EditorState.PrintRowsCols;
     }
 
-
-    s32 CenteredCameraX = GameFramebufWidthInPx * 0.5f;
-    s32 CenteredCameraY = GameFramebufHeightInPx * 0.5f;
-    s32 CopySrcX = CenteredCameraX - OsFramebuf->Width * 0.5f;
-    s32 CopySrcY = CenteredCameraY - OsFramebuf->Height * 0.5f;
-    
-    bitmap WrapOsFramebuf = {};
-    WrapOsFramebuf.Width = OsFramebuf->Width;
-    WrapOsFramebuf.Height = OsFramebuf->Height;
-    WrapOsFramebuf.BytesPerPixel = OsFramebuf->BytesPerPixel;
-    WrapOsFramebuf.Pitch = OsFramebuf->Pitch;
-    WrapOsFramebuf.Pixels = (u8 *)OsFramebuf->Memory;
-
-    u8 *CopySrcRow = GameFramebuf.Pixels + CopySrcY * GameFramebuf.Pitch + CopySrcX * BPP;
-    u8 *CopyDestRow = WrapOsFramebuf.Pixels;
-    for (int Y = 0; Y < WrapOsFramebuf.Height; ++Y) {
-        memcpy(CopyDestRow, CopySrcRow, WrapOsFramebuf.Pitch);
-        CopySrcRow += GameFramebuf.Pitch;
-        CopyDestRow += WrapOsFramebuf.Pitch;
-    }
-
-
-    DEBUGPrintFps(&WrapOsFramebuf, Input->Fps, pTransArena);
-    PrintCameraCoords(&WrapOsFramebuf, pGameState->CameraPos, pTransArena);
-
+    DEBUGPrintFps(&WrappedOsFramebuf, Input->Fps, pTransArena);
+    PrintCameraCoords(&WrappedOsFramebuf, pGameState->CameraPos, pTransArena);
 
 }
 
