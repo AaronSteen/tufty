@@ -135,7 +135,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     GlobalDevKeys = &Input->DevKeys;
     pGlobalMouse = &Input->Mouse;
 
-    // @init
+/************************* @Init **************************/
     if (!Memory->IsInitialized)
     {
         // Seed random number generator
@@ -171,7 +171,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         // Transient memory
         InitializeArena(pTransArena, (u8 *)Memory->TransientStorage + sizeof(arena), Memory->TransientStorageSize - sizeof(arena));
         
-// Tile state
+// TILE DATA STRUCTS
         // TileMap dimensions
         pTileMap->TileSideInPixels = TILE_SIDE_PX;
         pTileMap->TileSideInMeters = TILE_SIDE_M;
@@ -195,10 +195,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
         }
 
-// Undo
+// UNDO
         pUndoState->UndoStepsArr[0] = PushNewUndoStep(&pUndoState->UndoStepsArena);
 
-// pPlayer
+// PLAYER
         for (int Facing = 0; Facing < 4; ++Facing) {
             pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
@@ -213,7 +213,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         assert(IsAnimationSlotEmpty(pDefaultAnimation) == false);
         pPlayer->AnimationState.CurrAnimationIdx = 1;
 
-// Bagel
+// BAGEL
         // TODO(AARON): Fix crash when hot reloading tufty.cpp when bagel is on screen
         char *BagelFilepath = "bagel1.bmp";
         pGlobalBagel = PushStruct(&pGameState->FailBitmapsArena, meta_bitmap);
@@ -238,7 +238,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         Memory->IsInitialized = true;
     }
     
-    // @Main
+ /************************* @Main **************************/
 
     // Reset the transient arena
     pTransArena->Used = 0;
@@ -379,7 +379,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-/************************* RENDER **************************/
+/************************* @Render **************************/
 
     bitmap WrappedOsFramebuf = {};
     WrappedOsFramebuf.Width = OsFramebuf->Width;
@@ -393,35 +393,33 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Compute draw rectangle
     v2 Camera = pGameState->CameraPos;
-    f32 XTilesToDrawFloat = RES_X / 64.0f;
+    f32 XTilesToDrawFloat = RES_X / (64.0f * 0.5f);
     f32 XMetersToDraw = XTilesToDrawFloat * 1.4f;
     f32 CameraOffsetLeft = -(XMetersToDraw * 0.5f);
     f32 LeftmostMeterCoordinate = Camera.X + CameraOffsetLeft;
     f32 LeftmostTileCoordinate = LeftmostMeterCoordinate / 1.4f;
     s32 LeftmostTile = floorf(LeftmostTileCoordinate);
     f32 LeftmostTileOffset = LeftmostTileCoordinate - LeftmostTile;
-    f32 XDrawOffsetFloat = LeftmostTileOffset * (64.0f / 1.4f);
-    s32 XDrawOffsetInt = RoundF32ToS32(XDrawOffsetFloat);
-    XDrawOffsetInt = -XDrawOffsetInt;
+    f32 XDrawOffsetFloat = LeftmostTileOffset * (64.0f * 0.5f);
+    s32 MinusXDrawOffsetInt = -1 * RoundF32ToS32(XDrawOffsetFloat);
 
-    f32 YTilesToDrawFloat = RES_Y / 64.0f;
+    f32 YTilesToDrawFloat = RES_Y / (64.0f * 0.5f);
     f32 YMetersToDraw = YTilesToDrawFloat * 1.4f;
     f32 CameraOffsetUp = -(YMetersToDraw * 0.5f);
     f32 UpmostMeterCoordinate = Camera.Y + CameraOffsetUp;
     f32 UpmostTileCoordinate = UpmostMeterCoordinate / 1.4f;
     s32 UpmostTile = floorf(UpmostTileCoordinate);
     f32 UpmostTileOffset = UpmostTileCoordinate - UpmostTile;
-    f32 YDrawOffsetFloat = UpmostTileOffset * (64.0f / 1.4f);
-    s32 YDrawOffsetInt = RoundF32ToS32(YDrawOffsetFloat);
-    YDrawOffsetInt = -YDrawOffsetInt;
+    f32 YDrawOffsetFloat = UpmostTileOffset * (64.0f * 0.5f);
+    s32 MinusYDrawOffsetInt = -1 * RoundF32ToS32(YDrawOffsetFloat);
 
-    s32 YTilesToDrawInt = RoundF32ToS32(YTilesToDrawFloat);
-    s32 XTilesToDrawInt = RoundF32ToS32(XTilesToDrawFloat);
+    s32 YTilesToDrawInt = (s32)ceilf(YTilesToDrawFloat + YDrawOffsetFloat);
+    s32 XTilesToDrawInt = (s32)ceilf(XTilesToDrawFloat + XDrawOffsetFloat);
 
     // Draw tiles
-    for (int Y = 0; Y < 18; ++Y) {
+    for (int Y = 0; Y < YTilesToDrawInt; ++Y) {
         int YTileCoord = UpmostTile + Y;
-        for (int X = 0; X < 31; ++X) {
+        for (int X = 0; X < XTilesToDrawInt; ++X) {
             int XTileCoord = LeftmostTile + X;
             v2 TileCoords = {(f32)XTileCoord, (f32)YTileCoord};
             int Tile1D = Get1DTileCoordFrom2DCoord(TILES_IN_WORLD_X, TileCoords);
@@ -429,10 +427,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if (TileValue > 0) {
                 meta_bitmap *pMetaBmp = pTileMap->TileTypes.Get(TileValue);
                 bitmap *pToDraw = &pMetaBmp->Bitmap;
-                f32 DestYMin = (f32)YDrawOffsetInt + Y * 64.0f;
-                f32 DestXMin = (f32)XDrawOffsetInt + X * 64.0f;
+                f32 DestYMin = (f32)MinusYDrawOffsetInt + Y * (64.0f * 0.5f);
+                f32 DestXMin = (f32)MinusXDrawOffsetInt + X * (64.0f * 0.5f);
                 v2 DestMin = {DestXMin, DestYMin};
-                v2 DestMax = DestMin + v2{64.0f, 64.0f};
+                v2 DestMax = DestMin + v2{(64.0f * 0.5f), (64.0f * 0.5f)};
                 ScaleAndBlitBitmap(&WrappedOsFramebuf, DestMin, DestMax, pToDraw);
             }
         }
