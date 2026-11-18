@@ -29,6 +29,7 @@
 
 
 #include <windows.h>
+#include <d3d11.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <malloc.h>
@@ -1270,6 +1271,10 @@ WinMain(HINSTANCE Instance,
                 0);
         if(GlobalWindow)
         {
+            ID3D11Device *Device;
+            ID3DDeviceContext *Context;
+            IDXGISwapChain *SwapChain;
+
             UINT DPI = GetDpiForWindow(GlobalWindow);
 
             RECT ClientRect = {};
