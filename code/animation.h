@@ -142,7 +142,7 @@ GetPlayerAnimationCelForThisFrame(player *pPlayer)
     animation *pCurrAnimation = GetAnimation(&pPlayer->FacingAnimationArray[pPlayer->IsFacing], 
                                            pPlayer->AnimationState.CurrAnimationIdx);
     if (IsAnimationSlotEmpty(pCurrAnimation)) {
-        return &pGlobalBagel->Bitmap;
+        return &gpBagel->Bitmap;
     }
     else {
         return &pCurrAnimation->Cels[pPlayer->AnimationState.CurrCelIdx]; 

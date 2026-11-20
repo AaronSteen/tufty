@@ -7,8 +7,8 @@
    $Notice: (C) Copyright 2014 by Molly Rocket, Inc. All Rights Reserved. $
    ======================================================================== */
 
-#define WIN32_BACKBUFFER_OFFSET_X 10
-#define WIN32_BACKBUFFER_OFFSET_Y 10
+#define WIN32_BACKBUFFER_OFFSET_X 0
+#define WIN32_BACKBUFFER_OFFSET_Y 0
 
 struct win32_offscreen_buffer
 {

@@ -85,10 +85,16 @@ global_shared_prof_data gSharedProfData = {};
 
 #include "win32_tufty_handmade.h"
 
-// TODO(casey): This is a global for now.
 static b32 GlobalRunning;
 static b32 GlobalPause;
-static win32_offscreen_buffer GlobalBackbuffer;
+static win32_offscreen_buffer gTuftyRenderBuf;
+
+ID3D11Device *pgDxDevice = NULL;
+ID3D11DeviceContext *pgDxContext = NULL;
+IDXGISwapChain *pgDxSwapChain = NULL;
+ID3D11Texture2D *pgDxBackbuf = NULL;
+ID3D11Texture2D *pgDxCpuBuf = NULL;
+
 static win32_wasapi_audio WasapiAudio;
 static u64 GlobalCpuFreq;
 static HWND GlobalWindow;
@@ -117,6 +123,77 @@ X_INPUT_SET_STATE(XInputSetStateStub)
 }
 static x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
+
+static void
+Win32InitDx(HWND WindowHandle, int Width, int Height)
+{
+    DXGI_SWAP_CHAIN_DESC SwapChainDesc = {};
+    SwapChainDesc.BufferDesc.Width = Width;
+    SwapChainDesc.BufferDesc.Height = Height;
+    SwapChainDesc.BufferDesc.RefreshRate = {60, 1};
+    SwapChainDesc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    SwapChainDesc.SampleDesc.Count = 1;
+    SwapChainDesc.SampleDesc.Quality = 0;
+    SwapChainDesc.BufferUsage = DXGI_USAGE_BACK_BUFFER;
+    SwapChainDesc.BufferCount = 1;
+    SwapChainDesc.OutputWindow = WindowHandle;
+    SwapChainDesc.Windowed = TRUE;
+    SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+    DWORD DxCreateFlags = 0;
+#if TUFTY_INTERNAL
+    DxCreateFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+    HRESULT Hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, DxCreateFlags, 
+                                               NULL, 0, D3D11_SDK_VERSION, &SwapChainDesc, &pgDxSwapChain, 
+                                               &pgDxDevice, NULL, &pgDxContext);
+    assert(SUCCEEDED(Hr));
+
+    Hr = pgDxSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void **)&pgDxBackbuf);
+    assert(SUCCEEDED(Hr));
+    
+    D3D11_TEXTURE2D_DESC TextureDesc = {};
+    TextureDesc.Width = Width;
+    TextureDesc.Height = Height;
+    TextureDesc.MipLevels = 1;
+    TextureDesc.ArraySize = 1;
+    TextureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    TextureDesc.SampleDesc = { 1, 0 };
+    TextureDesc.Usage = D3D11_USAGE_DYNAMIC;
+    TextureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    TextureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    pgDxDevice->CreateTexture2D(&TextureDesc, NULL, &pgDxCpuBuf);
+    assert(SUCCEEDED(Hr));
+}
+
+
+static void
+Win32PresentFrame(win32_offscreen_buffer *pgTuftyRenderBuf, 
+                   ID3D11DeviceContext *pgDxContext, ID3D11Texture2D *pgDxCpuBuf,
+                   ID3D11Texture2D *pgDxBackbuf, IDXGISwapChain *pgDxSwapChain)
+{
+    D3D11_MAPPED_SUBRESOURCE DxMapped;
+    HRESULT Hr = pgDxContext->Map(pgDxCpuBuf, 0, D3D11_MAP_WRITE_DISCARD, 0, &DxMapped);
+    assert(SUCCEEDED(Hr));
+
+    for (int Y = 0; Y < RES_Y; ++Y) {
+        u8 *Dest = (u8 *)DxMapped.pData + (Y * DxMapped.RowPitch);
+        u8 *Src = (u8 *)pgTuftyRenderBuf->Memory + (Y * pgTuftyRenderBuf->Pitch);
+        memcpy(Dest, Src, pgTuftyRenderBuf->Pitch);
+    }
+
+    pgDxContext->Unmap(pgDxCpuBuf, 0);
+    pgDxContext->CopyResource(pgDxBackbuf, pgDxCpuBuf);
+    Hr = pgDxSwapChain->Present(1, 0);
+    if (Hr == DXGI_STATUS_OCCLUDED) {
+        Sleep(5);
+    }
+    else {
+        assert(SUCCEEDED(Hr));
+    }
+}
 
 static void
 Win32GetEXEFileName(win32_state *State)
@@ -729,9 +806,6 @@ Win32MainWindowCallback(HWND Window,
         {
             PAINTSTRUCT Paint;
             HDC DeviceContext = BeginPaint(Window, &Paint);
-            win32_window_dimension Dimension = Win32GetWindowDimension(Window);
-            Win32DisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
-                                       Dimension.Width, Dimension.Height);
             EndPaint(Window, &Paint);
         } break;
 
@@ -1231,7 +1305,7 @@ WinMain(HINSTANCE Instance,
     
     WNDCLASSA WindowClass = {};
 
-    Win32ResizeDIBSection(&GlobalBackbuffer, 1920, 1080);
+    Win32ResizeDIBSection(&gTuftyRenderBuf, RES_X, RES_Y);
     
     WindowClass.style = CS_HREDRAW|CS_VREDRAW;
     WindowClass.lpfnWndProc = Win32MainWindowCallback;
@@ -1246,8 +1320,8 @@ WinMain(HINSTANCE Instance,
         RECT WindowRect = {};
         WindowRect.left = 0;
         WindowRect.top = 0;
-        WindowRect.right = GlobalBackbuffer.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
-        WindowRect.bottom = GlobalBackbuffer.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
+        WindowRect.right = gTuftyRenderBuf.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
+        WindowRect.bottom = gTuftyRenderBuf.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
         
         DWORD WindowStyle = WS_OVERLAPPEDWINDOW|WS_VISIBLE;
         AdjustWindowRect(&WindowRect, WindowStyle, FALSE); 
@@ -1271,21 +1345,19 @@ WinMain(HINSTANCE Instance,
                 0);
         if(GlobalWindow)
         {
-            ID3D11Device *Device;
-            ID3DDeviceContext *Context;
-            IDXGISwapChain *SwapChain;
-
             UINT DPI = GetDpiForWindow(GlobalWindow);
 
             RECT ClientRect = {};
-            ClientRect.right = GlobalBackbuffer.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
-            ClientRect.bottom = GlobalBackbuffer.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
+            ClientRect.right = gTuftyRenderBuf.Width + 2*WIN32_BACKBUFFER_OFFSET_X;
+            ClientRect.bottom = gTuftyRenderBuf.Height + 2*WIN32_BACKBUFFER_OFFSET_Y;
             AdjustWindowRectExForDpi(&ClientRect, WindowStyle, FALSE, 0, DPI);
 
             SetWindowPos(GlobalWindow, 0, 0, 0,
                          ClientRect.right - ClientRect.left,
                          ClientRect.bottom - ClientRect.top,
                          SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+
+            Win32InitDx(GlobalWindow, RES_X, RES_Y);
 
             win32_sound_output SoundOutput = {};
             WA_Start(&WasapiAudio);
@@ -1577,11 +1649,11 @@ WinMain(HINSTANCE Instance,
                         }
 
                         game_offscreen_buffer Buffer = {};
-                        Buffer.Memory = GlobalBackbuffer.Memory;
-                        Buffer.Width = GlobalBackbuffer.Width; 
-                        Buffer.Height = GlobalBackbuffer.Height;
-                        Buffer.Pitch = GlobalBackbuffer.Pitch;
-                        Buffer.BytesPerPixel = GlobalBackbuffer.BytesPerPixel;
+                        Buffer.Memory = gTuftyRenderBuf.Memory;
+                        Buffer.Width = gTuftyRenderBuf.Width; 
+                        Buffer.Height = gTuftyRenderBuf.Height;
+                        Buffer.Pitch = gTuftyRenderBuf.Pitch;
+                        Buffer.BytesPerPixel = gTuftyRenderBuf.BytesPerPixel;
 
                         if(Win32State.InputRecordingIndex)
                         {
@@ -1641,51 +1713,11 @@ WinMain(HINSTANCE Instance,
                         }
                         HR(WasapiAudio.RenderClient->ReleaseBuffer(WriteCount, 0));
                     
-                        u64 WorkCounter = ReadCpuTimer();
-                        f32 WorkSecondsElapsed = GetSecondsElapsed(LastCounter, WorkCounter);
+                        Win32PresentFrame(&gTuftyRenderBuf, pgDxContext, pgDxCpuBuf, pgDxBackbuf, pgDxSwapChain);
 
-                        // TODO(casey): NOT TESTED YET!  PROBABLY BUGGY!!!!!
-                        f32 SecondsElapsedForFrame = WorkSecondsElapsed;
-                        if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-                        {                        
-                            if(SleepIsGranular)
-                            {
-                                DWORD SleepMS = (DWORD)(1000.0f * (TargetSecondsPerFrame -
-                                                                   SecondsElapsedForFrame));
-                                if(SleepMS > 0)
-                                {
-                                    Sleep(SleepMS);
-                                }
-                            }
-
-                            f32 TestSecondsElapsedForFrame = GetSecondsElapsed(LastCounter, ReadCpuTimer());
-                            if(TestSecondsElapsedForFrame < TargetSecondsPerFrame)
-                            {
-                                // TODO(casey): LOG MISSED SLEEP HERE
-                            }
-                        
-                            while(SecondsElapsedForFrame < TargetSecondsPerFrame)
-                            {                            
-                                SecondsElapsedForFrame = GetSecondsElapsed(LastCounter, ReadCpuTimer());
-                            }
-                        }
-                        else
-                        {
-                            // TODO(casey): MISSED FRAME RATE!
-                            // TODO(casey): Logging
-                        }
-                
                         u64 EndCounter = ReadCpuTimer();
                         OldInput->Fps = (f32)GlobalCpuFreq / (EndCounter - LastCounter);
                         LastCounter = EndCounter;
-                        
-
-                        win32_window_dimension Dimension = Win32GetWindowDimension(GlobalWindow);
-                        HDC DeviceContext = GetDC(GlobalWindow);
-                        Win32DisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
-                                                   Dimension.Width, Dimension.Height);
-                        ReleaseDC(GlobalWindow, DeviceContext);
-
 
                         game_input *Temp = NewInput;
                         NewInput = OldInput;

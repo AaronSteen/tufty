@@ -65,24 +65,48 @@ GameOutputSound(game_sound_output_buffer *SoundBuffer, int ToneHz)
 static b32
 IsPlayerTryingToMove(void)
 {
-    b32 Result = (GlobalKeyboardController->MoveLeft.EndedDown ||
-                  GlobalKeyboardController->MoveUp.EndedDown ||
-                  GlobalKeyboardController->MoveRight.EndedDown ||
-                  GlobalKeyboardController->MoveDown.EndedDown);
+    b32 Result = (gpKeyboardController->MoveLeft.EndedDown ||
+                  gpKeyboardController->MoveUp.EndedDown ||
+                  gpKeyboardController->MoveRight.EndedDown ||
+                  gpKeyboardController->MoveDown.EndedDown);
     return Result;
 }
 
 static b32
-ShouldAllowCameraMove(v2 Cam)
+ShouldAllowPlayerMove(v2 Player)
 {
-    if (Cam.X < 21.0f || Cam.X >= METERS_IN_WORLD_X - 21.0f ||
-        Cam.Y < 11.8125f || Cam.Y >= METERS_IN_WORLD_Y - 11.8125f) {
+    if (Player.X < 0 || Player.X >= METERS_IN_WORLD_X || 
+        Player.Y < 0 || Player.Y >= METERS_IN_WORLD_Y) {
             return false;
     }
     else {
         return true;
     }
 }
+
+
+static b32
+ShouldAllowCameraMoveX(f32 X)
+{
+    if (X < 21.0f || X >= METERS_IN_WORLD_X - 21.0f) {
+            return false;
+    }
+    else {
+        return true;
+    }
+}
+
+static b32
+ShouldAllowCameraMoveY(f32 Y)
+{
+    if (Y < 11.8125f || Y >= METERS_IN_WORLD_Y - 11.8125f) {
+        return false;
+    }
+    else {
+        return true;
+    }
+}
+
 
 static f32 
 MetersToTileSpace(f32 Meters)
@@ -131,9 +155,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     ReadCpuTimer = Memory->DEBUGReadCpuTimer;
 
     // Global input pointers
-    GlobalKeyboardController = GetController(Input, 0);
-    GlobalDevKeys = &Input->DevKeys;
-    pGlobalMouse = &Input->Mouse;
+    gpKeyboardController = GetController(Input, 0);
+    gpDevKeys = &Input->DevKeys;
+    gpMouse = &Input->Mouse;
 
 /************************* @Init **************************/
     if (!Memory->IsInitialized)
@@ -188,7 +212,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
         // Randomly assign tile values as test; tiles have 1/3 chance of being a tile
         for (int NthTile = 0; NthTile < TILES_IN_WORLD; ++NthTile) {
-            if (RandomF64InRange(&pGameState->RandomSeries, 0.0, 1.0) <= 0.3) {
+            if (RandomF64InRange(&pGameState->RandomSeries, 0.0, 1.0) <= 0.33f) {
                 pTileMap->TileValues[NthTile] = 
                     RandomS32InRange(&pGameState->RandomSeries, 1, 
                                      CountBitmaps(pTileMap->TileTypes.Data, pTileMap->TileTypes.Len));
@@ -203,7 +227,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pPlayer->FacingAnimationArray[Facing].pContainingArena = &pPlayer->AnimationsArena;
         }
         LoadAnimation(&pPlayer->FacingAnimationArray[EAST], "64x64faceright_walking.aseprite");
-        LoadAnimation(&pPlayer->FacingAnimationArray[NORTH], "north.aseprite");
+        LoadAnimation(&pPlayer->FacingAnimationArray[NORTH], "64x64behindview_walking.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[WEST], "64x64faceleft_walking.aseprite");
         LoadAnimation(&pPlayer->FacingAnimationArray[SOUTH], "64x64frontview_walking.aseprite");
 
@@ -216,25 +240,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 // BAGEL
         // TODO(AARON): Fix crash when hot reloading tufty.cpp when bagel is on screen
         char *BagelFilepath = "bagel1.bmp";
-        pGlobalBagel = PushStruct(&pGameState->FailBitmapsArena, meta_bitmap);
-        snprintf(pGlobalBagel->Filepath, sizeof(pGlobalBagel->Filepath), "%s", BagelFilepath);
-        mem_idx BagelSize = GetFileSize(pGlobalBagel->Filepath);
+        pGameState->pBagel = PushStruct(&pGameState->FailBitmapsArena, meta_bitmap);
+        snprintf(pGameState->pBagel->Filepath, sizeof(pGameState->pBagel->Filepath), "%s", BagelFilepath);
+        mem_idx BagelSize = GetFileSize(pGameState->pBagel->Filepath);
         if (BagelSize) {
-            pGlobalBagel->Bitmap.Buffer.Size = BagelSize;
-            pGlobalBagel->Bitmap.Buffer.Data = PushArray(&pGameState->FailBitmapsArena, u8, BagelSize);
+            pGameState->pBagel->Bitmap.Buffer.Size = BagelSize;
+            pGameState->pBagel->Bitmap.Buffer.Data = PushArray(&pGameState->FailBitmapsArena, u8, BagelSize);
         }
-        ActuallyLoadBitmap(pGlobalBagel);
+        ActuallyLoadBitmap(pGameState->pBagel);
 
-        pGameState->CameraPos = {(f32)TILES_IN_WORLD_X * TILE_SIDE_M * 0.5f, 
-                                (f32)TILES_IN_WORLD_Y * TILE_SIDE_M * 0.5f};
-        pPlayer->Pos.X = pGameState->CameraPos.X;
-        pPlayer->Pos.Y = pGameState->CameraPos.Y;
+        // if (Cam.X < 21.0f || Cam.X >= METERS_IN_WORLD_X - 21.0f ||
+        //     Cam.Y < 11.8125f || Cam.Y >= METERS_IN_WORLD_Y - 11.8125f) {
+        f32 MaxX = METERS_IN_WORLD_X;
+        f32 MaxY = METERS_IN_WORLD_Y;
+        pPlayer->Pos = v2{(f32)23.0f, (f32)13.0f};
+        pGameState->CameraPos = pPlayer->Pos;
         
-        // pGameState->RedX.Pixels = PushArray(pWorldArena, u8, 64 * 64 * sizeof(u32));
-        // pGameState->RedX.Height = pGameState->RedX.Width = 64;
-        // pGameState->RedX.BytesPerPixel = 4;
-        // DEBUGDrawText(pGameState->RedX.Pixels, 0, 0, "X", pTransArena, {1.0f, 0.1f, 0.1f});
-
         Memory->IsInitialized = true;
     }
     
@@ -244,6 +265,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     pTransArena->Used = 0;
     pPlayer->OldFacing = pPlayer->IsFacing;
     pPlayer->TryingToMove = IsPlayerTryingToMove();
+    gpBagel = pGameState->pBagel;
     
     // Bitmap reloading notes:
     //      We have the following objectives:
@@ -280,7 +302,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         if (Controller->IsAnalog) {
 
         }
-#if 1    
+#if 0    
         else {
             v2 Acceleration = {};
             if (Controller->MoveRight.EndedDown) {
@@ -340,20 +362,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 f32 PlayerSpeed = 30.0f;
                 Acceleration *= PlayerSpeed;
                 Acceleration += -3.0f * pPlayer->Velo;
-
-                f32 MetersToPixels = pTileMap->TileSideInPixels / pTileMap->TileSideInMeters;
-
-                pPlayer->Pos += (0.5f * Acceleration * Square(Input->dtForFrame) +
-                                pPlayer->Velo * Input->dtForFrame) *
-                                MetersToPixels;
-
+                v2 TestPlayer = pPlayer->Pos + 
+                                (0.5f * Acceleration * Square(Input->dtForFrame) +
+                                pPlayer->Velo * Input->dtForFrame);
+                if (ShouldAllowPlayerMove(TestPlayer)) {
+                    pPlayer->Pos = TestPlayer;
+                }
                 pPlayer->Velo += Acceleration * Input->dtForFrame;
+
+                if (ShouldAllowCameraMoveX(pPlayer->Pos.X)) {
+                    pGameState->CameraPos.X = pPlayer->Pos.X;
+                }
+                if (ShouldAllowCameraMoveY(pPlayer->Pos.Y)) {
+                    pGameState->CameraPos.Y = pPlayer->Pos.Y;
+                }
             }
         }
 #endif
     }
 
-    if (GlobalDevKeys->F1.EndedDown && GlobalDevKeys->F1.HalfTransitionCount == 1)
+    if (gpDevKeys->F1.EndedDown && gpDevKeys->F1.HalfTransitionCount == 1)
     {
         // Zero cursor state before changing editor
         InitializeCursorState(&pGameState->EditorState.CursorState);
@@ -366,7 +394,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             pGameState->EditorState.WhichEditor = TILE;
         }
     }
-    if (GlobalDevKeys->F6.EndedDown && GlobalDevKeys->F6.HalfTransitionCount == 1)
+    if (gpDevKeys->F6.EndedDown && gpDevKeys->F6.HalfTransitionCount == 1)
     {
         InitializeCursorState(&pGameState->EditorState.CursorState);
         if (pGameState->EditorState.WhichEditor == PLAYER)
@@ -393,24 +421,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Compute draw rectangle
     v2 Camera = pGameState->CameraPos;
-    f32 XTilesToDrawFloat = RES_X / (64.0f * 0.5f);
+    f32 XTilesToDrawFloat = RES_X / 64.0f;
     f32 XMetersToDraw = XTilesToDrawFloat * 1.4f;
     f32 CameraOffsetLeft = -(XMetersToDraw * 0.5f);
     f32 LeftmostMeterCoordinate = Camera.X + CameraOffsetLeft;
     f32 LeftmostTileCoordinate = LeftmostMeterCoordinate / 1.4f;
     s32 LeftmostTile = floorf(LeftmostTileCoordinate);
     f32 LeftmostTileOffset = LeftmostTileCoordinate - LeftmostTile;
-    f32 XDrawOffsetFloat = LeftmostTileOffset * (64.0f * 0.5f);
+    f32 XDrawOffsetFloat = LeftmostTileOffset * 64.0f;
     s32 MinusXDrawOffsetInt = -1 * RoundF32ToS32(XDrawOffsetFloat);
 
-    f32 YTilesToDrawFloat = RES_Y / (64.0f * 0.5f);
+    f32 YTilesToDrawFloat = RES_Y / 64.0f;
     f32 YMetersToDraw = YTilesToDrawFloat * 1.4f;
     f32 CameraOffsetUp = -(YMetersToDraw * 0.5f);
     f32 UpmostMeterCoordinate = Camera.Y + CameraOffsetUp;
     f32 UpmostTileCoordinate = UpmostMeterCoordinate / 1.4f;
     s32 UpmostTile = floorf(UpmostTileCoordinate);
     f32 UpmostTileOffset = UpmostTileCoordinate - UpmostTile;
-    f32 YDrawOffsetFloat = UpmostTileOffset * (64.0f * 0.5f);
+    f32 YDrawOffsetFloat = UpmostTileOffset * 64.0f;
     s32 MinusYDrawOffsetInt = -1 * RoundF32ToS32(YDrawOffsetFloat);
 
     s32 YTilesToDrawInt = (s32)ceilf(YTilesToDrawFloat + YDrawOffsetFloat);
@@ -427,10 +455,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if (TileValue > 0) {
                 meta_bitmap *pMetaBmp = pTileMap->TileTypes.Get(TileValue);
                 bitmap *pToDraw = &pMetaBmp->Bitmap;
-                f32 DestYMin = (f32)MinusYDrawOffsetInt + Y * (64.0f * 0.5f);
-                f32 DestXMin = (f32)MinusXDrawOffsetInt + X * (64.0f * 0.5f);
+                f32 DestYMin = (f32)MinusYDrawOffsetInt + Y * 64.0f;
+                f32 DestXMin = (f32)MinusXDrawOffsetInt + X * 64.0f;
                 v2 DestMin = {DestXMin, DestYMin};
-                v2 DestMax = DestMin + v2{(64.0f * 0.5f), (64.0f * 0.5f)};
+                v2 DestMax = DestMin + v2{64.0f, 64.0f};
                 ScaleAndBlitBitmap(&WrappedOsFramebuf, DestMin, DestMax, pToDraw);
             }
         }
@@ -448,29 +476,44 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     else
     {
         UpdatePlayerAnimationCel(pPlayer, Input->dtForFrame);
-        // bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
-        //
-        // v2 PlayerMin = {pPlayer->Pos.X - PLAYER_WIDTH * 0.5f, pPlayer->Pos.Y - PLAYER_HEIGHT};
-        // v2 PlayerMax = PlayerMin + v2{PLAYER_WIDTH, PLAYER_HEIGHT};
-        // ScaleAndBlitCel(&WrappedOsFramebuf, PlayerMin, PlayerMax, pToDraw);
+        bitmap *pToDraw = GetPlayerAnimationCelForThisFrame(pPlayer);
+        
+        // 10 - 7 = 3. Starting from 7, you have to go 3 to get to 10.
+        // Player - Camera: Starting from Camera, you have to go this far to get to player.
+        f32 FromCameraToPlayerX = pPlayer->Pos.X - pGameState->CameraPos.X;
+        f32 PlayerScreenCenterOffsetX = (RES_X * 0.5f) + FromCameraToPlayerX * (64.0f / 1.4f);
+
+        f32 FromCameraToPlayerY = pPlayer->Pos.Y - pGameState->CameraPos.Y;
+        f32 PlayerScreenCenterOffsetY = (RES_Y * 0.5f) + FromCameraToPlayerY * (64.0f / 1.4f);
+
+        f32 PlayerMinX = PlayerScreenCenterOffsetX - PLAYER_WIDTH * 0.5f;
+        f32 PlayerMaxX = PlayerMinX + PLAYER_WIDTH;
+
+        f32 PlayerMinY = PlayerScreenCenterOffsetY - PLAYER_HEIGHT;
+        f32 PlayerMaxY = PlayerMinY + PLAYER_HEIGHT;
+
+        v2 PlayerMin = {PlayerMinX, PlayerMinY};
+        v2 PlayerMax = {PlayerMaxX, PlayerMaxY};
+        
+        ScaleAndBlitCel(&WrappedOsFramebuf, PlayerMin, PlayerMax, pToDraw);
     }
     // 
     // Note MoveDown is the "S" key
-    if (GlobalKeyboardController->MoveDown.EndedDown && GlobalDevKeys->Ctrl.EndedDown) {
+    if (gpKeyboardController->MoveDown.EndedDown && gpDevKeys->Ctrl.EndedDown) {
         SaveProject(pTileMap, pPlayer, pTransArena);
     }
 
     // and ActionRight is the "L" key
-    if (GlobalKeyboardController->ActionRight.EndedDown && GlobalDevKeys->Ctrl.EndedDown) {
+    if (gpKeyboardController->ActionRight.EndedDown && gpDevKeys->Ctrl.EndedDown) {
         LoadProject(pPlayer, pTileMap, pTransArena);
     }
 
-    if (GlobalDevKeys->F2.EndedDown && GlobalDevKeys->F2.HalfTransitionCount == 1) {
+    if (gpDevKeys->F2.EndedDown && gpDevKeys->F2.HalfTransitionCount == 1) {
         pGameState->EditorState.PrintRowsCols = !pGameState->EditorState.PrintRowsCols;
     }
 
     DEBUGPrintFps(&WrappedOsFramebuf, Input->Fps, pTransArena);
-    PrintCameraCoords(&WrappedOsFramebuf, pGameState->CameraPos, pTransArena);
+    DEBUGPrintCameraCoords(&WrappedOsFramebuf, pGameState->CameraPos, pTransArena);
 
 }
 

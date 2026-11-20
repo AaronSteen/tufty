@@ -64,6 +64,9 @@ typedef size_t mem_idx;
 #define Terabytes(N) (Gigabytes(N) * 1024)
 
 #define MAX_ANCHORS 4096
+#define RES_X 1920.0f
+#define RES_Y 1080.0f
+#define BPP 4
 
 u32
 SafeTruncateU64ToU32(u64 SixtyFour)

@@ -183,7 +183,7 @@ DEBUGDrawText(bitmap *pDestBitmap,
 }
 
 static void
-PrintCameraCoords(bitmap *pDestBitmap, v2 CameraPos, arena *pDebugTextArena)
+DEBUGPrintCameraCoords(bitmap *pDestBitmap, v2 CameraPos, arena *pDebugTextArena)
 {
     char Temp[512];
     snprintf(Temp, sizeof(Temp), "Camera X = %f\nCamera Y = %f", CameraPos.X, CameraPos.Y);
@@ -282,7 +282,7 @@ static void
 UpdateCursorStateHoveredFrames(cursor_state *pCursorState)
 {
     pCursorState->LastFrameCoords = pCursorState->ThisFrameCoords;
-    pCursorState->ThisFrameCoords = v2{(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
+    pCursorState->ThisFrameCoords = v2{(f32)gpMouse->X, (f32)gpMouse->Y};
     if (pCursorState->ThisFrameCoords == pCursorState->LastFrameCoords) {
         ++pCursorState->HoveredFrames;
     }
@@ -297,7 +297,7 @@ DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena
 {
     // editor_state *pEditorState = &pGameState->EditorState;
     player *pPlayer = &pGameState->Player;
-    v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
+    v2 MouseCoords = {(f32)gpMouse->X, (f32)gpMouse->Y};
     v2 BrowserMin = {(f32)(pDestBitmap->Width * 0.5f), 0};
     v2 BrowserMax = {(f32)(pDestBitmap->Width), (f32)(pDestBitmap->Height)};
     b32 BagelActive = false;
@@ -338,8 +338,8 @@ DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena
             f32 Width, Height;
             if (pIt->IsMissing()) {
                 BagelActive = true;
-                Width = pGlobalBagel->Bitmap.Width;
-                Height = pGlobalBagel->Bitmap.Height;
+                Width = gpBagel->Bitmap.Width;
+                Height = gpBagel->Bitmap.Height;
             }
             else {
                 Width = pIt->Bitmap.Width;
@@ -367,7 +367,7 @@ DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena
             GetPlayerMetaBitmapPointer(pPlayer, pMenuBitmapsCursor->FacingIdx, pMenuBitmapsCursor->Slot);
         bitmap *pBitmap;
         if (pToDraw->IsMissing()) {
-            pBitmap = &pGlobalBagel->Bitmap;
+            pBitmap = &gpBagel->Bitmap;
         }
         else {
             pBitmap = &pToDraw->Bitmap;
@@ -401,14 +401,14 @@ DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena
 
 
     // If ended up always go to idle
-    if (pGlobalMouse->Primary.EndedDown == false) {
+    if (gpMouse->Primary.EndedDown == false) {
         pCursorState->PrimaryMode = IDLE;
     }
 
     // If the user clicked, always go to consumed
     else if (pCursorState->PrimaryMode == IDLE &&
-             pGlobalMouse->Primary.EndedDown &&
-             pGlobalMouse->Primary.HalfTransitionCount == 1) {
+             gpMouse->Primary.EndedDown &&
+             gpMouse->Primary.HalfTransitionCount == 1) {
 
             pCursorState->PrimaryMode = CONSUMED;
 
@@ -445,13 +445,13 @@ DrawPlayerEditor(bitmap *pDestBitmap, game_state *pGameState, arena *pTransArena
             }
     }
 
-    if (pGlobalMouse->Secondary.EndedDown == false) {
+    if (gpMouse->Secondary.EndedDown == false) {
         pCursorState->SecondaryMode = IDLE;
     }
     // Right clicking while holding a player bmp drops it
     else if (pCursorState->SecondaryMode == IDLE &&
-             pGlobalMouse->Secondary.EndedDown &&
-             pGlobalMouse->Secondary.HalfTransitionCount == 1) {
+             gpMouse->Secondary.EndedDown &&
+             gpMouse->Secondary.HalfTransitionCount == 1) {
             SetHeldBitmapToNil(pCursorState);
     }
 
@@ -501,7 +501,7 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
     undo_step *pThisFrameState = PushNewUndoStep(&pUndoState->SingleFrameUndoArena);
     WriteUndoStep(pThisFrameState, pTileMap->TileValues);
 
-    v2 MouseCoords = {(f32)pGlobalMouse->X, (f32)pGlobalMouse->Y};
+    v2 MouseCoords = {(f32)gpMouse->X, (f32)gpMouse->Y};
     v2 BrowserMin = {(f32)(pBackbuf->Width * 0.8f), 0};
     v2 BrowserMax = {(f32)(pBackbuf->Width), (f32)(pBackbuf->Height)};
 
@@ -555,7 +555,7 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
         meta_bitmap *pToDraw = GetTileTypePointer(pTileMap, pMenuTilesCursor->Slot);
         bitmap *pBitmap = 0;
         if (pToDraw->IsMissing()) {
-            pBitmap = &pGlobalBagel->Bitmap;
+            pBitmap = &gpBagel->Bitmap;
         }
         else {
             pBitmap = &pToDraw->Bitmap;
@@ -583,13 +583,13 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
     b32 InBrowser = IsInRect(MouseCoords, BrowserMin, BrowserMax);
 
     // Primary
-    if (pGlobalMouse->Primary.EndedDown == false) {
+    if (gpMouse->Primary.EndedDown == false) {
         pCursorState->PrimaryMode = IDLE;
     }
 
     else if (pCursorState->PrimaryMode == IDLE &&
-             pGlobalMouse->Primary.EndedDown &&
-             pGlobalMouse->Primary.HalfTransitionCount == 1) {
+             gpMouse->Primary.EndedDown &&
+             gpMouse->Primary.HalfTransitionCount == 1) {
 
             pCursorState->PrimaryMode = CONSUMED;
             // If the user clicked on a tile in the browser, pMenuHovered will be set
@@ -638,12 +638,12 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
     }
 
     // Secondary cursor state
-    if (pGlobalMouse->Secondary.EndedDown == false) {
+    if (gpMouse->Secondary.EndedDown == false) {
         pCursorState->SecondaryMode = IDLE;
     }
     if (pCursorState->SecondaryMode==IDLE &&
-        pGlobalMouse->Secondary.EndedDown &&
-        pGlobalMouse->Secondary.HalfTransitionCount==1) {
+        gpMouse->Secondary.EndedDown &&
+        gpMouse->Secondary.HalfTransitionCount==1) {
             pCursorState->SecondaryMode = CONSUMED;
             b32 InBackbuf = IsInRect(MouseCoords, v2{0,0}, v2{(f32)pBackbuf->Width, (f32)pBackbuf->Height});
             b32 InBrowser = IsInRect(MouseCoords, BrowserMin, BrowserMax);
@@ -698,9 +698,9 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
         IncrementUndoHead(pUndoState, *pThisFrameState);
         // PushedText.FrameCount = 0;
     }
-    else if (GlobalDevKeys->Ctrl.EndedDown && 
-             GlobalDevKeys->Y.EndedDown && 
-             GlobalDevKeys->Y.HalfTransitionCount == 1) {
+    else if (gpDevKeys->Ctrl.EndedDown && 
+             gpDevKeys->Y.EndedDown && 
+             gpDevKeys->Y.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, 1);
             if (IsRedoStepValid(pUndoState, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;
@@ -708,9 +708,9 @@ DrawTileEditor(bitmap *pBackbuf, game_state *pGameState, arena *pTransArena)
                 RedoText.FrameCount = 0;
             }
     }
-    else if (GlobalDevKeys->Ctrl.EndedDown && 
-             GlobalDevKeys->Z.EndedDown && 
-             GlobalDevKeys->Z.HalfTransitionCount == 1) {
+    else if (gpDevKeys->Ctrl.EndedDown && 
+             gpDevKeys->Z.EndedDown && 
+             gpDevKeys->Z.HalfTransitionCount == 1) {
             int ProspectiveStep = GetCanonUndoIndex(pUndoState->CurrIdx, -1);
             if (IsUndoStepValid(pUndoState, ProspectiveStep)) {
                 int NewStep = ProspectiveStep;

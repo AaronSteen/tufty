@@ -276,7 +276,7 @@ ScaleAndBlitBitmap(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
 {
     if (pSrcBitmap->Pixels == nullptr)
     {
-        pSrcBitmap = &pGlobalBagel->Bitmap;
+        pSrcBitmap = &gpBagel->Bitmap;
     }
     f32 XCoef = (f32)pSrcBitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)pSrcBitmap->Height / (Max.Y - Min.Y);
@@ -342,7 +342,7 @@ ScaleAndBlitCel(bitmap *pDestBitmap, v2 Min, v2 Max, bitmap *pSrcBitmap)
 {
     if (pSrcBitmap->Pixels == nullptr)
     {
-        pSrcBitmap = &pGlobalBagel->Bitmap;
+        pSrcBitmap = &gpBagel->Bitmap;
     }
     f32 XCoef = (f32)pSrcBitmap->Width / (Max.X - Min.X);
     f32 YCoef = (f32)pSrcBitmap->Height / (Max.Y - Min.Y);

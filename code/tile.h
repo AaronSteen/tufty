@@ -37,8 +37,8 @@ static v2
 GetTileCoordsFromMouseCoords(f32 TileSideInPixels)
 {
     v2 Result = {};
-    Result.X = FloorF32ToS32(pGlobalMouse->X / (s32)TileSideInPixels);
-    Result.Y = FloorF32ToS32(pGlobalMouse->Y / (s32)TileSideInPixels);
+    Result.X = FloorF32ToS32(gpMouse->X / (s32)TileSideInPixels);
+    Result.Y = FloorF32ToS32(gpMouse->Y / (s32)TileSideInPixels);
     return Result;
 }
 

@@ -37,7 +37,7 @@ echo WAITING FOR PDB > lock.tmp
 if %ERRORLEVEL% NEQ 0 (del lock.tmp & exit /b %ERRORLEVEL%)
 echo tufty.dll: compiled OK
 del lock.tmp
-"%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\win32_tufty_handmade.cpp user32.lib gdi32.lib winmm.lib comdlg32.lib /link /MAP:win32_tufty_handmade.map %CommonLinkerFlags%
+"%CLANGCL%" %CommonCompilerFlags% %OptFlag% %CODE%\win32_tufty_handmade.cpp user32.lib gdi32.lib winmm.lib comdlg32.lib d3d11.lib dxguid.lib /link /MAP:win32_tufty_handmade.map %CommonLinkerFlags%
 if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 echo win32_tufty_handmade.exe: compiled OK
 
