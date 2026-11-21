@@ -1022,6 +1022,12 @@ Win32ProcessPendingMessages(win32_state *State, game_controller_input *KeyboardC
                     else if (VKCode == VK_SPACE) {
                         Win32ProcessKeyboardAndMouseMessage(&KeyboardController->Back, IsDown);
                     }
+                    else if (VKCode == VK_UP) {
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ZoomIn, IsDown);
+                    }
+                    else if (VKCode == VK_DOWN) {
+                        Win32ProcessKeyboardAndMouseMessage(&KeyboardController->ZoomOut, IsDown);
+                    }
 #if TUFTY_INTERNAL
                     else if (VKCode == 'P') {
                         if (IsDown) {

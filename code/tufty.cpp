@@ -8,6 +8,7 @@
 
 #define PLAYER_HEIGHT 64.0f
 #define PLAYER_WIDTH 64.0f
+#define MAX_ZOOM_STEPS_FROM_ZERO 2
 
 // DEBUG_PLATFORM_GET_FILE_SIZE(name) u32 name(char *Filename)
 // DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *Memory)
@@ -107,14 +108,13 @@ ShouldAllowCameraMoveY(f32 Y)
     }
 }
 
-
-static f32 
-MetersToTileSpace(f32 Meters)
-{
-    f32 Result = Meters / TILE_SIDE_M;
-    return Result;
-}
-
+// static f32 
+// MetersToTileSpace(f32 Meters)
+// {
+//     f32 Result = Meters / BASE_TILE_SIDE_M;
+//     return Result;
+// }
+//
 static bitmap
 MakeEmptyBitmap(s32 Width, s32 Height, arena *pArena)
 {
@@ -127,6 +127,22 @@ MakeEmptyBitmap(s32 Width, s32 Height, arena *pArena)
     return Result;
 }
 
+static f32
+GetTileSideForZoomLevel_Px(s32 ZoomLevel)
+{
+    assert(-2 <= ZoomLevel && 2 >= ZoomLevel);
+    f32 Result = (f32)(16 << (ZoomLevel + 2));
+    return Result;
+}
+
+static f32
+GetTileSideForZoomLevel_M(s32 ZoomLevel)
+{
+    assert(-2 <= ZoomLevel && 2 >= ZoomLevel);
+    f32 Fraction = GetTileSideForZoomLevel_Px(ZoomLevel) / BASE_TILE_SIDE_PX;
+    f32 Result = Fraction * BASE_TILE_SIDE_M;
+    return Result;
+}
 
 // Resolution of backbuffer or framebuffer is 1920 x 1080
 
@@ -197,8 +213,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
 // TILE DATA STRUCTS
         // TileMap dimensions
-        pTileMap->TileSideInPixels = TILE_SIDE_PX;
-        pTileMap->TileSideInMeters = TILE_SIDE_M;
+        pTileMap->TileSideInPixels = BASE_TILE_SIDE_PX;
+        pTileMap->TileSideInMeters = BASE_TILE_SIDE_M;
 
         // Tile types, i.e., the tiles that populate the tiles menu in the editor
         arr_meta_bitmap *pTileTypes = &pTileMap->TileTypes;
@@ -293,7 +309,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
-    // Controller
+ /************************* @Controller **************************/
     for (int ControllerIdx = 0;
         ControllerIdx < ArrayCount(Input->Controllers);
         ++ControllerIdx)
@@ -302,40 +318,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         if (Controller->IsAnalog) {
 
         }
-#if 0    
-        else {
-            v2 Acceleration = {};
-            if (Controller->MoveRight.EndedDown) {
-                Acceleration.X += 1.0f;
-            }
-            if (Controller->MoveUp.EndedDown) {
-                Acceleration.Y -= 1.0f;
-            }
-            if (Controller->MoveLeft.EndedDown) {
-                Acceleration.X -= 1.0f;
-            }
-            if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
-                Acceleration.Y += 1.0f;
-            }
-
-            if ((Acceleration.X != 0) && (Acceleration.Y != 0)) {
-                Acceleration *= 0.707106781187f;
-            }
-
-            f32 CameraSpeed = 30.0f;
-            Acceleration *= CameraSpeed;
-            Acceleration += -3.0f * pGameState->CameraVelo;
-
-            v2 TestCamera = pGameState->CameraPos + 
-                            0.5f * Acceleration * Square(Input->dtForFrame) + 
-                            pGameState->CameraVelo * Input->dtForFrame;
-            if (ShouldAllowCameraMove(TestCamera)) {
-                pGameState->CameraPos = TestCamera;
-            }
-            pGameState->CameraVelo += Acceleration * Input->dtForFrame;
-        }
-
-#else 
         else {
             v2 Acceleration = {};
             if (Controller->MoveRight.EndedDown) {
@@ -353,6 +335,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if (Controller->MoveDown.EndedDown && !Input->DevKeys.Ctrl.EndedDown) {
                 Acceleration.Y += 1.0f;
                 pPlayer->IsFacing = SOUTH;
+            }
+            if (Controller->ZoomIn.EndedDown && 
+                Controller->ZoomIn.HalfTransitionCount == 1 && 
+                pGameState->ZoomLevel > (-1 * MAX_ZOOM_STEPS_FROM_ZERO)) {
+                    pGameState->ZoomLevel -= 1;
+            }
+            if (Controller->ZoomOut.EndedDown && 
+                Controller->ZoomOut.HalfTransitionCount == 1 && 
+                pGameState->ZoomLevel < MAX_ZOOM_STEPS_FROM_ZERO) {
+                    pGameState->ZoomLevel += 1;
             }
             if (pGameState->EditorState.WhichEditor == NO_EDITOR) {
                 if ((Acceleration.X != 0) && (Acceleration.Y != 0)) {
@@ -378,7 +370,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 }
             }
         }
-#endif
     }
 
     if (gpDevKeys->F1.EndedDown && gpDevKeys->F1.HalfTransitionCount == 1)
@@ -421,24 +412,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     // Compute draw rectangle
     v2 Camera = pGameState->CameraPos;
-    f32 XTilesToDrawFloat = RES_X / 64.0f;
-    f32 XMetersToDraw = XTilesToDrawFloat * 1.4f;
+    f32 TileSidePx = GetTileSideForZoomLevel_Px(pGameState->ZoomLevel);
+    f32 TileSideM = GetTileSideForZoomLevel_M(pGameState->ZoomLevel);
+
+    f32 XTilesToDrawFloat = RES_X / TileSidePx;
+    f32 XMetersToDraw = XTilesToDrawFloat * TileSideM;
     f32 CameraOffsetLeft = -(XMetersToDraw * 0.5f);
     f32 LeftmostMeterCoordinate = Camera.X + CameraOffsetLeft;
-    f32 LeftmostTileCoordinate = LeftmostMeterCoordinate / 1.4f;
+    f32 LeftmostTileCoordinate = LeftmostMeterCoordinate / TileSideM;
     s32 LeftmostTile = floorf(LeftmostTileCoordinate);
     f32 LeftmostTileOffset = LeftmostTileCoordinate - LeftmostTile;
-    f32 XDrawOffsetFloat = LeftmostTileOffset * 64.0f;
+    f32 XDrawOffsetFloat = LeftmostTileOffset * TileSidePx;
     s32 MinusXDrawOffsetInt = -1 * RoundF32ToS32(XDrawOffsetFloat);
 
-    f32 YTilesToDrawFloat = RES_Y / 64.0f;
-    f32 YMetersToDraw = YTilesToDrawFloat * 1.4f;
+    f32 YTilesToDrawFloat = RES_Y / TileSidePx;
+    f32 YMetersToDraw = YTilesToDrawFloat * TileSideM;
     f32 CameraOffsetUp = -(YMetersToDraw * 0.5f);
     f32 UpmostMeterCoordinate = Camera.Y + CameraOffsetUp;
-    f32 UpmostTileCoordinate = UpmostMeterCoordinate / 1.4f;
+    f32 UpmostTileCoordinate = UpmostMeterCoordinate / TileSideM;
     s32 UpmostTile = floorf(UpmostTileCoordinate);
     f32 UpmostTileOffset = UpmostTileCoordinate - UpmostTile;
-    f32 YDrawOffsetFloat = UpmostTileOffset * 64.0f;
+    f32 YDrawOffsetFloat = UpmostTileOffset * TileSidePx;
     s32 MinusYDrawOffsetInt = -1 * RoundF32ToS32(YDrawOffsetFloat);
 
     s32 YTilesToDrawInt = (s32)ceilf(YTilesToDrawFloat + YDrawOffsetFloat);
@@ -455,10 +449,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if (TileValue > 0) {
                 meta_bitmap *pMetaBmp = pTileMap->TileTypes.Get(TileValue);
                 bitmap *pToDraw = &pMetaBmp->Bitmap;
-                f32 DestYMin = (f32)MinusYDrawOffsetInt + Y * 64.0f;
-                f32 DestXMin = (f32)MinusXDrawOffsetInt + X * 64.0f;
+                f32 DestYMin = (f32)MinusYDrawOffsetInt + Y * TileSidePx;
+                f32 DestXMin = (f32)MinusXDrawOffsetInt + X * TileSidePx;
                 v2 DestMin = {DestXMin, DestYMin};
-                v2 DestMax = DestMin + v2{64.0f, 64.0f};
+                v2 DestMax = DestMin + v2{TileSidePx, TileSidePx};
                 ScaleAndBlitBitmap(&WrappedOsFramebuf, DestMin, DestMax, pToDraw);
             }
         }

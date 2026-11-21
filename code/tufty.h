@@ -162,16 +162,14 @@ operator==(v2 A, v2 B)
 #define MAX_ANIMATIONS_PER_FACING 10
 #define NIL 0
 
-#define TILE_SIDE_M 1.4f
-#define TILE_SIDE_PX 64.0f
-#define METERS_TO_PIXELS (TILE_SIDE_PX / TILE_SIDE_M)
-#define PIXELS_TO_METERS (TILE_SIDE_M / TILE_SIDE_PX)
+#define BASE_TILE_SIDE_M 1.4f
+#define BASE_TILE_SIDE_PX 64.0f
 #define TILES_IN_WORLD_Y 221 
 #define TILES_IN_WORLD_X 393
 #define TILES_IN_WORLD (TILES_IN_WORLD_Y * TILES_IN_WORLD_X)
 #define TILES_IN_WORLD_NUM_BYTES (TILES_IN_WORLD * sizeof(s32))
-#define METERS_IN_WORLD_Y (TILE_SIDE_M * TILES_IN_WORLD_Y)
-#define METERS_IN_WORLD_X (TILE_SIDE_M * TILES_IN_WORLD_X)
+#define METERS_IN_WORLD_Y (BASE_TILE_SIDE_M * TILES_IN_WORLD_Y)
+#define METERS_IN_WORLD_X (BASE_TILE_SIDE_M * TILES_IN_WORLD_X)
 
 // Platform services
 static debug_platform_get_file_size *GetFileSize;
@@ -716,6 +714,7 @@ struct game_state
     tile_map TileMap;
     player Player;
     v2 CameraPos;
+    s32 ZoomLevel;
 };
 
 

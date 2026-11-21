@@ -191,7 +191,7 @@ typedef struct game_controller_input
 
     union
     {
-        game_button_state Buttons[12];
+        game_button_state Buttons[14];
         struct
         {
             game_button_state MoveUp;
@@ -209,6 +209,9 @@ typedef struct game_controller_input
 
             game_button_state Back;
             game_button_state Start;
+
+            game_button_state ZoomIn;
+            game_button_state ZoomOut;
         };
     };
 } game_controller_input;
